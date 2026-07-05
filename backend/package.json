@@ -1,0 +1,7 @@
+{
+  "name": "scholaro-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lambda handlers and AWS config for the QU GPA Calculator backend.",
+  "type": "module"
+}

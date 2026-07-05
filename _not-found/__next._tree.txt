@@ -1,2 +1,2 @@
-:HL["/qugpa/_next/static/chunks/05o0jx1n4nzcq.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"0e5y5bLBU0zH_kf4rjkXc"}
+:HL["/isa-web/_next/static/chunks/05o0jx1n4nzcq.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"OglKdBF6z3E2iKQcO7OW8"}

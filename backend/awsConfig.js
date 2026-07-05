@@ -13,7 +13,7 @@ module.exports = {
   cors: {
     allowedOrigins: [
       "http://localhost:3000",
-      "https://koushikvarmajs.github.io",
+      "https://isa-qu.github.io",
     ],
   },
 };

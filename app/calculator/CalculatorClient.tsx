@@ -194,8 +194,8 @@ export default function CalculatorClient() {
             </p>
             <div className="mt-3 flex items-center gap-2">
               <Link
-                href="/"
-                aria-label="Back to home"
+                href="/transcript"
+                aria-label="Back to transcripts"
                 className="inline-flex items-center gap-1.5 rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-white/20"
               >
                 <svg
@@ -210,7 +210,7 @@ export default function CalculatorClient() {
                     clipRule="evenodd"
                   />
                 </svg>
-                Home
+                Transcripts
               </Link>
               <button
                 type="button"

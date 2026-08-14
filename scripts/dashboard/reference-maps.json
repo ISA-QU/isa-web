@@ -1,0 +1,376 @@
+{
+  "countryCoords": {
+    "Argentina": {
+      "lat": -38.4,
+      "lon": -63.6
+    },
+    "Australia": {
+      "lat": -25.3,
+      "lon": 133.8
+    },
+    "Bangladesh": {
+      "lat": 23.7,
+      "lon": 90.4
+    },
+    "Brazil": {
+      "lat": -14.2,
+      "lon": -51.9
+    },
+    "Canada": {
+      "lat": 56.1,
+      "lon": -106.3
+    },
+    "China": {
+      "lat": 35.9,
+      "lon": 104.2
+    },
+    "Colombia": {
+      "lat": 4.6,
+      "lon": -74.1
+    },
+    "Egypt": {
+      "lat": 26.8,
+      "lon": 30.8
+    },
+    "France": {
+      "lat": 46.2,
+      "lon": 2.2
+    },
+    "Germany": {
+      "lat": 51.2,
+      "lon": 10.5
+    },
+    "Ghana": {
+      "lat": 7.9,
+      "lon": -1.0
+    },
+    "Hong Kong": {
+      "lat": 22.3,
+      "lon": 114.2
+    },
+    "India": {
+      "lat": 20.6,
+      "lon": 78.9
+    },
+    "Indonesia": {
+      "lat": -0.8,
+      "lon": 113.9
+    },
+    "Ireland": {
+      "lat": 53.4,
+      "lon": -8.2
+    },
+    "Italy": {
+      "lat": 41.9,
+      "lon": 12.6
+    },
+    "Japan": {
+      "lat": 36.2,
+      "lon": 138.3
+    },
+    "Kazakhstan": {
+      "lat": 48.0,
+      "lon": 67.0
+    },
+    "Kenya": {
+      "lat": -0.0,
+      "lon": 37.9
+    },
+    "Malaysia": {
+      "lat": 4.2,
+      "lon": 101.9
+    },
+    "Mexico": {
+      "lat": 23.6,
+      "lon": -102.5
+    },
+    "Nepal": {
+      "lat": 28.4,
+      "lon": 84.1
+    },
+    "Nigeria": {
+      "lat": 9.1,
+      "lon": 8.7
+    },
+    "Pakistan": {
+      "lat": 30.4,
+      "lon": 69.3
+    },
+    "Philippines": {
+      "lat": 12.9,
+      "lon": 121.8
+    },
+    "Saudi Arabia": {
+      "lat": 23.9,
+      "lon": 45.1
+    },
+    "Singapore": {
+      "lat": 1.35,
+      "lon": 103.8
+    },
+    "South Africa": {
+      "lat": -30.6,
+      "lon": 22.9
+    },
+    "South Korea": {
+      "lat": 35.9,
+      "lon": 127.8
+    },
+    "Spain": {
+      "lat": 40.5,
+      "lon": -3.7
+    },
+    "Sri Lanka": {
+      "lat": 7.9,
+      "lon": 80.8
+    },
+    "Taiwan": {
+      "lat": 23.7,
+      "lon": 121.0
+    },
+    "Thailand": {
+      "lat": 15.9,
+      "lon": 100.9
+    },
+    "Turkey": {
+      "lat": 38.9,
+      "lon": 35.2
+    },
+    "United Arab Emirates": {
+      "lat": 24.0,
+      "lon": 54.0
+    },
+    "United Kingdom": {
+      "lat": 55.4,
+      "lon": -3.4
+    },
+    "Vietnam": {
+      "lat": 14.1,
+      "lon": 108.3
+    },
+    "Zimbabwe": {
+      "lat": -19.0,
+      "lon": 29.2
+    }
+  },
+  "postCountry": {
+    "AIT Taipei": "Taiwan",
+    "Abidjan": "Cote d'Ivoire",
+    "Abu Dhabi": "United Arab Emirates",
+    "Abuja": "Nigeria",
+    "Accra": "Ghana",
+    "Addis Ababa": "Ethiopia",
+    "Algiers": "Algeria",
+    "Almaty": "Kazakhstan",
+    "Amman": "Jordan",
+    "Amsterdam": "Netherlands",
+    "Ankara": "Turkey",
+    "Antananarivo": "Madagascar",
+    "Apia": "Samoa",
+    "Ashgabat": "Turkmenistan",
+    "Asmara": "Eritrea",
+    "Astana": "Kazakhstan",
+    "Asuncion": "Paraguay",
+    "Athens": "Greece",
+    "Auckland": "New Zealand",
+    "Baghdad": "Iraq",
+    "Baku": "Azerbaijan",
+    "Bamako": "Mali",
+    "Bandar Seri Begawan": "Brunei",
+    "Bangkok": "Thailand",
+    "Banjul": "Gambia",
+    "Beijing": "China",
+    "Beirut": "Lebanon",
+    "Belfast": "United Kingdom",
+    "Belgrade": "Serbia",
+    "Belmopan": "Belize",
+    "Berlin": "Germany",
+    "Bern": "Switzerland",
+    "Bishkek": "Kyrgyzstan",
+    "Bogota": "Colombia",
+    "Brasilia": "Brazil",
+    "Bratislava": "Slovakia",
+    "Brazzaville": "Republic of the Congo",
+    "Bridgetown": "Barbados",
+    "Brussels": "Belgium",
+    "Bucharest": "Romania",
+    "Budapest": "Hungary",
+    "Buenos Aires": "Argentina",
+    "Bujumbura": "Burundi",
+    "Cairo": "Egypt",
+    "Calgary": "Canada",
+    "Cape Town": "South Africa",
+    "Casablanca": "Morocco",
+    "Chennai": "India",
+    "Chiang Mai": "Thailand",
+    "Chisinau": "Moldova",
+    "Ciudad Juarez": "Mexico",
+    "Colombo": "Sri Lanka",
+    "Conakry": "Guinea",
+    "Copenhagen": "Denmark",
+    "Cotonou": "Benin",
+    "Curacao": "Curacao",
+    "Dakar": "Senegal",
+    "Dar es Salaam": "Tanzania",
+    "Dhahran": "Saudi Arabia",
+    "Dhaka": "Bangladesh",
+    "Dili": "Timor-Leste",
+    "Djibouti": "Djibouti",
+    "Doha": "Qatar",
+    "Dubai": "United Arab Emirates",
+    "Dublin": "Ireland",
+    "Durban": "South Africa",
+    "Dushanbe": "Tajikistan",
+    "Erbil": "Iraq",
+    "Florence": "Italy",
+    "Frankfurt": "Germany",
+    "Freetown": "Sierra Leone",
+    "Gaborone": "Botswana",
+    "Georgetown": "Guyana",
+    "Guadalajara": "Mexico",
+    "Guangzhou": "China",
+    "Guatemala City": "Guatemala",
+    "Guayaquil": "Ecuador",
+    "Halifax": "Canada",
+    "Hamilton": "Bermuda",
+    "Hanoi": "Vietnam",
+    "Harare": "Zimbabwe",
+    "Havana": "Cuba",
+    "Helsinki": "Finland",
+    "Hermosillo": "Mexico",
+    "Ho Chi Minh City": "Vietnam",
+    "Hong Kong": "Hong Kong",
+    "Hyderabad": "India",
+    "Islamabad": "Pakistan",
+    "Istanbul": "Turkey",
+    "Jakarta": "Indonesia",
+    "Jeddah": "Saudi Arabia",
+    "Jerusalem": "Israel",
+    "Johannesburg": "South Africa",
+    "Juba": "South Sudan",
+    "Kampala": "Uganda",
+    "Karachi": "Pakistan",
+    "Kathmandu": "Nepal",
+    "Khartoum": "Sudan",
+    "Kigali": "Rwanda",
+    "Kingston": "Jamaica",
+    "Kinshasa": "Democratic Republic of the Congo",
+    "Kolkata": "India",
+    "Kolonia": "Micronesia",
+    "Koror": "Palau",
+    "Krakow": "Poland",
+    "Kuala Lumpur": "Malaysia",
+    "Kuwait City": "Kuwait",
+    "Kyiv": "Ukraine",
+    "La Paz": "Bolivia",
+    "Lagos": "Nigeria",
+    "Libreville": "Gabon",
+    "Lilongwe": "Malawi",
+    "Lima": "Peru",
+    "Lisbon": "Portugal",
+    "Ljubljana": "Slovenia",
+    "Lome": "Togo",
+    "London": "United Kingdom",
+    "Luanda": "Angola",
+    "Lusaka": "Zambia",
+    "Luxembourg": "Luxembourg",
+    "Madrid": "Spain",
+    "Majuro": "Marshall Islands",
+    "Malabo": "Equatorial Guinea",
+    "Managua": "Nicaragua",
+    "Manama": "Bahrain",
+    "Manila": "Philippines",
+    "Maputo": "Mozambique",
+    "Maseru": "Lesotho",
+    "Matamoros": "Mexico",
+    "Mbabane": "Eswatini",
+    "Melbourne": "Australia",
+    "Merida": "Mexico",
+    "Mexico City": "Mexico",
+    "Milan": "Italy",
+    "Monrovia": "Liberia",
+    "Monterrey": "Mexico",
+    "Montevideo": "Uruguay",
+    "Montreal": "Canada",
+    "Moscow": "Russia",
+    "Mumbai": "India",
+    "Munich": "Germany",
+    "Muscat": "Oman",
+    "N`Djamena": "Chad",
+    "Naha": "Japan",
+    "Nairobi": "Kenya",
+    "Naples": "Italy",
+    "Nassau": "Bahamas",
+    "New Delhi": "India",
+    "Niamey": "Niger",
+    "Nicosia": "Cyprus",
+    "Nogales": "Mexico",
+    "Nouakchott": "Mauritania",
+    "Nuevo Laredo": "Mexico",
+    "Osaka/Kobe": "Japan",
+    "Oslo": "Norway",
+    "Ottawa": "Canada",
+    "Ouagadougou": "Burkina Faso",
+    "Panama City": "Panama",
+    "Paramaribo": "Suriname",
+    "Paris": "France",
+    "Perth": "Australia",
+    "Phnom Penh": "Cambodia",
+    "Podgorica": "Montenegro",
+    "Port Louis": "Mauritius",
+    "Port Moresby": "Papua New Guinea",
+    "Port of Spain": "Trinidad and Tobago",
+    "Port-au-Prince": "Haiti",
+    "Porto Alegre": "Brazil",
+    "Prague": "Czechia",
+    "Praia": "Cape Verde",
+    "Pristina": "Kosovo",
+    "Quebec": "Canada",
+    "Quito": "Ecuador",
+    "Rangoon": "Myanmar",
+    "Recife": "Brazil",
+    "Reykjavik": "Iceland",
+    "Riga": "Latvia",
+    "Rio de Janeiro": "Brazil",
+    "Riyadh": "Saudi Arabia",
+    "Rome": "Italy",
+    "San Jose": "Costa Rica",
+    "San Salvador": "El Salvador",
+    "Santiago": "Chile",
+    "Santo Domingo": "Dominican Republic",
+    "Sao Paulo": "Brazil",
+    "Sarajevo": "Bosnia and Herzegovina",
+    "Seoul": "South Korea",
+    "Shanghai": "China",
+    "Shenyang": "China",
+    "Singapore": "Singapore",
+    "Skopje": "North Macedonia",
+    "Sofia": "Bulgaria",
+    "Stockholm": "Sweden",
+    "Surabaya": "Indonesia",
+    "Suva": "Fiji",
+    "Sydney": "Australia",
+    "Tallinn": "Estonia",
+    "Tashkent": "Uzbekistan",
+    "Tbilisi": "Georgia",
+    "Tegucigalpa": "Honduras",
+    "Tel Aviv": "Israel",
+    "Tijuana": "Mexico",
+    "Tirana": "Albania",
+    "Tokyo": "Japan",
+    "Toronto": "Canada",
+    "Tunis": "Tunisia",
+    "Ulaanbaatar": "Mongolia",
+    "Valletta": "Malta",
+    "Vancouver": "Canada",
+    "Vienna": "Austria",
+    "Vientiane": "Laos",
+    "Vilnius": "Lithuania",
+    "Warsaw": "Poland",
+    "Windhoek": "Namibia",
+    "Wuhan": "China",
+    "Yaounde": "Cameroon",
+    "Yerevan": "Armenia",
+    "Zagreb": "Croatia"
+  }
+}

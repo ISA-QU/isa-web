@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dashboard data — source CSVs and the JSON built from them live in S3, never git.
+# Rebuild with: node scripts/build-dashboard-data.mjs
+/dashboard/
+/dashboard-data/
+/public/dashboard-data/

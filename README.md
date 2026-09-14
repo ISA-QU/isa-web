@@ -31,19 +31,21 @@ deployed at: https://isa-qu.github.io/isa-web/
 
 ## Dashboard data
 
-The dashboard reads pre-built JSON from S3 — no data is committed to git. Before running
-locally you need to generate it once:
+The dashboard's data comes from three Excel workbooks kept in S3, never in git. The
+`rebuild-dashboard` Lambda merges them into one snapshot and `get-dashboard` serves it at
+`GET /dashboard`. The site calls that by default, so `npm run deploy` needs no settings.
+
+To work on the dashboard locally, put the workbooks in `dashboard/` and build the snapshot:
 
 ```bash
-npm run dashboard:data     # build the JSON and stage it in public/ for local dev
-npm run dashboard:verify   # check the ported metrics against the original Python
+npm run dashboard:data     # build public/dashboard-data/snapshot.json from dashboard/*.xlsx
+npm run dashboard:verify   # check it against the figures the original project validated
 ```
 
-When deploying, point the app at S3:
+Then point `npm run dev` at it with a `.env.development.local` file containing
+`NEXT_PUBLIC_DASHBOARD_DATA_URL=/isa-web/dashboard-data/snapshot.json`.
 
-```bash
-NEXT_PUBLIC_DASHBOARD_DATA_URL=https://<bucket>.s3.amazonaws.com/dashboard-data npm run deploy
-```
+See [docs/dashboard.md](docs/dashboard.md) for the AWS setup, the monthly update routine,
+and notes on the port.
 
-See [docs/dashboard.md](docs/dashboard.md) for the S3 bucket setup, CORS rules, and notes
-on the port.
+claude --resume a34323c4-eccb-4620-8c02-d39270f34e43

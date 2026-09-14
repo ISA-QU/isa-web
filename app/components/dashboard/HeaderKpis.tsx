@@ -1,6 +1,5 @@
 "use client";
 
-import { GROWTH_LABEL } from "../../lib/dashboard/constants";
 import { int, metricPct } from "../../lib/dashboard/format";
 import { groupSum, idxMaxString, sumBy, yoyGrowth } from "../../lib/dashboard/metrics";
 import { useDashboard } from "./DashboardContext";
@@ -8,7 +7,7 @@ import { KpiCard, KpiRow } from "./ui";
 
 /** The six-card KPI strip above the tabs (app.py lines 1177-1201). */
 export default function HeaderKpis() {
-  const { f1Filtered, j1Filtered, focusCountry, focus } = useDashboard();
+  const { f1Filtered, j1Filtered, focusCountry, focus, growthLabel } = useDashboard();
 
   const totalF1 = sumBy(f1Filtered, (r) => r.issuances);
   const totalJ1 = sumBy(j1Filtered, (r) => r.issuances);
@@ -22,8 +21,8 @@ export default function HeaderKpis() {
   const focusTone = (focus.growth ?? 0) > 0 ? "pos" : "neg";
 
   const globalDelta =
-    globalGrowth !== null ? `${metricPct(globalGrowth)} ${GROWTH_LABEL}` : "N/A";
-  const focusDelta = focus.growth !== null ? `${metricPct(focus.growth)} ${GROWTH_LABEL}` : "N/A";
+    globalGrowth !== null ? `${metricPct(globalGrowth)} ${growthLabel}` : "N/A";
+  const focusDelta = focus.growth !== null ? `${metricPct(focus.growth)} ${growthLabel}` : "N/A";
   const tierShort = focus.tier.split("—")[0].trim();
 
   return (

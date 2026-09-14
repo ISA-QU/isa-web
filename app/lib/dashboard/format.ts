@@ -1,6 +1,6 @@
 /** Display formatters ported from app.py, including its "N/A" fallbacks. */
 
-import { MONTH_NAMES } from "./constants";
+import { MONTH_NAMES, MONTH_NAMES_FULL } from "./constants";
 import { notNa } from "./metrics";
 
 const GROUPED = new Intl.NumberFormat("en-US");
@@ -37,6 +37,16 @@ export function monthDisplay(monthIndex: number | null | undefined): string {
   const month = (monthIndex % 12) + 1;
   return `${MONTH_NAMES[month]} ${year}`;
 }
+
+/** "February 2026" for a `year * 12 + (month - 1)` index. */
+export function monthLongDisplay(monthIndex: number | null | undefined): string {
+  if (monthIndex === null || monthIndex === undefined || Number.isNaN(monthIndex)) return "N/A";
+  return `${MONTH_NAMES_FULL[(monthIndex % 12) + 1]} ${Math.floor(monthIndex / 12)}`;
+}
+
+/** Calendar months 1 through `throughMonth`: "Jan–Feb", or "Jan" alone. */
+export const yearToDateLabel = (throughMonth: number): string =>
+  throughMonth <= 1 ? MONTH_NAMES[1] : `${MONTH_NAMES[1]}–${MONTH_NAMES[throughMonth]}`;
 
 /** `month_value_display` — "Sep 2025 · 12,345". */
 export function monthValueDisplay(

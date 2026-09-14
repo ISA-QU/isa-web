@@ -1,3 +1,4 @@
+import { authHeaders, redirectToLogin } from "./auth";
 import { API_BASE_URL } from "./awsConfig";
 import type { School, StudentInfo } from "./types";
 
@@ -49,9 +50,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(await authHeaders()),
       ...(init?.headers || {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("Your session has expired. Sign in again.");
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);

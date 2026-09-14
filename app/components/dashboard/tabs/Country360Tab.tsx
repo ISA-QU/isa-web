@@ -12,7 +12,9 @@ import {
   metricNumber,
   metricPct,
   monthDisplay,
+  monthLongDisplay,
   share,
+  yearToDateLabel,
 } from "../../../lib/dashboard/format";
 import {
   concentrationLabel,
@@ -62,15 +64,21 @@ import {
 const RECENT_MODES = [
   "Latest 12 Months",
   "Latest 24 Months",
-  "Jan 2023-Sep 2025",
+  "Full Operational Window",
   "Custom",
 ] as const;
 type RecentMode = (typeof RECENT_MODES)[number];
 
-const JAN_2023 = 2023 * 12; // monthIndex for January 2023
-
 export default function Country360Tab() {
   const { data, countries } = useDashboard();
+  const { coverage, fiscalYears } = data.meta;
+  const operationalRange = coverage.operational;
+  // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
+  const firstFy = coverage.annual.first ?? 1997;
+  const latestFy = coverage.annual.latestComplete ?? firstFy;
+  const endIndex = coverage.postsMonthly.end;
+  const endYear = Math.floor(endIndex / 12);
+  const throughMonth = (endIndex % 12) + 1;
 
   const countryOptions = useMemo(
     () =>
@@ -88,9 +96,9 @@ export default function Country360Tab() {
     countryOptions.includes("India") ? "India" : (countryOptions[0] ?? ""),
   );
   const [visa, setVisa] = useState<VisaSelection>("Both");
-  const [recentMode, setRecentMode] = useState<RecentMode>("Jan 2023-Sep 2025");
-  const [histStart, setHistStart] = useState(1997);
-  const [histEnd, setHistEnd] = useState(2024);
+  const [recentMode, setRecentMode] = useState<RecentMode>("Full Operational Window");
+  const [histStart, setHistStart] = useState(firstFy);
+  const [histEnd, setHistEnd] = useState(latestFy);
   // Rendered by the original but never read by any downstream calculation.
   const [comparableMode, setComparableMode] = useState<"Calendar Year" | "Jan-Sep Comparable">(
     "Calendar Year",
@@ -131,15 +139,15 @@ export default function Country360Tab() {
 
   /* ---- Operational range, per the selected timeframe mode ---- */
   const [recentStart, recentEnd] = useMemo((): [number, number] => {
-    if (opMonthOptions.length === 0) return [JAN_2023, 2025 * 12 + 8];
+    if (opMonthOptions.length === 0) return [operationalRange.start, operationalRange.end];
     const latest = opMonthOptions[opMonthOptions.length - 1];
     if (recentMode === "Custom") {
       return [customStart ?? opMonthOptions[0], customEnd ?? latest];
     }
     if (recentMode === "Latest 12 Months") return [latest - 11, latest];
     if (recentMode === "Latest 24 Months") return [latest - 23, latest];
-    return [JAN_2023, latest];
-  }, [opMonthOptions, recentMode, customStart, customEnd]);
+    return [operationalRange.start, latest];
+  }, [opMonthOptions, recentMode, customStart, customEnd, operationalRange]);
 
   const opPeriod = useMemo(
     () =>
@@ -174,18 +182,22 @@ export default function Country360Tab() {
   const metrics = useMemo(() => {
     const opF1Total = sumBy(opCountryAll.filter((r) => r.visa === "F1"), (r) => r.issuances);
     const opJ1Total = sumBy(opCountryAll.filter((r) => r.visa === "J1"), (r) => r.issuances);
-    const fy2024F1 = sumBy(
-      histCountryAll.filter((r) => r.fiscalYear === 2024 && r.visa === "F1"),
+    const latestFyF1 = sumBy(
+      histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "F1"),
       (r) => r.issuances,
     );
-    const fy2024J1 = sumBy(
-      histCountryAll.filter((r) => r.fiscalYear === 2024 && r.visa === "J1"),
+    const latestFyJ1 = sumBy(
+      histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "J1"),
       (r) => r.issuances,
     );
     const growth5 =
-      histCountryAll.length > 0 ? fiscalYearGrowth(histCountryAll, ["F1"], 2024, 2019) : null;
+      histCountryAll.length > 0
+        ? fiscalYearGrowth(histCountryAll, ["F1"], latestFy, latestFy - 5)
+        : null;
     const growth10 =
-      histCountryAll.length > 0 ? fiscalYearGrowth(histCountryAll, ["F1"], 2024, 2014) : null;
+      histCountryAll.length > 0
+        ? fiscalYearGrowth(histCountryAll, ["F1"], latestFy, latestFy - 10)
+        : null;
 
     const latestHcIndex =
       hcCountry.length > 0 ? Math.max(...hcCountry.map((r) => r.monthIndex)) : null;
@@ -254,12 +266,12 @@ export default function Country360Tab() {
     });
 
     return {
-      opF1Total, opJ1Total, fy2024F1, fy2024J1, growth5, growth10,
+      opF1Total, opJ1Total, latestFyF1, latestFyJ1, growth5, growth10,
       latest12Hc, latest12F1, latest12J1, hcMetrics,
       topOneShare, topThreeShare, topConsulate, dataConfidence,
       category, flags, confidence, action, profile,
     };
-  }, [opCountryAll, histCountryAll, hcCountry, hcCountryAll, visaClasses, country]);
+  }, [opCountryAll, histCountryAll, hcCountry, hcCountryAll, visaClasses, country, latestFy]);
 
   const momentum = metrics.hcMetrics.latest12Change;
   const momentumLabel = !notNa(momentum)
@@ -447,21 +459,28 @@ export default function Country360Tab() {
   const recovery = useMemo(() => {
     const rows: Array<{ period: string; index: number }> = [];
     if (hcCountry.length > 0) {
+      // Full calendar years against 2019, then a partial latest year against 2019's same months.
+      const lastFullYear = throughMonth === 12 ? endYear : endYear - 1;
       const baseline = sumBy(hcCountry.filter((r) => r.year === 2019), (r) => r.issuances);
-      for (const year of [2019, 2020, 2021, 2022, 2023, 2024]) {
+      for (let year = 2019; year <= lastFullYear; year += 1) {
         const value = sumBy(hcCountry.filter((r) => r.year === year), (r) => r.issuances);
         if (baseline > 0) rows.push({ period: String(year), index: (value / baseline) * 100 });
       }
-      const baselineJanSep = sumBy(
-        hcCountry.filter((r) => r.year === 2019 && r.month <= 9),
-        (r) => r.issuances,
-      );
-      const value2025 = sumBy(
-        hcCountry.filter((r) => r.year === 2025 && r.month <= 9),
-        (r) => r.issuances,
-      );
-      if (baselineJanSep > 0) {
-        rows.push({ period: "2025 Jan-Sep", index: (value2025 / baselineJanSep) * 100 });
+      if (throughMonth < 12) {
+        const baselineYtd = sumBy(
+          hcCountry.filter((r) => r.year === 2019 && r.month <= throughMonth),
+          (r) => r.issuances,
+        );
+        const valueYtd = sumBy(
+          hcCountry.filter((r) => r.year === endYear && r.month <= throughMonth),
+          (r) => r.issuances,
+        );
+        if (baselineYtd > 0) {
+          rows.push({
+            period: `${endYear} ${yearToDateLabel(throughMonth)}`,
+            index: (valueYtd / baselineYtd) * 100,
+          });
+        }
       }
     }
 
@@ -504,7 +523,7 @@ export default function Country360Tab() {
     } as ChartLayout;
 
     return { data, layout, rows };
-  }, [hcCountry]);
+  }, [hcCountry, endYear, throughMonth]);
 
   const seasonality = useMemo(() => {
     const avg = groupMean(hcCountry, (r) => r.month, (r) => r.issuances);
@@ -542,14 +561,32 @@ export default function Country360Tab() {
     return { data, layout, rows };
   }, [hcCountry, country]);
 
-  const janSep2025 = sumBy(
-    opCountry.filter((r) => r.year === 2025 && r.month <= 9),
+  const ytdCurrent = sumBy(
+    opCountry.filter((r) => r.year === endYear && r.month <= throughMonth),
     (r) => r.issuances,
   );
-  const janSep2024 = sumBy(
-    opCountry.filter((r) => r.year === 2024 && r.month <= 9),
+  const ytdPrior = sumBy(
+    opCountry.filter((r) => r.year === endYear - 1 && r.month <= throughMonth),
     (r) => r.issuances,
   );
+  const ytdLabel = yearToDateLabel(throughMonth);
+
+  const officialFys = fiscalYears.filter((f) => f.source === "annual").map((f) => f.fiscalYear);
+  const lastOfficialFy = officialFys.length > 0 ? Math.max(...officialFys) : null;
+  const partialFy = fiscalYears.find((f) => !f.complete && f.fiscalYear > latestFy);
+  let annualSourceNote =
+    lastOfficialFy === null
+      ? "Annual figures are summed from the monthly nationality reports."
+      : `Fiscal years through FY${lastOfficialFy} use the official annual tables.`;
+  if (lastOfficialFy !== null && lastOfficialFy < latestFy) {
+    annualSourceNote +=
+      lastOfficialFy + 1 === latestFy
+        ? ` FY${latestFy} is summed from the monthly nationality reports.`
+        : ` FY${lastOfficialFy + 1}-FY${latestFy} are summed from the monthly nationality reports.`;
+  }
+  if (partialFy) {
+    annualSourceNote += ` FY${partialFy.fiscalYear} (${partialFy.monthsIncluded} months so far) is left out until it is complete.`;
+  }
 
   const slug = country.toLowerCase().replace(/ /g, "_");
 
@@ -584,11 +621,13 @@ export default function Country360Tab() {
   const summaryBullets: string[] = [];
   if (metrics.opF1Total) {
     summaryBullets.push(
-      `${country}'s operational F1 total is ${int(metrics.opF1Total)} across January 2023-September 2025.`,
+      `${country}'s operational F1 total is ${int(metrics.opF1Total)} across ${monthLongDisplay(operationalRange.start)}-${monthLongDisplay(operationalRange.end)}.`,
     );
   }
   if (metrics.growth10 !== null) {
-    summaryBullets.push(`FY2024 F1 issuance is ${metricPct(metrics.growth10)} versus FY2014.`);
+    summaryBullets.push(
+      `FY${latestFy} F1 issuance is ${metricPct(metrics.growth10)} versus FY${latestFy - 10}.`,
+    );
   }
   if (metrics.hcMetrics.latest12Change !== null) {
     summaryBullets.push(
@@ -648,8 +687,8 @@ export default function Country360Tab() {
           <div className="flex items-center gap-2">
             <input
               type="range"
-              min={1997}
-              max={2024}
+              min={firstFy}
+              max={latestFy}
               value={histStart}
               onChange={(e) => setHistStart(Math.min(Number(e.target.value), histEnd))}
               className="w-full accent-[#FFB81C]"
@@ -657,8 +696,8 @@ export default function Country360Tab() {
             />
             <input
               type="range"
-              min={1997}
-              max={2024}
+              min={firstFy}
+              max={latestFy}
               value={histEnd}
               onChange={(e) => setHistEnd(Math.max(Number(e.target.value), histStart))}
               className="w-full accent-[#FFB81C]"
@@ -751,7 +790,7 @@ export default function Country360Tab() {
             <SubHeading>Primary KPIs</SubHeading>
             <KpiRow>
               <KpiCard accent="gold" label="Operational F1" value={metricNumber(metrics.opF1Total)} />
-              <KpiCard accent="gold" label="FY2024 Annual F1" value={metricNumber(metrics.fy2024F1)} />
+              <KpiCard accent="gold" label={`FY${latestFy} Annual F1`} value={metricNumber(metrics.latestFyF1)} />
               <KpiCard label="10-Year F1 Growth" value={metricPct(metrics.growth10)} />
               <KpiCard
                 label="Latest 12-Month Momentum"
@@ -764,7 +803,7 @@ export default function Country360Tab() {
             <Expander title="Secondary KPI Details">
               <KpiRow>
                 <KpiCard accent="navy" label="Operational J1" value={metricNumber(metrics.opJ1Total)} />
-                <KpiCard accent="navy" label="FY2024 Annual J1" value={metricNumber(metrics.fy2024J1)} />
+                <KpiCard accent="navy" label={`FY${latestFy} Annual J1`} value={metricNumber(metrics.latestFyJ1)} />
                 <KpiCard label="5-Year F1 Growth" value={metricPct(metrics.growth5)} />
                 <KpiCard accent="gold" label="Latest 12-Month F1" value={metricNumber(metrics.latest12F1)} />
                 <KpiCard accent="navy" label="Latest 12-Month J1" value={metricNumber(metrics.latest12J1)} />
@@ -798,7 +837,8 @@ export default function Country360Tab() {
           <section>
             <SubHeading>Current Operational Signal</SubHeading>
             <MethodologyNote wide>
-              Operational data currently covers January 2023 through September 2025.
+              Operational data currently covers {monthLongDisplay(operationalRange.start)} through{" "}
+              {monthLongDisplay(operationalRange.end)}.
             </MethodologyNote>
             <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
               {opPeriod.length > 0 ? (
@@ -817,16 +857,15 @@ export default function Country360Tab() {
               />
             </div>
             <Caption>
-              2025 Jan-Sep comparable volume: {int(janSep2025)}; 2024 Jan-Sep comparable volume:{" "}
-              {int(janSep2024)}; change: {metricPct(pctGrowth(janSep2025, janSep2024))}.
+              {endYear} {ytdLabel} comparable volume: {int(ytdCurrent)}; {endYear - 1} {ytdLabel}{" "}
+              comparable volume: {int(ytdPrior)}; change: {metricPct(pctGrowth(ytdCurrent, ytdPrior))}.
             </Caption>
           </section>
 
           <section>
             <SubHeading>Long-Term Country Trajectory</SubHeading>
             <MethodologyNote wide>
-              Annual country history currently ends at FY2024 because the official FY2025 annual
-              detail table has not been published.
+              {annualSourceNote}
             </MethodologyNote>
             {histChart.hasRows ? (
               <Chart data={histChart.data} layout={histChart.layout} height={460} />
@@ -970,7 +1009,7 @@ export default function Country360Tab() {
                 label="Country 360 Summary CSV"
                 filename={`qu_country360_summary_${slug}.csv`}
                 headers={[
-                  "country", "operational_f1_total", "operational_j1_total", "fy2024_f1", "fy2024_j1",
+                  "country", "operational_f1_total", "operational_j1_total", `fy${latestFy}_f1`, `fy${latestFy}_j1`,
                   "f1_growth_5yr_pct", "f1_growth_10yr_pct", "top_consulate", "peak_month",
                   "recovery_index", "top_one_share", "top_three_share", "volatility", "data_confidence",
                 ]}
@@ -978,8 +1017,8 @@ export default function Country360Tab() {
                   country,
                   String(metrics.opF1Total),
                   String(metrics.opJ1Total),
-                  String(metrics.fy2024F1),
-                  String(metrics.fy2024J1),
+                  String(metrics.latestFyF1),
+                  String(metrics.latestFyJ1),
                   metrics.growth5 === null ? "" : String(metrics.growth5),
                   metrics.growth10 === null ? "" : String(metrics.growth10),
                   metrics.topConsulate,
@@ -1036,15 +1075,17 @@ export default function Country360Tab() {
               <ul className="list-disc space-y-1.5 pl-5">
                 <li>
                   Operational layer: <code className="font-mono">{monthCountry}</code> monthly
-                  country/post data from January 2023-September 2025.
+                  country/post data from {monthLongDisplay(operationalRange.start)}-
+                  {monthLongDisplay(operationalRange.end)}.
                 </li>
                 <li>
                   Historical country layer: <code className="font-mono">{histCountry}</code> annual
-                  country/nationality data from FY1997-FY2024.
+                  country/nationality data from FY{firstFy}-FY{latestFy}.
                 </li>
                 <li>
                   Historical consulate layer: <code className="font-mono">{monthCountry}</code>{" "}
-                  monthly canonical-post data from March 2017-September 2025.
+                  monthly post data from {monthLongDisplay(coverage.postsMonthly.start)}-
+                  {monthLongDisplay(endIndex)}.
                 </li>
                 <li>
                   Country label bridge: <code className="font-mono">{country}</code> maps to monthly
@@ -1052,7 +1093,11 @@ export default function Country360Tab() {
                   <code className="font-mono">{histCountry}</code>.
                 </li>
                 <li>Annual totals and monthly post totals remain separate and are not added together.</li>
-                <li>2025 is partial through September for monthly records.</li>
+                {throughMonth < 12 && (
+                  <li>
+                    {endYear} is partial for monthly records, through {monthLongDisplay(endIndex)}.
+                  </li>
+                )}
                 <li>
                   Issuance volume is not individual visa approval probability and is not QU
                   enrollment data.

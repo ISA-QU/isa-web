@@ -4,7 +4,15 @@ import { useMemo, useState } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
 import { MARKET_CATEGORIES } from "../../../lib/dashboard/constants";
-import { decimals, int, metricNumber, metricPct, monthDisplay, share } from "../../../lib/dashboard/format";
+import {
+  decimals,
+  int,
+  metricNumber,
+  metricPct,
+  monthDisplay,
+  share,
+  yearToDateLabel,
+} from "../../../lib/dashboard/format";
 import {
   buildCommandCenterFrame,
   notNa,
@@ -49,14 +57,20 @@ export default function CommandCenterTab() {
   const [category, setCategory] = useState("All");
   const [view, setView] = useState<View>(VIEWS[0]);
 
-  const consulateMissing = data.consulateError !== null || data.postsMonthly.length === 0;
+  const consulateMissing = data.postsMonthly.length === 0;
 
   const frame = useMemo(
     () =>
       consulateMissing
         ? []
-        : buildCommandCenterFrame(operational, data.annualCountry, data.postsMonthly, visa),
-    [consulateMissing, operational, data.annualCountry, data.postsMonthly, visa],
+        : buildCommandCenterFrame(
+            operational,
+            data.annualCountry,
+            data.postsMonthly,
+            visa,
+            data.meta.coverage.annual.latestComplete,
+          ),
+    [consulateMissing, operational, data.annualCountry, data.postsMonthly, visa, data.meta],
   );
 
   const regionOptions = useMemo(
@@ -93,8 +107,7 @@ export default function CommandCenterTab() {
   if (consulateMissing) {
     return (
       <ErrorCallout>
-        Recruitment Command Center could not load the historical consulate layer:{" "}
-        {data.consulateError ?? "no rows available"}
+        Recruitment Command Center has no historical consulate rows to work from.
       </ErrorCallout>
     );
   }
@@ -110,12 +123,14 @@ export default function CommandCenterTab() {
   };
 
   const latestMonthLabel = monthDisplay(latestMonthIndex);
+  const latestYear = latestMonthIndex !== null ? Math.floor(latestMonthIndex / 12) : null;
+  const throughMonth = latestMonthIndex !== null ? (latestMonthIndex % 12) + 1 : null;
   const partialStatus =
-    latestMonthIndex !== null &&
-    Math.floor(latestMonthIndex / 12) === 2025 &&
-    (latestMonthIndex % 12) + 1 === 9
-      ? "Jan-Sep only"
-      : latestMonthLabel;
+    throughMonth === null
+      ? "N/A"
+      : throughMonth === 12
+        ? "Complete"
+        : `${yearToDateLabel(throughMonth)} only`;
 
   /* ---------------------------- Action queue ---------------------------- */
   const queue = filtered.slice(0, 35);
@@ -312,7 +327,7 @@ export default function CommandCenterTab() {
         <KpiCard label="High-Concentration Markets" value={metricNumber(counts.concentration)} />
         <KpiCard accent="navy" label="Highly Seasonal Markets" value={metricNumber(counts.seasonal)} />
         <KpiCard accent="gold" label="Latest Complete Month" value={latestMonthLabel} valueClassName="!text-[18px]" />
-        <KpiCard label="2025 Partial-Year Status" value={partialStatus} valueClassName="!text-[18px]" />
+        <KpiCard label={`${latestYear ?? "Latest"} Coverage`} value={partialStatus} valueClassName="!text-[18px]" />
       </KpiRow>
 
       <section>

@@ -13,6 +13,7 @@
 
 import {
   HISTORICAL_COUNTRY_ALIASES,
+  MONTH_NAMES,
   MONTH_NAMES_FULL,
   MONTHLY_COUNTRY_ALIASES,
   REGION_MAP,
@@ -194,6 +195,33 @@ export function yoyGrowth(rows: readonly OperationalRow[]): number | null {
   return ((current - prev) / prev) * 100;
 }
 
+/**
+ * Names what `yoyGrowth` compares over the same rows — "2026 vs 2025 Jan–Feb
+ * Growth" — since the two years and the comparable months move with the data
+ * and the year filter.
+ */
+export function comparableGrowthLabel(rows: readonly OperationalRow[]): string {
+  const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => a - b);
+  if (years.length < 2) return "Comparable Growth";
+  const prevYear = years[years.length - 2];
+  const currentYear = years[years.length - 1];
+
+  const prevMonths = new Set(rows.filter((r) => r.year === prevYear).map((r) => r.month));
+  const months = [...new Set(rows.filter((r) => r.year === currentYear).map((r) => r.month))]
+    .filter((m) => prevMonths.has(m))
+    .sort((a, b) => a - b);
+  if (months.length === 0) return "Comparable Growth";
+
+  const first = months[0];
+  const last = months[months.length - 1];
+  let span: string;
+  if (months.length === 12) span = "";
+  else if (months.length === 1) span = ` ${MONTH_NAMES[first]}`;
+  else if (months.length === last - first + 1) span = ` ${MONTH_NAMES[first]}–${MONTH_NAMES[last]}`;
+  else span = " Comparable-Month";
+  return `${currentYear} vs ${prevYear}${span} Growth`;
+}
+
 /** `seasonality_cv` — coefficient of variation across calendar months. */
 export function seasonalityCv(rows: readonly OperationalRow[]): number | null {
   if (rows.length === 0) return null;
@@ -370,17 +398,23 @@ export function calculateHistoricalRangeMetrics(
   };
 }
 
-/** `build_historical_metrics_from_annual` — per-country 5yr/10yr trend metrics. */
+/**
+ * `build_historical_metrics_from_annual` — per-country 5yr/10yr trend metrics,
+ * measured from the latest *complete* fiscal year: a year-to-date fiscal year
+ * would read as a collapse against full years.
+ */
 export function buildHistoricalMetricsFromAnnual(
   rows: readonly AnnualCountryRow[],
+  latestCompleteYear: number | null,
 ): HistoricalMetricRow[] {
-  if (rows.length === 0) return [];
-  const latestYear = Math.max(...rows.map((r) => r.fiscalYear));
+  if (rows.length === 0 || latestCompleteYear === null) return [];
+  const latestYear = latestCompleteYear;
   const fiveYearBase = latestYear - 5;
   const tenYearBase = latestYear - 10;
 
   const byCountry = new Map<string, AnnualCountryRow[]>();
   for (const row of rows) {
+    if (row.fiscalYear > latestYear) continue;
     const list = byCountry.get(row.country);
     if (list) list.push(row);
     else byCountry.set(row.country, [row]);
@@ -534,23 +568,12 @@ export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMe
   const annual = groupSum(rows, (r) => r.year, (r) => r.issuances);
   const baseline2019 = annual.get(2019) ?? 0;
 
+  // Latest complete calendar year against 2019, so both sides are full years.
   let recoveryIndex: number | null = null;
   if (baseline2019 > 0) {
-    const throughSeptember = groupSum(
-      rows.filter((r) => r.month <= 9),
-      (r) => r.year,
-      (r) => r.issuances,
-    );
-    const latestYear = Math.max(...rows.map((r) => r.year));
-    const base2019 = throughSeptember.get(2019) ?? 0;
-    const current2025 = throughSeptember.get(2025);
-    if (latestYear === 2025 && base2019 > 0 && current2025 !== undefined) {
-      recoveryIndex = (current2025 / base2019) * 100;
-    } else {
-      const completeYear = latestCompleteYear(rows);
-      if (completeYear !== null && annual.has(completeYear)) {
-        recoveryIndex = (annual.get(completeYear)! / baseline2019) * 100;
-      }
+    const completeYear = latestCompleteYear(rows);
+    if (completeYear !== null && annual.has(completeYear)) {
+      recoveryIndex = (annual.get(completeYear)! / baseline2019) * 100;
     }
   }
 
@@ -773,10 +796,12 @@ export function buildCommandCenterFrame(
   annualCountry: readonly AnnualCountryRow[],
   consulate: readonly PostMonthlyRow[],
   visaSelection: VisaSelection,
+  latestCompleteFiscalYear: number | null,
 ): CommandCenterRow[] {
   const visaClasses = selectedVisaClasses(visaSelection);
-  if (annualCountry.length === 0) return [];
-  const latestHistYear = Math.max(...annualCountry.map((r) => r.fiscalYear));
+  if (annualCountry.length === 0 || latestCompleteFiscalYear === null) return [];
+  // Growth compares complete fiscal years; a year-to-date year would read as a collapse.
+  const latestHistYear = latestCompleteFiscalYear;
 
   const countries = [
     ...new Set([
@@ -810,6 +835,8 @@ export function buildCommandCenterFrame(
   const latestIndex = consulate.length > 0 ? Math.max(...consulate.map((r) => r.monthIndex)) : null;
   const latest12Start = latestIndex !== null ? latestIndex - 11 : null;
   const prior12Start = latestIndex !== null ? latestIndex - 23 : null;
+  // Recovery compares the latest complete calendar year with 2019, both full years.
+  const recoveryYear = latestCompleteYear(consulate);
 
   const rows = countries.map((country) => {
     const annualRows = annualByCountry.get(historicalCountryName(country)) ?? [];
@@ -831,15 +858,17 @@ export function buildCommandCenterFrame(
         else if (row.monthIndex >= prior12Start) prior12Total += row.issuances;
       }
 
-      const comparable2025 = sumBy(
-        consulateRows.filter((r) => r.year === 2025 && r.month <= 9),
-        (r) => r.issuances,
-      );
-      const comparable2019 = sumBy(
-        consulateRows.filter((r) => r.year === 2019 && r.month <= 9),
-        (r) => r.issuances,
-      );
-      recoveryIndex = comparable2019 > 0 ? (comparable2025 / comparable2019) * 100 : null;
+      if (recoveryYear !== null) {
+        const current = sumBy(
+          consulateRows.filter((r) => r.year === recoveryYear),
+          (r) => r.issuances,
+        );
+        const baseline = sumBy(
+          consulateRows.filter((r) => r.year === 2019),
+          (r) => r.issuances,
+        );
+        recoveryIndex = baseline > 0 ? (current / baseline) * 100 : null;
+      }
 
       const monthly = groupSum(consulateRows, (r) => r.monthIndex, (r) => r.issuances);
       const monthlyValues = [...monthly.values()];

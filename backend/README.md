@@ -122,8 +122,15 @@ On the HTTP API, configure CORS:
 ## Putting it together
 
 1. Fill in `backend/awsConfig.js` with your region, table names, bucket, API URL, allowed origins.
-2. For each Lambda, paste `lambdas/<name>/index.mjs` into the console and set its env vars.
+2. For each Lambda, paste `lambdas/<name>/lambda_function.py` into the console and Deploy.
 3. Attach the IAM policies above to each execution role.
 4. Wire the routes in API Gateway HTTP API.
 5. Configure CORS.
 6. Copy the API base URL into `app/lib/awsConfig.ts` on the frontend.
+
+## Recruitment dashboard
+
+Two more Lambdas feed the dashboard: `rebuild-dashboard` turns the raw workbooks in its S3
+bucket into one snapshot, and `get-dashboard` serves that snapshot at `GET /dashboard` on the
+same HTTP API. Setup, IAM policies and the monthly update routine are in
+[docs/dashboard.md](../docs/dashboard.md#aws-setup).

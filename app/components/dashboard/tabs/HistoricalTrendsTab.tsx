@@ -39,6 +39,9 @@ const rankingColumns: Column<HistoricalMetricRow>[] = [
 
 export default function HistoricalTrendsTab() {
   const { data, historicalMetrics, focusCountry } = useDashboard();
+  // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
+  const firstFy = data.meta.coverage.annual.first ?? 1997;
+  const latestFy = data.meta.coverage.annual.latestComplete ?? firstFy;
 
   const histCountries = useMemo(
     () => [...new Set(data.annualCountry.map((r) => r.country))].sort(),
@@ -52,8 +55,8 @@ export default function HistoricalTrendsTab() {
         ? "India"
         : (histCountries[0] ?? ""),
   );
-  const [startYear, setStartYear] = useState(1997);
-  const [endYear, setEndYear] = useState(2024);
+  const [startYear, setStartYear] = useState(firstFy);
+  const [endYear, setEndYear] = useState(latestFy);
 
   const selectedRange = useMemo(
     () =>
@@ -198,15 +201,15 @@ export default function HistoricalTrendsTab() {
       <Panel accent="navy">
         <p className="leading-relaxed text-[#CBD5E1]">
           Historical Trends uses annual country/nationality-level State Department data from
-          FY1997-FY2024. It does not include consulate/post-level detail. Recent operational post
-          intelligence remains in Consulate Intelligence using 2023-2025 monthly data; longer monthly
-          post history appears separately in Historical Consulate Intelligence.
+          FY{firstFy}-FY{latestFy}. It does not include consulate/post-level detail. Recent
+          operational post intelligence remains in Consulate Intelligence using the latest monthly
+          data; longer monthly post history appears separately in Historical Consulate Intelligence.
         </p>
       </Panel>
 
       <Caption>
         Annual country-level F1/J1 history loaded separately from the monthly by-post operational
-        dataset. Reference metrics rows loaded: {int(data.countryMetrics.length)}.
+        dataset. Only complete fiscal years are included.
       </Caption>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -220,8 +223,8 @@ export default function HistoricalTrendsTab() {
           <div className="flex items-center gap-2">
             <input
               type="range"
-              min={1997}
-              max={2024}
+              min={firstFy}
+              max={latestFy}
               value={startYear}
               onChange={(e) => setStartYear(Math.min(Number(e.target.value), endYear))}
               className="w-full accent-[#FFB81C]"
@@ -229,8 +232,8 @@ export default function HistoricalTrendsTab() {
             />
             <input
               type="range"
-              min={1997}
-              max={2024}
+              min={firstFy}
+              max={latestFy}
               value={endYear}
               onChange={(e) => setEndYear(Math.max(Number(e.target.value), startYear))}
               className="w-full accent-[#FFB81C]"
@@ -272,7 +275,7 @@ export default function HistoricalTrendsTab() {
       <Divider />
 
       <ScopeNote label="Scope">
-        Rankings are calculated using the complete FY1997–FY2024 historical dataset.
+        Rankings are calculated using the complete FY{firstFy}–FY{latestFy} historical dataset.
       </ScopeNote>
 
       <div className="grid gap-4 xl:grid-cols-3">

@@ -7,9 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "dashboard:data": "node scripts/build-dashboard-data.mjs && mkdir -p public/dashboard-data && cp dashboard-data/*.json public/dashboard-data/",
+    "dashboard:data": "python3 backend/lambdas/rebuild-dashboard/lambda_function.py --local dashboard --out public/dashboard-data",
     "dashboard:verify": "node scripts/verify-dashboard-data.mjs",
-    "postbuild": "touch out/.nojekyll",
+    "postbuild": "touch out/.nojekyll && rm -rf out/dashboard-data",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d out --dotfiles"
   },

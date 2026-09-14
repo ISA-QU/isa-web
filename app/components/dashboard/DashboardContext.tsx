@@ -6,6 +6,7 @@ import { splitVisa } from "../../lib/dashboard/data";
 import {
   buildCountrySummary,
   buildHistoricalMetricsFromAnnual,
+  comparableGrowthLabel,
   groupSum,
   idxMaxNumeric,
   idxMaxString,
@@ -58,6 +59,11 @@ interface DashboardState {
 
   summary: CountrySummaryRow[];
   historicalMetrics: HistoricalMetricRow[];
+
+  /** What `yoyGrowth` compares over `f1Filtered` (header KPIs, focus country). */
+  growthLabel: string;
+  /** The same for `summary`, which is built from the unfiltered F1 rows. */
+  summaryGrowthLabel: string;
 
   /** Focus-country rollup (the `c_*` variables in app.py). */
   focus: {
@@ -150,9 +156,13 @@ export function DashboardProvider({
   );
 
   const historicalMetrics = useMemo(
-    () => buildHistoricalMetricsFromAnnual(data.annualCountry),
-    [data.annualCountry],
+    () =>
+      buildHistoricalMetricsFromAnnual(data.annualCountry, data.meta.coverage.annual.latestComplete),
+    [data.annualCountry, data.meta],
   );
+
+  const growthLabel = useMemo(() => comparableGrowthLabel(f1Filtered), [f1Filtered]);
+  const summaryGrowthLabel = useMemo(() => comparableGrowthLabel(f1), [f1]);
 
   const focus = useMemo(() => {
     const cf1 = f1Filtered.filter((r) => r.country === focusCountry);
@@ -200,6 +210,8 @@ export function DashboardProvider({
     working,
     summary,
     historicalMetrics,
+    growthLabel,
+    summaryGrowthLabel,
     focus,
   };
 

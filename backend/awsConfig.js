@@ -1,6 +1,6 @@
 module.exports = {
   region: "us-east-1",
-  apiBaseUrl: "https://0xyagl1p7e.execute-api.us-east-1.amazonaws.com/",
+  apiBaseUrl: "https://8scq4w84j2.execute-api.us-east-1.amazonaws.com/",
   s3: {
     bucket: "isa-transcripts",
     prefix: "transcripts",

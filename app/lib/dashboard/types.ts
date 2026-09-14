@@ -3,7 +3,7 @@ export type Visa = "F1" | "J1";
 /** "F1" | "J1" | "Both" — the visa selector used across every tab. */
 export type VisaSelection = Visa | "Both";
 
-/** Operational layer: monthly by post, Jan 2023 - Sep 2025. */
+/** Operational layer: the most recent calendar years of the post data (see `coverage.operational`). */
 export interface OperationalRow {
   post: string;
   country: string;
@@ -13,7 +13,7 @@ export interface OperationalRow {
   issuances: number;
 }
 
-/** Annual country/nationality history, FY1997 - FY2024. */
+/** Annual country/nationality history by fiscal year (October-September). */
 export interface AnnualCountryRow {
   fiscalYear: number;
   country: string;
@@ -21,47 +21,80 @@ export interface AnnualCountryRow {
   issuances: number;
 }
 
-/** Monthly consulate history, Mar 2017 - Sep 2025. */
+/** Monthly issuance by consulate/post. */
 export interface PostMonthlyRow {
   year: number;
   month: number;
   fiscalYear: number;
   post: string;
-  /** Post name exactly as published, before canonicalisation. */
-  postRaw: string;
   country: string;
   visa: Visa;
   issuances: number;
-  /** "PDF" (Mar 2017-Sep 2022) or "Excel" (Oct 2022-Sep 2025) publication era. */
-  sourceFormat: string;
-  sourceFile: string;
   /** year * 12 + (month - 1). Makes month arithmetic and range filters trivial. */
   monthIndex: number;
-}
-
-/** Precomputed per-country metrics shipped alongside the annual history. */
-export interface CountryMetricRow {
-  country: string;
-  firstYear: number | null;
-  latestYear: number | null;
-  latestF1: number | null;
-  latestJ1: number | null;
-  f1Growth5yrPct: number | null;
-  f1Growth10yrPct: number | null;
-  f1Cagr10yrPct: number | null;
-  f1CagrFullPct: number | null;
-  peakHistoricalF1: number | null;
-  peakHistoricalF1Year: number | null;
-  peakHistoricalJ1: number | null;
-  peakHistoricalJ1Year: number | null;
-  volatilityScore: number | null;
-  trendDirection: string;
-  [key: string]: string | number | null;
 }
 
 export interface Coord {
   lat: number;
   lon: number;
+}
+
+/** How one fiscal year of annual history was assembled by the rebuild-dashboard Lambda. */
+export interface FiscalYearInfo {
+  fiscalYear: number;
+  monthsIncluded: number;
+  complete: boolean;
+  /** "annual" = official annual workbook; "monthly" = summed monthly nationality reports. */
+  source: "annual" | "monthly" | "historical-file";
+}
+
+/** An inclusive span of `monthIndex` values. */
+export interface MonthRange {
+  start: number;
+  end: number;
+}
+
+/** Everything in the snapshot besides the row tables: coverage, provenance, checks. */
+export interface SnapshotMeta {
+  generatedAt: string;
+  coverage: {
+    postsMonthly: MonthRange;
+    operational: MonthRange;
+    nationalityMonthly: MonthRange | null;
+    annual: {
+      first: number | null;
+      latestComplete: number | null;
+      latest: number | null;
+      latestMonths: number | null;
+    };
+  };
+  fiscalYears: FiscalYearInfo[];
+  validation: {
+    postsMonthly: {
+      rows: number;
+      months: number;
+      missingMonths: number[];
+      posts: number;
+      countries: number;
+      f1: number;
+      j1: number;
+      unmappedPosts: Record<string, number>;
+    };
+    annual: {
+      rows?: number;
+      countries?: number;
+      excludedSpecialCategories?: Record<string, number>;
+    };
+  };
+  sources: Array<{
+    file: string;
+    kind: "post" | "nationality" | "historical";
+    rows: number;
+    periods: number;
+    replacedPeriods: number;
+    modified: string;
+  }>;
+  warnings: string[];
 }
 
 /** Per-country rollup driving the Executive tab and the globe. */
@@ -144,8 +177,6 @@ export interface DashboardData {
   operational: OperationalRow[];
   annualCountry: AnnualCountryRow[];
   postsMonthly: PostMonthlyRow[];
-  countryMetrics: CountryMetricRow[];
   countryCoords: Record<string, Coord>;
-  /** Non-fatal load failure for the consulate layer, mirroring app.py's guard. */
-  consulateError: string | null;
+  meta: SnapshotMeta;
 }

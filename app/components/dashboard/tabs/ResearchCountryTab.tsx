@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { GROWTH_LABEL, MONTH_NAMES } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES } from "../../../lib/dashboard/constants";
 import { int } from "../../../lib/dashboard/format";
 import { groupSum, sumBy, yoyGrowth } from "../../../lib/dashboard/metrics";
 import Chart from "../Chart";
@@ -30,7 +30,7 @@ const HEAT_SCALE: Array<[number, string]> = [
  * and that pairing is preserved here.
  */
 export default function ResearchCountryTab() {
-  const { f1, f1Filtered, focus, focusCountry, topN } = useDashboard();
+  const { f1, f1Filtered, focus, focusCountry, topN, summaryGrowthLabel } = useDashboard();
 
   const topPosts = useMemo(() => {
     const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);
@@ -102,11 +102,11 @@ export default function ResearchCountryTab() {
     ];
     const layout: ChartLayout = {
       height: 680,
-      title: { text: `Fastest Growing Consulates (${GROWTH_LABEL} %)` },
+      title: { text: `Fastest Growing Consulates (${summaryGrowthLabel} %)` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [f1]);
+  }, [f1, summaryGrowthLabel]);
 
   /* ---- Monthly heatmap for the top 20 posts ---- */
   const heatmap = useMemo(() => {

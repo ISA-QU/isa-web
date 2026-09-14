@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { GROWTH_LABEL, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { int, metricPct } from "../../../lib/dashboard/format";
 import {
   groupSum,
@@ -19,7 +19,7 @@ import { InfoCallout, SubHeading } from "../shared";
 import { KpiCard, KpiRow, Panel, Select, SectionTitle, Divider } from "../ui";
 
 export default function AiTab() {
-  const { f1, j1, summary, countries, focusCountry } = useDashboard();
+  const { f1, j1, summary, countries, focusCountry, summaryGrowthLabel } = useDashboard();
   const [country, setCountry] = useState(focusCountry);
   const [attempted, setAttempted] = useState(false);
 
@@ -63,7 +63,7 @@ export default function AiTab() {
       <KpiRow>
         <KpiCard label="F1 Total" value={int(metrics.total)} />
         <KpiCard label="J1 Total" value={int(metrics.j1Total)} />
-        <KpiCard label={GROWTH_LABEL} value={metricPct(metrics.growth)} />
+        <KpiCard label={summaryGrowthLabel} value={metricPct(metrics.growth)} />
         <KpiCard label="Opp. Score" value={`${metrics.opportunity}/100`} />
       </KpiRow>
 
@@ -120,7 +120,7 @@ export default function AiTab() {
                     <dd className="font-bold text-white">{int(row.f1Total)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-[#94A3B8]">{GROWTH_LABEL}</dt>
+                    <dt className="text-[#94A3B8]">{summaryGrowthLabel}</dt>
                     <dd className={`font-bold ${growthTone}`}>{metricPct(row.growthPct)}</dd>
                   </div>
                   <div className="flex justify-between">

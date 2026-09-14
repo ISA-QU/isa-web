@@ -4,8 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { AccountMenu } from "../AccountMenu";
 import { asset } from "../../lib/basePath";
 import { loadDashboardData } from "../../lib/dashboard/data";
+import { monthLongDisplay } from "../../lib/dashboard/format";
 import type { DashboardData } from "../../lib/dashboard/types";
 import { DashboardProvider, useDashboard } from "./DashboardContext";
 import Sidebar from "./Sidebar";
@@ -79,6 +81,7 @@ function Header() {
           >
             Create transcript
           </Link>
+          <AccountMenu />
         </nav>
       </div>
       <div className="h-1 bg-[#FFB81C]" />
@@ -108,6 +111,7 @@ function Hero() {
 }
 
 function DashboardBody() {
+  const { data } = useDashboard();
   const [active, setActive] = useState<string>(TABS[0].id);
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
 
@@ -158,7 +162,8 @@ function DashboardBody() {
             <footer className="mt-10 border-t border-slate-400/15 pt-6 text-center text-xs text-slate-500">
               <MethodologyNote>
                 Visa issuance volume reflects historical student mobility, not individual visa
-                approval probability. 2025 data reflects available monthly records.
+                approval probability. Monthly records run through{" "}
+                {monthLongDisplay(data.meta.coverage.postsMonthly.end)}.
               </MethodologyNote>
               <div>
                 QU Bobcat Global Recruitment Intelligence &nbsp;·&nbsp; Data: U.S. Department of
@@ -194,11 +199,13 @@ function ErrorState({ message }: { message: string }) {
           <h2 className="text-lg font-bold text-rose-100">Dashboard data could not be loaded</h2>
           <p className="mt-2 text-sm text-rose-200">{message}</p>
           <p className="mt-4 text-xs text-rose-300/80">
-            Check that <code className="font-mono">NEXT_PUBLIC_DASHBOARD_DATA_URL</code> points at
-            the bucket holding the generated JSON, that the objects are readable, and that the
-            bucket allows cross-origin GETs from this site. Locally, run{" "}
-            <code className="font-mono">npm run dashboard:data</code> to populate{" "}
-            <code className="font-mono">public/dashboard-data/</code>.
+            Check that the <code className="font-mono">GET /dashboard</code> route is deployed,
+            that its CORS settings allow this site, and that the rebuild-dashboard Lambda has
+            written a snapshot. Locally, run{" "}
+            <code className="font-mono">npm run dashboard:data</code> and set{" "}
+            <code className="font-mono">NEXT_PUBLIC_DASHBOARD_DATA_URL</code> in{" "}
+            <code className="font-mono">.env.development.local</code> to{" "}
+            <code className="font-mono">/isa-web/dashboard-data/snapshot.json</code>.
           </p>
         </div>
       </div>

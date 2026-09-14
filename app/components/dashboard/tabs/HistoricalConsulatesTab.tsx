@@ -13,7 +13,9 @@ import {
   metricPct,
   monthCountBetween,
   monthDisplay,
+  monthLongDisplay,
   share,
+  yearToDateLabel,
 } from "../../../lib/dashboard/format";
 import {
   concentrationLabel,
@@ -29,13 +31,7 @@ import { sortBy } from "../../../lib/dashboard/sort";
 import type { PostMonthlyRow, PostPeriodMetrics, VisaSelection } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import {
-  Caption,
-  DownloadCsvButton,
-  ErrorCallout,
-  InfoCallout,
-  SubHeading,
-} from "../shared";
+import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import {
   DataTable,
   Expander,
@@ -50,42 +46,7 @@ import {
   Select,
 } from "../ui";
 
-/** monthIndex helpers for the fixed coverage windows. */
 const monthIndexOf = (year: number, month: number) => year * 12 + (month - 1);
-const FULL_START = monthIndexOf(2017, 3);
-const FULL_END = monthIndexOf(2025, 9);
-
-interface Coverage {
-  key: string;
-  label: string;
-  start: number;
-  end: number;
-  format: string | null;
-}
-
-const COVERAGE_OPTIONS: Coverage[] = [
-  {
-    key: "Complete History - Mar 2017 to Sep 2025",
-    label: "Complete History",
-    start: FULL_START,
-    end: FULL_END,
-    format: null,
-  },
-  {
-    key: "PDF Era Only - Mar 2017 to Sep 2022",
-    label: "PDF Era Only",
-    start: monthIndexOf(2017, 3),
-    end: monthIndexOf(2022, 9),
-    format: "PDF",
-  },
-  {
-    key: "Excel Era Only - Oct 2022 to Sep 2025",
-    label: "Excel Era Only",
-    start: monthIndexOf(2022, 10),
-    end: monthIndexOf(2025, 9),
-    format: "Excel",
-  },
-];
 
 const QUICK_RANGES = [
   "Complete History",
@@ -129,7 +90,6 @@ export default function HistoricalConsulatesTab() {
   const [postSelection, setPostSelection] = useState<string | null>(null);
   const [visa, setVisa] = useState<VisaSelection>("Both");
   const [quickRange, setQuickRange] = useState<QuickRange>("Complete History");
-  const [coverageKey, setCoverageKey] = useState(COVERAGE_OPTIONS[0].key);
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
   const [comparePosts, setComparePosts] = useState<string[] | null>(null);
@@ -139,7 +99,11 @@ export default function HistoricalConsulatesTab() {
   const [recoveryVisibleOnly, setRecoveryVisibleOnly] = useState(false);
 
   const visaClasses = selectedVisaClasses(visa);
-  const coverage = COVERAGE_OPTIONS.find((c) => c.key === coverageKey) ?? COVERAGE_OPTIONS[0];
+  // The whole post history, as the snapshot reports it.
+  const { start: coverageStart, end: coverageEnd } = data.meta.coverage.postsMonthly;
+  const coverageEndYear = Math.floor(coverageEnd / 12);
+  const coverageThroughMonth = (coverageEnd % 12) + 1;
+  const partialYear = coverageThroughMonth < 12 ? coverageEndYear : null;
 
   const countryBase = useMemo(
     () => consulate.filter((r) => r.country === country),
@@ -165,9 +129,9 @@ export default function HistoricalConsulatesTab() {
   const coverageMonthOptions = useMemo(
     () =>
       [...new Set(consulate.map((r) => r.monthIndex))]
-        .filter((index) => index >= coverage.start && index <= coverage.end)
+        .filter((index) => index >= coverageStart && index <= coverageEnd)
         .sort((a, b) => a - b),
-    [consulate, coverage],
+    [consulate, coverageStart, coverageEnd],
   );
 
   /* ---- Active range: quick range clamped to the coverage window ---- */
@@ -175,20 +139,20 @@ export default function HistoricalConsulatesTab() {
     let requestedStart: number;
     let requestedEnd: number;
     if (quickRange === "Last 12 Months") {
-      requestedStart = coverage.end - 11;
-      requestedEnd = coverage.end;
+      requestedStart = coverageEnd - 11;
+      requestedEnd = coverageEnd;
     } else if (quickRange === "Last 24 Months") {
-      requestedStart = coverage.end - 23;
-      requestedEnd = coverage.end;
+      requestedStart = coverageEnd - 23;
+      requestedEnd = coverageEnd;
     } else if (quickRange === "Last 5 Years") {
-      requestedStart = coverage.end - 59;
-      requestedEnd = coverage.end;
+      requestedStart = coverageEnd - 59;
+      requestedEnd = coverageEnd;
     } else if (quickRange === "Pre-Pandemic Through Recovery") {
       requestedStart = monthIndexOf(2019, 1);
       requestedEnd = monthIndexOf(2022, 12);
     } else {
-      requestedStart = coverage.start;
-      requestedEnd = coverage.end;
+      requestedStart = coverageStart;
+      requestedEnd = coverageEnd;
     }
 
     if (quickRange === "Custom Range" && coverageMonthOptions.length > 0) {
@@ -197,14 +161,8 @@ export default function HistoricalConsulatesTab() {
         customEnd ?? coverageMonthOptions[coverageMonthOptions.length - 1],
       ];
     }
-    return [
-      Math.max(requestedStart, coverage.start),
-      Math.min(requestedEnd, coverage.end),
-    ];
-  }, [quickRange, coverage, coverageMonthOptions, customStart, customEnd]);
-
-  const matchesFormat = (row: PostMonthlyRow) =>
-    coverage.format === null || row.sourceFormat === coverage.format;
+    return [Math.max(requestedStart, coverageStart), Math.min(requestedEnd, coverageEnd)];
+  }, [quickRange, coverageStart, coverageEnd, coverageMonthOptions, customStart, customEnd]);
 
   const periodCountry = useMemo(
     () =>
@@ -213,11 +171,10 @@ export default function HistoricalConsulatesTab() {
           r.country === country &&
           r.monthIndex >= startIndex &&
           r.monthIndex <= endIndex &&
-          visaClasses.includes(r.visa) &&
-          matchesFormat(r),
+          visaClasses.includes(r.visa),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [consulate, country, startIndex, endIndex, visa, coverage],
+    [consulate, country, startIndex, endIndex, visa],
   );
 
   const selected = useMemo(
@@ -231,13 +188,10 @@ export default function HistoricalConsulatesTab() {
         (r) =>
           r.country === country &&
           r.post === post &&
-          visaClasses.includes(r.visa) &&
-          r.monthIndex >= coverage.start &&
-          r.monthIndex <= coverage.end &&
-          matchesFormat(r),
+          visaClasses.includes(r.visa),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [consulate, country, post, visa, coverage],
+    [consulate, country, post, visa],
   );
 
   const defaultComparePosts = useMemo(() => {
@@ -247,13 +201,6 @@ export default function HistoricalConsulatesTab() {
 
   const selectedComparePosts = comparePosts ?? defaultComparePosts;
 
-  if (data.consulateError) {
-    return (
-      <ErrorCallout>
-        Historical Consulate Intelligence could not load: {data.consulateError}
-      </ErrorCallout>
-    );
-  }
   if (consulate.length === 0) {
     return <InfoCallout>Historical consulate records are not available.</InfoCallout>;
   }
@@ -268,13 +215,15 @@ export default function HistoricalConsulatesTab() {
 
       <Panel accent="navy">
         <h4 className="mb-2 text-base font-bold text-white">
-          Monthly F1 and J1 issuance history by U.S. embassy or consulate, March 2017-September 2025.
+          Monthly F1 and J1 issuance history by U.S. embassy or consulate,{" "}
+          {monthLongDisplay(coverageStart)}-{monthLongDisplay(coverageEnd)}.
         </h4>
         <p className="leading-relaxed text-[#DDEBFA]">
-          This page uses the validated monthly by-post historical consulate layer only. 2025 includes
-          January-September only and must not be interpreted as a complete annual total. Visa
-          issuance volume is a directional student-mobility and consular-workload signal, not an
-          individual approval probability.
+          This page uses the validated monthly by-post historical consulate layer only.{" "}
+          {partialYear !== null &&
+            `${partialYear} includes ${yearToDateLabel(coverageThroughMonth)} only and must not be interpreted as a complete annual total. `}
+          Visa issuance volume is a directional student-mobility and consular-workload signal, not
+          an individual approval probability.
         </p>
       </Panel>
 
@@ -338,32 +287,11 @@ export default function HistoricalConsulatesTab() {
               {compactMonthRange(startIndex, endIndex)}
             </div>
             <div className="mt-1 text-xs text-[#BFD2E6]">
-              {coverage.label} · {monthCountBetween(startIndex, endIndex)} selected months
+              {monthCountBetween(startIndex, endIndex)} selected months
             </div>
           </Panel>
         </div>
       </div>
-
-      <Expander title="Advanced Data Filters">
-        <RadioGroup
-          label="Data Coverage"
-          value={coverageKey}
-          options={COVERAGE_OPTIONS.map((c) => c.key)}
-          onChange={setCoverageKey}
-        />
-        <Caption>
-          PDF and Excel describe the publication format used by the State Department. Selecting one
-          format limits the analysis to that source era and therefore changes totals and coverage.
-        </Caption>
-      </Expander>
-
-      {coverage.label !== "Complete History" && (
-        <div className="rounded-md border border-[rgba(255,184,28,0.45)] bg-[rgba(255,184,28,0.1)] p-4 text-sm text-[#FFDF87]">
-          {coverage.label} is active: totals and charts reflect only{" "}
-          {compactMonthRange(coverage.start, coverage.end)}. PDF and Excel are source-publication
-          eras, not different student populations.
-        </div>
-      )}
 
       <MultiSelect
         label="Compare Posts"
@@ -426,16 +354,14 @@ export default function HistoricalConsulatesTab() {
     includesJ1 && j1Series.length > 0 ? j1Series.reduce((a, b) => a + b, 0) / j1Series.length : null;
   const activeMonths = new Set(selected.map((r) => r.monthIndex)).size;
 
-  const coverageCompleteness =
-    coverage.label === "Complete History"
-      ? { main: `${activeMonths} months`, detail: "100% validated" }
-      : {
-          main: compactMonthRange(
-            Math.min(...selected.map((r) => r.monthIndex)),
-            Math.max(...selected.map((r) => r.monthIndex)),
-          ),
-          detail: `${activeMonths} months · ${coverage.label.toLowerCase()}`,
-        };
+  const sourceValidation = data.meta.validation.postsMonthly;
+  const coverageCompleteness = {
+    main: `${activeMonths} months`,
+    detail:
+      sourceValidation.missingMonths.length === 0
+        ? "no missing months in the source"
+        : `${sourceValidation.missingMonths.length} missing months in the source`,
+  };
 
   const countryTotal = sumBy(periodCountry, (r) => r.issuances);
   const selectedTotal = sumBy(selected, (r) => r.issuances);
@@ -473,11 +399,6 @@ export default function HistoricalConsulatesTab() {
       `Latest comparable recovery index is ${selectedMetrics.recoveryIndex.toFixed(0)} versus the 2019 baseline of 100.`,
     );
   }
-  if (coverage.label !== "Complete History") {
-    insights.push(
-      `Source coverage limitation: ${coverage.label} limits this analysis to ${compactMonthRange(coverage.start, coverage.end)}.`,
-    );
-  }
   if (insights.length === 0) {
     insights.push(
       "Comparable history is limited for the selected filters; use N/A metrics cautiously.",
@@ -492,7 +413,6 @@ export default function HistoricalConsulatesTab() {
         index,
         value: monthlyWide.get(index)![v],
       }));
-      const eraByIndex = new Map(selected.map((r) => [r.monthIndex, r.sourceFormat]));
       return {
         type: "scatter",
         mode: "lines+markers",
@@ -501,23 +421,17 @@ export default function HistoricalConsulatesTab() {
         y: points.map((p) => p.value),
         line: { color: VISA_COLORS[v], width: 3 },
         marker: { size: 6, color: VISA_COLORS[v] },
-        customdata: points.map((p) => [
-          monthDisplay(p.index),
-          post,
-          v,
-          p.value,
-          eraByIndex.get(p.index) ?? "",
-        ]),
+        customdata: points.map((p) => [monthDisplay(p.index), post, v, p.value]),
         hovertemplate:
           "<b>%{customdata[0]}</b><br>Post: %{customdata[1]}<br>Visa class: %{customdata[2]}<br>" +
-          "Issuances: %{customdata[3]:,.0f}<br>Source era: %{customdata[4]} Reports<extra></extra>",
+          "Issuances: %{customdata[3]:,.0f}<extra></extra>",
       };
     });
 
   const monthlyLayout: ChartLayout = {
     height: 500,
     title: {
-      text: `Monthly F1/J1 Trend - ${post}, ${country}<br><sup>${coverage.label}: ${compactMonthRange(startIndex, endIndex)}</sup>`,
+      text: `Monthly F1/J1 Trend - ${post}, ${country}<br><sup>${compactMonthRange(startIndex, endIndex)}</sup>`,
     },
     hovermode: "x unified",
     xaxis: { title: { text: "Month" } },
@@ -526,11 +440,21 @@ export default function HistoricalConsulatesTab() {
   };
 
   /* ---- Annual aggregation ---- */
-  const has2025 = selected.some((r) => r.year === 2025);
+  // A partial latest year only compares fairly against the same months of earlier years.
+  const comparableMode = `Comparable ${yearToDateLabel(coverageThroughMonth)} totals`;
+  const annualModes =
+    partialYear !== null ? ["Calendar-year totals", comparableMode] : ["Calendar-year totals"];
+  const hasPartialYear = partialYear !== null && selected.some((r) => r.year === partialYear);
   const effectiveAnnualMode =
-    annualMode ?? (has2025 ? "Comparable Jan-Sep totals" : "Calendar-year totals");
-  const comparableJanSep = effectiveAnnualMode === "Comparable Jan-Sep totals";
-  const annualSource = comparableJanSep ? selected.filter((r) => r.month <= 9) : selected;
+    annualMode !== null && annualModes.includes(annualMode)
+      ? annualMode
+      : hasPartialYear
+        ? comparableMode
+        : "Calendar-year totals";
+  const comparableYtd = effectiveAnnualMode === comparableMode;
+  const annualSource = comparableYtd
+    ? selected.filter((r) => r.month <= coverageThroughMonth)
+    : selected;
 
   const annualTotals = groupSum(
     annualSource,
@@ -539,10 +463,10 @@ export default function HistoricalConsulatesTab() {
   );
   const annualYears = [...new Set(annualSource.map((r) => r.year))].sort((a, b) => a - b);
   const yearLabel = (year: number) =>
-    comparableJanSep
-      ? `${year} Jan-Sep`
-      : year === 2025
-        ? "2025 YTD through September"
+    comparableYtd
+      ? `${year} ${yearToDateLabel(coverageThroughMonth)}`
+      : year === partialYear
+        ? `${year} YTD through ${MONTH_NAMES_FULL[coverageThroughMonth]}`
         : String(year);
 
   const annualTraces: Trace[] = (["F1", "J1"] as const)
@@ -686,36 +610,33 @@ export default function HistoricalConsulatesTab() {
   for (const v of visaClasses) {
     const visaRows = recoverySource.filter((r) => r.visa === v);
     const baseline2019 = sumBy(visaRows.filter((r) => r.year === 2019), (r) => r.issuances);
-    const baselineJanSep = sumBy(
-      visaRows.filter((r) => r.year === 2019 && r.month <= 9),
+    const baselineYtd = sumBy(
+      visaRows.filter((r) => r.year === 2019 && r.month <= coverageThroughMonth),
       (r) => r.issuances,
     );
     if (baseline2019 <= 0) {
-      recoveryReasons.push(
-        `${v}: ${
-          coverage.label === "Excel Era Only"
-            ? "selected source-era filter excludes required 2019 history"
-            : "selected post had no positive 2019 baseline"
-        }`,
-      );
+      recoveryReasons.push(`${v}: selected post had no positive 2019 baseline`);
       continue;
     }
-    for (const year of [2019, 2020, 2021, 2022, 2023, 2024]) {
+    const lastFullYear = partialYear !== null ? coverageEndYear - 1 : coverageEndYear;
+    for (let year = 2019; year <= lastFullYear; year += 1) {
       const value = sumBy(visaRows.filter((r) => r.year === year), (r) => r.issuances);
       if (value > 0) {
         recoveryRows.push({ year: String(year), visa: v, index: (value / baseline2019) * 100 });
       }
     }
-    const value2025 = sumBy(
-      visaRows.filter((r) => r.year === 2025 && r.month <= 9),
-      (r) => r.issuances,
-    );
-    if (value2025 > 0 && baselineJanSep > 0) {
-      recoveryRows.push({
-        year: "2025 Jan-Sep",
-        visa: v,
-        index: (value2025 / baselineJanSep) * 100,
-      });
+    if (partialYear !== null) {
+      const valueYtd = sumBy(
+        visaRows.filter((r) => r.year === partialYear && r.month <= coverageThroughMonth),
+        (r) => r.issuances,
+      );
+      if (valueYtd > 0 && baselineYtd > 0) {
+        recoveryRows.push({
+          year: `${partialYear} ${yearToDateLabel(coverageThroughMonth)}`,
+          visa: v,
+          index: (valueYtd / baselineYtd) * 100,
+        });
+      }
     }
   }
 
@@ -883,11 +804,15 @@ export default function HistoricalConsulatesTab() {
 
       <section>
         <SubHeading>Annual Aggregation</SubHeading>
-        <MethodologyNote>2025 contains January-September only.</MethodologyNote>
+        {partialYear !== null && (
+          <MethodologyNote>
+            {partialYear} contains {yearToDateLabel(coverageThroughMonth)} only.
+          </MethodologyNote>
+        )}
         <RadioGroup
           label="Annual View"
           value={effectiveAnnualMode}
-          options={["Calendar-year totals", "Comparable Jan-Sep totals"]}
+          options={annualModes}
           onChange={setAnnualMode}
         />
         <Chart data={annualTraces} layout={annualLayout} height={440} />
@@ -1055,25 +980,19 @@ export default function HistoricalConsulatesTab() {
           columns={[
             { key: "month", header: "Month", render: (r) => `${r.year}-${String(r.month).padStart(2, "0")}` },
             { key: "country", header: "Country", render: (r) => r.country },
-            { key: "postRaw", header: "Source Post Name", render: (r) => r.postRaw },
-            { key: "post", header: "Canonical Post", render: (r) => r.post },
+            { key: "post", header: "Post", render: (r) => r.post },
             { key: "visa", header: "Visa Class", render: (r) => r.visa },
             { key: "issuances", header: "Issuances", numeric: true, render: (r) => int(r.issuances) },
-            { key: "era", header: "Source Era", render: (r) => r.sourceFormat },
-            { key: "file", header: "Source File", render: (r) => r.sourceFile },
           ]}
         />
         <div className="flex flex-wrap gap-2">
           <DownloadCsvButton
             label="Download Filtered Historical Consulate CSV"
             filename={`qu_historical_consulate_${countrySlug}_${postSlug}_${monthStamp(startIndex)}_${monthStamp(endIndex)}.csv`}
-            headers={[
-              "Month", "Country", "Source Post Name", "Canonical Post", "Visa Class",
-              "Issuances", "Source Era", "Source File",
-            ]}
+            headers={["Month", "Country", "Post", "Visa Class", "Issuances"]}
             rows={filteredRows.map((r) => [
               `${r.year}-${String(r.month).padStart(2, "0")}`,
-              r.country, r.postRaw, r.post, r.visa, String(r.issuances), r.sourceFormat, r.sourceFile,
+              r.country, r.post, r.visa, String(r.issuances),
             ])}
           />
           <DownloadCsvButton
@@ -1105,27 +1024,36 @@ export default function HistoricalConsulatesTab() {
       <Expander title="Data Source and Validation">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>Source: U.S. Department of State Monthly NIV Issuance Reports</li>
-          <li>Coverage: March 2017-September 2025</li>
-          <li>Validated rows: 40,175</li>
-          <li>F1 total: 3,037,511</li>
-          <li>J1 total: 2,417,151</li>
-          <li>Months validated: 103/103</li>
-          <li>PDF era: March 2017-September 2022</li>
-          <li>Excel era: October 2022-September 2025</li>
-          <li>Missing months: 0</li>
-          <li>Unmapped rows: 0</li>
-          <li>Duplicate canonical post/visa rows: 0</li>
-          <li>Raw PDF reconciliation completed</li>
-          <li>PDF and Excel totals preserved</li>
-          <li>Post-name harmonization completed</li>
-          <li>2025 is partial through September</li>
           <li>
-            Candidate file:{" "}
-            <code className="font-mono">monthly_by_post_f1_j1_2017_2025_candidate.csv</code>
+            Coverage: {monthLongDisplay(coverageStart)}-{monthLongDisplay(coverageEnd)}
           </li>
           <li>
-            This dashboard does not describe the data as real-time and does not claim automatic
-            updates.
+            Rows: {int(sourceValidation.rows)} across {int(sourceValidation.posts)} posts in{" "}
+            {int(sourceValidation.countries)} countries
+          </li>
+          <li>F1 total: {int(sourceValidation.f1)}</li>
+          <li>J1 total: {int(sourceValidation.j1)}</li>
+          <li>
+            Months present: {sourceValidation.months}/{monthCountBetween(coverageStart, coverageEnd)}
+            ; missing months: {sourceValidation.missingMonths.length}
+          </li>
+          <li>
+            Posts without a country mapping (left out):{" "}
+            {Object.keys(sourceValidation.unmappedPosts).length}
+          </li>
+          <li>Duplicate post/visa/month rows: rejected when the snapshot is built</li>
+          {partialYear !== null && (
+            <li>
+              {partialYear} is partial through {MONTH_NAMES_FULL[coverageThroughMonth]}
+            </li>
+          )}
+          <li>
+            Snapshot built {new Date(data.meta.generatedAt).toLocaleString()} from{" "}
+            {data.meta.sources.map((s) => s.file).join(", ")}
+          </li>
+          <li>
+            This dashboard does not describe the data as real-time; it changes when new files are
+            uploaded.
           </li>
         </ul>
       </Expander>

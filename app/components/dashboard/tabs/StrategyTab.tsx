@@ -1,6 +1,6 @@
 "use client";
 
-import { GROWTH_LABEL, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { int, metricPct } from "../../../lib/dashboard/format";
 import { notNa } from "../../../lib/dashboard/metrics";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
@@ -9,7 +9,7 @@ import { InfoCallout, SubHeading } from "../shared";
 import { DataTable, Divider, InsightChip, Panel, ScopeNote, SectionTitle } from "../ui";
 
 export default function StrategyTab() {
-  const { focusCountry, focus, summary } = useDashboard();
+  const { focusCountry, focus, summary, growthLabel, summaryGrowthLabel } = useDashboard();
 
   const tierKey = focus.tier.split("—")[0].trim();
   const peak = focus.peakMonth ? (MONTH_NAMES_FULL[focus.peakMonth] ?? "N/A") : "N/A";
@@ -18,13 +18,13 @@ export default function StrategyTab() {
   let trendMessage: string;
   let trendChip: string;
   if (notNa(growth) && growth >= 15) {
-    trendMessage = `Accelerating Market - F1 issuances show ${metricPct(growth)} ${GROWTH_LABEL}. Increase QU recruitment investment.`;
+    trendMessage = `Accelerating Market - F1 issuances show ${metricPct(growth)} ${growthLabel}. Increase QU recruitment investment.`;
     trendChip = "High Growth";
   } else if (notNa(growth) && growth >= 0) {
-    trendMessage = `Stable Market - Moderate ${metricPct(growth)} ${GROWTH_LABEL}. Maintain engagement and monitor for acceleration.`;
+    trendMessage = `Stable Market - Moderate ${metricPct(growth)} ${growthLabel}. Maintain engagement and monitor for acceleration.`;
     trendChip = "Stable";
   } else if (notNa(growth) && growth < -10) {
-    trendMessage = `Declining Market - F1 issuances are down ${Math.abs(growth).toFixed(1)}% on ${GROWTH_LABEL}. Review investment before scaling.`;
+    trendMessage = `Declining Market - F1 issuances are down ${Math.abs(growth).toFixed(1)}% on ${growthLabel}. Review investment before scaling.`;
     trendChip = "Declining";
   } else {
     trendMessage = "Monitor Market - comparable growth data is limited.";
@@ -72,7 +72,7 @@ export default function StrategyTab() {
             </div>
             {stat("F1 Total", int(focus.total))}
             {stat(
-              GROWTH_LABEL,
+              growthLabel,
               notNa(growth) ? metricPct(growth) : "Insufficient data",
               (growth ?? 0) > 0 ? "text-[#4ADE80]" : "text-[#F87171]",
             )}
@@ -115,7 +115,7 @@ export default function StrategyTab() {
             columns={[
               { key: "country", header: "Country", render: (r) => r.country },
               { key: "f1", header: "F1 Total", numeric: true, render: (r) => int(r.f1Total) },
-              { key: "growth", header: GROWTH_LABEL, numeric: true, render: (r) => metricPct(r.growthPct) },
+              { key: "growth", header: summaryGrowthLabel, numeric: true, render: (r) => metricPct(r.growthPct) },
               { key: "tier", header: "Tier", render: (r) => r.tier },
               { key: "score", header: "Score", numeric: true, render: (r) => r.opportunityScore },
               {
@@ -137,7 +137,7 @@ export default function StrategyTab() {
               columns={[
                 { key: "country", header: "Country", render: (r) => r.country },
                 { key: "f1", header: "F1 Total", numeric: true, render: (r) => int(r.f1Total) },
-                { key: "growth", header: GROWTH_LABEL, numeric: true, render: (r) => metricPct(r.growthPct) },
+                { key: "growth", header: summaryGrowthLabel, numeric: true, render: (r) => metricPct(r.growthPct) },
                 { key: "tier", header: "Tier", render: (r) => r.tier },
               ]}
             />

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { asset } from "../lib/basePath";
+import { AccountMenu } from "../components/AccountMenu";
 import {
   deleteTranscript,
   getTranscript,
@@ -113,14 +114,17 @@ export default function TranscriptsPage() {
               Tools for Quinnipiac University international admissions staff.
             </p>
           </div>
-          <Image
-            src={asset("/QUwhitebg.png")}
-            alt="Quinnipiac University"
-            width={1501}
-            height={406}
-            priority
-            className="h-12 w-auto shrink-0 sm:h-14"
-          />
+          <div className="flex flex-col items-end gap-3">
+            <Image
+              src={asset("/QUwhitebg.png")}
+              alt="Quinnipiac University"
+              width={1501}
+              height={406}
+              priority
+              className="h-12 w-auto shrink-0 sm:h-14"
+            />
+            <AccountMenu size="sm" />
+          </div>
         </div>
         <div className="h-1 bg-[#F1B82D]" />
       </header>

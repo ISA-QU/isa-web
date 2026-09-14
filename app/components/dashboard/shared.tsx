@@ -2,15 +2,24 @@
 
 import type { ReactNode } from "react";
 
+import { monthLongDisplay } from "../../lib/dashboard/format";
+import { useDashboard } from "./DashboardContext";
 import { Expander, MethodologyNote } from "./ui";
 
-/** `data_scope_notice()` from app.py. */
+/** `data_scope_notice()` from app.py, with the coverage read from the snapshot. */
 export function DataScopeNotice() {
+  const { coverage } = useDashboard().data.meta;
+  const end = coverage.postsMonthly.end;
+  const throughMonth = (end % 12) + 1;
+  const { first, latestComplete, latest, latestMonths } = coverage.annual;
   return (
     <MethodologyNote wide>
-      2025 monthly data is partial through September. Annual country history currently ends at
-      FY2024. Visa issuance volume is a historical mobility and consular-workload signal, not
-      individual approval probability and not Quinnipiac enrollment data.
+      Monthly data runs through {monthLongDisplay(end)}
+      {throughMonth < 12 ? `, so ${Math.floor(end / 12)} is a partial year` : ""}. Annual country
+      history covers complete fiscal years FY{first}–FY{latestComplete}
+      {latest !== latestComplete ? `, plus FY${latest} to date (${latestMonths} months)` : ""}. Visa
+      issuance volume is a historical mobility and consular-workload signal, not individual
+      approval probability and not Quinnipiac enrollment data.
     </MethodologyNote>
   );
 }
@@ -27,8 +36,8 @@ export function MethodologyExpanders({
     <Expander title="How this is calculated">
       <ul className="list-disc space-y-1.5 pl-5">
         <li>
-          <b>Recovery Index:</b> comparable annual or Jan-Sep issuance divided by the 2019 baseline
-          times 100; shown as N/A when the 2019 baseline is not positive.
+          <b>Recovery Index:</b> the latest complete calendar year&apos;s issuance divided by
+          2019&apos;s, times 100; shown as N/A when the 2019 baseline is not positive.
         </li>
         <li>
           <b>Volatility:</b> monthly coefficient of variation. High &gt;= 0.85; moderate &gt;= 0.45;

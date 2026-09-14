@@ -12,6 +12,7 @@ import { formatGpa } from "../lib/format";
 import { SchoolCard } from "../components/SchoolCard";
 import { asset } from "../lib/basePath";
 import { getTranscript, saveTranscript } from "../lib/api";
+import { AccountMenu } from "../components/AccountMenu";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -232,6 +233,7 @@ export default function CalculatorClient() {
                 </svg>
                 Clear
               </button>
+              <AccountMenu size="sm" />
             </div>
           </div>
           <Image

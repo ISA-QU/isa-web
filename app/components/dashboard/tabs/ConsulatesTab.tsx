@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { GROWTH_LABEL, MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { decimals, int, metricPct, monthDisplay } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
@@ -24,7 +24,16 @@ const BLUE_GOLD: Array<[number, string]> = [
  * pairing is preserved here.
  */
 export default function ConsulatesTab() {
-  const { focusCountry, focus, summary, f1Filtered, dfFiltered, compareCountries } = useDashboard();
+  const {
+    focusCountry,
+    focus,
+    summary,
+    f1Filtered,
+    dfFiltered,
+    compareCountries,
+    growthLabel,
+    summaryGrowthLabel,
+  } = useDashboard();
 
   /* ---- Monthly F1 trend, stacked by year ---- */
   const trend = useMemo(() => {
@@ -183,7 +192,7 @@ export default function ConsulatesTab() {
         <KpiCard label="F1 Issuances" value={int(focus.total)} />
         <KpiCard label="J1 Issuances" value={int(focus.j1Total)} />
         <KpiCard label="Active Posts" value={focus.posts} />
-        <KpiCard label={GROWTH_LABEL} value={metricPct(focus.growth)} />
+        <KpiCard label={growthLabel} value={metricPct(focus.growth)} />
         <KpiCard label="Seasonality CV" value={decimals(focus.cv, 2)} />
         <KpiCard label="Opp. Score" value={`${focus.opportunity}/100`} />
       </KpiRow>
@@ -217,7 +226,7 @@ export default function ConsulatesTab() {
             { key: "country", header: "Country", render: (r) => r.country },
             { key: "f1", header: "F1 Total", numeric: true, render: (r) => int(r.f1Total) },
             { key: "j1", header: "J1 Total", numeric: true, render: (r) => int(r.j1Total) },
-            { key: "growth", header: GROWTH_LABEL, numeric: true, render: (r) => metricPct(r.growthPct) },
+            { key: "growth", header: summaryGrowthLabel, numeric: true, render: (r) => metricPct(r.growthPct) },
             { key: "tier", header: "Market Tier", render: (r) => r.tier },
             { key: "opp", header: "Opp. Score", numeric: true, render: (r) => r.opportunityScore },
             { key: "post", header: "Top Post", render: (r) => r.topPost },

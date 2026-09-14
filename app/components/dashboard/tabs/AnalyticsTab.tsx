@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { GROWTH_LABEL } from "../../../lib/dashboard/constants";
 import { notNa } from "../../../lib/dashboard/metrics";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
@@ -24,7 +23,7 @@ const HEAT_SCALE: Array<[number, string]> = [
 ];
 
 export default function AnalyticsTab() {
-  const { summary, f1 } = useDashboard();
+  const { summary, f1, summaryGrowthLabel } = useDashboard();
 
   /**
    * Bubble map. app.py drops rows missing lat/lon here as well as missing
@@ -57,18 +56,18 @@ export default function AnalyticsTab() {
           colorbar: { title: { text: "Opportunity Score" } },
         },
         hovertemplate:
-          `<b>%{text}</b><br>${GROWTH_LABEL}: %{x:.1f}%<br>` +
+          `<b>%{text}</b><br>${summaryGrowthLabel}: %{x:.1f}%<br>` +
           "Total F1 Issuances: %{y:,.0f}<extra></extra>",
       },
     ];
     const layout: ChartLayout = {
       height: 560,
-      title: { text: `Opportunity Score Map: ${GROWTH_LABEL} vs Volume` },
-      xaxis: { title: { text: GROWTH_LABEL } },
+      title: { text: `Opportunity Score Map: ${summaryGrowthLabel} vs Volume` },
+      xaxis: { title: { text: summaryGrowthLabel } },
       yaxis: { title: { text: "Total F1 Issuances" } },
     };
     return { data, layout, plotted: rows.length, total: summary.length };
-  }, [summary]);
+  }, [summary, summaryGrowthLabel]);
 
   /** Annual matrix for the top 30 countries by F1 volume. */
   const matrix = useMemo(() => {

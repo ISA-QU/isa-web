@@ -1,62 +1,88 @@
 /**
- * Loads the dashboard's JSON tables and decodes them into plain row arrays.
+ * Loads the dashboard snapshot and decodes it into plain row arrays.
  *
- * The payload is dictionary-encoded columnar JSON (see
- * scripts/build-dashboard-data.mjs). Roughly 64k rows total decode to a few MB
- * of objects, which is cheap enough to hold in memory and lets every tab filter
- * with ordinary array operations instead of precomputed slices.
+ * The snapshot is built by the rebuild-dashboard Lambda from the raw workbooks
+ * in S3 and served by the get-dashboard Lambda. Its tables are
+ * dictionary-encoded columnar JSON; ~55k rows decode to a few MB of objects,
+ * cheap enough to hold in memory so every tab filters with ordinary array
+ * operations instead of precomputed slices.
  */
 
-import { DASHBOARD_DATA_BASE_URL } from "../awsConfig";
+import { authHeaders, redirectToLogin } from "../auth";
+import { DASHBOARD_DATA_URL } from "../awsConfig";
+import { COUNTRY_COORDS } from "./constants";
 import type {
   AnnualCountryRow,
-  Coord,
-  CountryMetricRow,
   DashboardData,
   OperationalRow,
   PostMonthlyRow,
+  SnapshotMeta,
   Visa,
 } from "./types";
 
 const VISA_BY_CODE: Visa[] = ["F1", "J1"];
+const SCHEMA = "dashboard-snapshot@1";
 
 interface ColumnarTable {
-  schema: string;
   rowCount: number;
   dims: Record<string, string[]>;
   cols: Record<string, number[]>;
 }
 
-async function fetchJson<T>(file: string): Promise<T> {
-  const url = `${DASHBOARD_DATA_BASE_URL}/${file}`;
+interface Snapshot extends SnapshotMeta {
+  schema: string;
+  postsMonthly: ColumnarTable;
+  annualCountry: ColumnarTable;
+}
+
+async function fetchSnapshot(): Promise<Snapshot> {
+  const headers = await authHeaders();
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(DASHBOARD_DATA_URL, { headers });
   } catch (cause) {
     throw new Error(
-      `Could not reach the dashboard data at ${url}. ` +
-        `Check NEXT_PUBLIC_DASHBOARD_DATA_URL and the bucket's CORS rules.`,
+      `Could not reach the dashboard data at ${DASHBOARD_DATA_URL}. ` +
+        `Check that the GET /dashboard route exists and allows this site in its CORS settings.`,
       { cause },
     );
   }
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText} while loading ${url}`);
+  if (response.status === 401) {
+    redirectToLogin();
+    throw new Error("Your session has expired. Sign in again.");
   }
-  return (await response.json()) as T;
+  if (response.status === 404) {
+    throw new Error(
+      "No dashboard snapshot has been built yet. Upload the raw files to S3 and run the " +
+        "rebuild-dashboard Lambda.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText} while loading ${DASHBOARD_DATA_URL}`);
+  }
+  const snapshot = (await response.json()) as Snapshot;
+  if (snapshot.schema !== SCHEMA) {
+    throw new Error(`Unsupported dashboard snapshot schema "${snapshot.schema}", expected "${SCHEMA}".`);
+  }
+  return snapshot;
 }
 
-function decodeOperational(table: ColumnarTable): OperationalRow[] {
+function decodePostsMonthly(table: ColumnarTable): PostMonthlyRow[] {
   const { post, country } = table.dims;
   const { cols } = table;
-  const rows: OperationalRow[] = new Array(table.rowCount);
+  const rows: PostMonthlyRow[] = new Array(table.rowCount);
   for (let i = 0; i < table.rowCount; i += 1) {
+    const year = cols.year[i];
+    const month = cols.month[i];
     rows[i] = {
+      year,
+      month,
+      fiscalYear: month >= 10 ? year + 1 : year,
       post: post[cols.post[i]],
       country: country[cols.country[i]],
       visa: VISA_BY_CODE[cols.visa[i]],
-      year: cols.year[i],
-      month: cols.month[i],
       issuances: cols.issuances[i],
+      monthIndex: year * 12 + (month - 1),
     };
   }
   return rows;
@@ -77,60 +103,41 @@ function decodeAnnualCountry(table: ColumnarTable): AnnualCountryRow[] {
   return rows;
 }
 
-function decodePostsMonthly(table: ColumnarTable): PostMonthlyRow[] {
-  const { post, postRaw, country, sourceFormat, sourceFile } = table.dims;
-  const { cols } = table;
-  const rows: PostMonthlyRow[] = new Array(table.rowCount);
-  for (let i = 0; i < table.rowCount; i += 1) {
-    const year = cols.year[i];
-    const month = cols.month[i];
-    rows[i] = {
-      year,
-      month,
-      fiscalYear: cols.fiscalYear[i],
-      post: post[cols.post[i]],
-      postRaw: postRaw[cols.postRaw[i]],
-      country: country[cols.country[i]],
-      visa: VISA_BY_CODE[cols.visa[i]],
-      issuances: cols.issuances[i],
-      sourceFormat: sourceFormat[cols.sourceFormat[i]],
-      sourceFile: sourceFile[cols.sourceFile[i]],
-      monthIndex: year * 12 + (month - 1),
-    };
-  }
-  return rows;
-}
-
 /**
- * Fetches everything the dashboard needs.
- *
- * The consulate layer is allowed to fail without taking the page down, matching
- * app.py's try/except around `get_historical_consulate_data()` — tabs that need
- * it show an error, the rest keep working.
+ * Fetches and decodes the snapshot. The operational layer is not shipped
+ * separately: it is the tail of the post data from `coverage.operational.start`.
  */
 export async function loadDashboardData(): Promise<DashboardData> {
-  const [operationalTable, annualTable, metricsTable, referenceTable] = await Promise.all([
-    fetchJson<ColumnarTable>("operational.json"),
-    fetchJson<ColumnarTable>("annual-country.json"),
-    fetchJson<{ items: CountryMetricRow[] }>("country-metrics.json"),
-    fetchJson<{ countryCoords: Record<string, Coord> }>("reference.json"),
-  ]);
+  const snapshot = await fetchSnapshot();
+  const postsMonthly = decodePostsMonthly(snapshot.postsMonthly);
 
-  let postsMonthly: PostMonthlyRow[] = [];
-  let consulateError: string | null = null;
-  try {
-    postsMonthly = decodePostsMonthly(await fetchJson<ColumnarTable>("posts-monthly.json"));
-  } catch (error) {
-    consulateError = error instanceof Error ? error.message : String(error);
+  const operationalStart = snapshot.coverage.operational.start;
+  const operational: OperationalRow[] = [];
+  for (const row of postsMonthly) {
+    if (row.monthIndex < operationalStart) continue;
+    operational.push({
+      post: row.post,
+      country: row.country,
+      visa: row.visa,
+      year: row.year,
+      month: row.month,
+      issuances: row.issuances,
+    });
   }
 
   return {
-    operational: decodeOperational(operationalTable),
-    annualCountry: decodeAnnualCountry(annualTable),
+    operational,
     postsMonthly,
-    countryMetrics: metricsTable.items,
-    countryCoords: referenceTable.countryCoords,
-    consulateError,
+    annualCountry: decodeAnnualCountry(snapshot.annualCountry),
+    countryCoords: COUNTRY_COORDS,
+    meta: {
+      generatedAt: snapshot.generatedAt,
+      coverage: snapshot.coverage,
+      fiscalYears: snapshot.fiscalYears,
+      validation: snapshot.validation,
+      sources: snapshot.sources,
+      warnings: snapshot.warnings,
+    },
   };
 }
 

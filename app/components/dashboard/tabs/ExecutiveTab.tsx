@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
-import { GROWTH_LABEL, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { growthText, int } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
@@ -22,10 +22,11 @@ const peakLabel = (peakMonth: number): string =>
 
 /** `country_card_html` — the focus-market card beside the globe. */
 function CountryCard({ row }: { row: CountrySummaryRow }) {
+  const { summaryGrowthLabel } = useDashboard();
   const stats: Array<[string, string]> = [
     ["F1 Total", int(row.f1Total)],
     ["J1 Total", int(row.j1Total)],
-    [GROWTH_LABEL, growthText(row.growthPct)],
+    [summaryGrowthLabel, growthText(row.growthPct)],
     ["Market Tier", row.tier],
     ["Top Consulate", row.topPost],
     ["Peak Visa Month", peakLabel(row.peakMonth)],
@@ -55,7 +56,8 @@ function CountryCard({ row }: { row: CountrySummaryRow }) {
 }
 
 export default function ExecutiveTab() {
-  const { data: dashboardData, summary, focusCountry, f1Filtered, j1Filtered } = useDashboard();
+  const { data: dashboardData, summary, summaryGrowthLabel, focusCountry, f1Filtered, j1Filtered } =
+    useDashboard();
   const [globeColor, setGlobeColor] = useState<"F1 Volume" | "Opportunity Score">("F1 Volume");
 
   const focusRow =
@@ -95,7 +97,7 @@ export default function ExecutiveTab() {
           "<b>%{text}</b><br>" +
           "F1 Total: %{customdata[0]}<br>" +
           "J1 Total: %{customdata[1]}<br>" +
-          `${GROWTH_LABEL}: %{customdata[2]}<br>` +
+          `${summaryGrowthLabel}: %{customdata[2]}<br>` +
           "Market Tier: %{customdata[3]}<br>" +
           "Top Consulate/Post: %{customdata[4]}<br>" +
           "Peak Visa Month: %{customdata[5]}" +
@@ -165,7 +167,7 @@ export default function ExecutiveTab() {
     }
 
     return { data, layout, frames };
-  }, [summary, globeColor]);
+  }, [summary, globeColor, summaryGrowthLabel]);
 
   /* ---- Country rollup shared by the signal map and the treemap ---- */
   const countryRollup = useMemo(() => {

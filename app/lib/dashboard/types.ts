@@ -79,6 +79,8 @@ export interface SnapshotMeta {
       f1: number;
       j1: number;
       unmappedPosts: Record<string, number>;
+      /** Old post label -> the current name it was merged into (POST_ALIASES). */
+      renamedPosts?: Record<string, { to: string; rows: number; issuances: number }>;
     };
     annual: {
       rows?: number;

@@ -295,13 +295,30 @@ def build_snapshot(files):
 def _build_posts(months, warnings):
     rows = []
     unmapped = Counter()
+    renamed = defaultdict(lambda: {"to": None, "rows": 0, "issuances": 0})
+    seen = {}
     for (year, month), records in months.items():
         for r in records:
-            country = POST_COUNTRY.get(r["name"])
+            post = POST_ALIASES.get(r["name"], r["name"])
+            # An old and a current label for the same month and visa would
+            # merge into one row, which could count the same visas twice.
+            key = (year, month, post, r["visa"])
+            if key in seen:
+                raise DataError(
+                    f"post data has both '{seen[key]}' and '{r['name']}' for {post}, "
+                    f"{r['visa']}, {year}-{month:02d}; merging them could double count"
+                )
+            seen[key] = r["name"]
+            if post != r["name"]:
+                entry = renamed[r["name"]]
+                entry["to"] = post
+                entry["rows"] += 1
+                entry["issuances"] += r["issuances"]
+            country = POST_COUNTRY.get(post)
             if country is None:
-                unmapped[r["name"]] += r["issuances"]
+                unmapped[post] += r["issuances"]
                 continue
-            rows.append((year, month, country, r["name"], r["visa"], r["issuances"]))
+            rows.append((year, month, country, post, r["visa"], r["issuances"]))
 
     if unmapped:
         listed = ", ".join(f"{post} ({count:,})" for post, count in unmapped.most_common())
@@ -352,6 +369,7 @@ def _build_posts(months, warnings):
                 "f1": totals["F1"],
                 "j1": totals["J1"],
                 "unmappedPosts": dict(unmapped),
+                "renamedPosts": dict(sorted(renamed.items())),
             },
         },
     )
@@ -437,6 +455,10 @@ def summarise(snapshot, seconds):
         "annualCountry": f"{snapshot['annualCountry']['rowCount']} rows, FY{annual['first']} to FY{annual['latest']}"
         f" (latest complete FY{annual['latestComplete']}, FY{annual['latest']} has {annual['latestMonths']} months)",
         "files": [f"{s['kind']}: {s['file']} ({s['rows']} rows, replaced {s['replacedPeriods']} periods)" for s in snapshot["sources"]],
+        "renamed": [
+            f"{old} -> {v['to']} ({v['rows']} rows, {v['issuances']:,})"
+            for old, v in snapshot["validation"]["postsMonthly"]["renamedPosts"].items()
+        ],
         "warnings": snapshot["warnings"],
     }
 
@@ -735,6 +757,21 @@ POST_COUNTRY = {
     "Yekaterinburg": "Russia",
     "Yerevan": "Armenia",
     "Zagreb": "Croatia"
+}
+
+# Older post labels in the State Dept reports -> the current post name, so a
+# post's history is one series. The original labels are kept in the snapshot
+# (validation.postsMonthly.renamedPosts) for tracing. Only renames whose old and
+# new labels never report the same month and visa belong here; _build_posts
+# stops the build if they do.
+POST_ALIASES = {
+    "Chennai ( Madras)": "Chennai",
+    "Chennai (Madras)": "Chennai",
+    "Dar Es Salaam": "Dar es Salaam",
+    "Mumbai (Bombay)": "Mumbai",
+    "Port Au Prince": "Port-au-Prince",
+    "Port Of Spain": "Port of Spain",
+    "Rio De Janeiro": "Rio de Janeiro",
 }
 
 # Nationality-file spelling -> the country name the post data uses, so the two

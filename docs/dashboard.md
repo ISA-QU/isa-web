@@ -48,6 +48,15 @@ Rules the build applies:
 - **Posts need a country.** The post file has no country column; `POST_COUNTRY` in the
   Lambda supplies it. A post missing from that map is left out and reported as a warning
   in the rebuild output. Add it to the map and redeploy.
+- **Old post labels are renamed.** `POST_ALIASES` in the Lambda maps older consulate
+  labels to the current name (`Mumbai (Bombay)` → `Mumbai`, `Port Au Prince` →
+  `Port-au-Prince`, …), so each post's history is one series. The original labels, with
+  their row and issuance counts, are listed in the snapshot's
+  `validation.postsMonthly.renamedPosts` and on the `renamed` line of the rebuild output.
+  If an old and a current label both report the same month and visa class, the build
+  stops rather than add them together, since that could count the same visas twice.
+  **The deployed `rebuild-dashboard` Lambda has not been updated with `POST_ALIASES`
+  yet**; only the code in this repo and the local build (`npm run dashboard:data`) have it.
 - **Non-nationalities are excluded** from country views: "Unknown", "Non-Nationality Based
   Issuances", "British National Overseas", "Palestinian Authority Travel Document", "No
   Nationality".

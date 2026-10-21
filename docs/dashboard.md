@@ -1,8 +1,8 @@
 # Recruitment Intelligence Dashboard
 
 The dashboard at `/` (and `/dashboard`) is a port of the Streamlit app that lived in
-`dashboard/`. It renders the same ten tabs, now fed from three Excel workbooks through two
-Lambdas.
+`dashboard/`. It renders seven of the original ten tabs, now fed from three Excel workbooks
+through two Lambdas.
 
 ## Routes
 
@@ -233,20 +233,7 @@ These are defects in the original that the port reproduces rather than silently 
 
 1. **Two tab labels are swapped.** The tab labelled "Consulates" shows Country
    Intelligence; the tab labelled "Research: Country" shows Consulate Intelligence.
-2. **Only 38 countries have map coordinates.** `COUNTRY_COORDS` in `constants.ts` covers 38
-   of the 168 countries, so the Executive signal map and the Analytics bubble chart omit
-   the rest, each with a caption saying how many are shown. The globe is keyed on country
-   name and is unaffected.
-3. **A dead control.** Country 360's "Comparable Period Mode" radio is rendered but never
-   read by any calculation.
 
-## AI Insights
+## Removed tabs
 
-The AI tab's live generation **does not work today and did not work in the Streamlit app
-either**: `app.py` never configured an Anthropic key, so the call failed on every click.
-The deterministic KPIs and snapshot cards work, and the button reports that no briefing
-service is configured.
-
-To enable it, add a Lambda that holds the key and proxies the request, since a static site
-can't keep a key secret. Follow the pattern of the Lambdas above, and use a current model
-rather than the original's hardcoded `claude-sonnet-4-20250514`.
+The AI, Strategy and Analytics tabs were removed in Feature 1; see git history.

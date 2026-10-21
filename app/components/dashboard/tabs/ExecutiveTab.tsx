@@ -9,7 +9,7 @@ import { groupSum } from "../../../lib/dashboard/metrics";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { Panel, RadioGroup, SectionTitle } from "../ui";
+import { Panel, RadioGroup } from "../ui";
 
 const BLUE_GOLD_SCALE: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -56,8 +56,7 @@ function CountryCard({ row }: { row: CountrySummaryRow }) {
 }
 
 export default function ExecutiveTab() {
-  const { data: dashboardData, summary, summaryGrowthLabel, focusCountry, f1Filtered, j1Filtered } =
-    useDashboard();
+  const { summary, summaryGrowthLabel, focusCountry, f1Filtered, j1Filtered } = useDashboard();
   const [globeColor, setGlobeColor] = useState<"F1 Volume" | "Opportunity Score">("F1 Volume");
 
   const focusRow =
@@ -169,87 +168,13 @@ export default function ExecutiveTab() {
     return { data, layout, frames };
   }, [summary, globeColor, summaryGrowthLabel]);
 
-  /* ---- Country rollup shared by the signal map and the treemap ---- */
+  /* ---- Country rollup for the treemap ---- */
   const countryRollup = useMemo(() => {
     const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
     return [...totals.entries()]
       .map(([country, issuances]) => ({ country, issuances }))
       .sort((a, b) => b.issuances - a.issuances);
   }, [f1Filtered]);
-
-  /* ---- Signal map: only countries with coordinates, matching app.py ---- */
-  const signalMap = useMemo(() => {
-    const { countryCoords } = dashboardData;
-    const max = countryRollup[0]?.issuances ?? 0;
-    const points = countryRollup
-      .map((row) => ({ ...row, coord: countryCoords[row.country] }))
-      .filter((row) => row.coord !== undefined);
-
-    const data: Trace[] = [
-      {
-        type: "scatter",
-        x: points.map((p) => p.coord.lon),
-        y: points.map((p) => p.coord.lat),
-        mode: "markers+text",
-        text: points.map((p) => p.country),
-        textposition: "top center",
-        textfont: { size: 9, color: "rgba(255,255,255,0.72)" },
-        marker: {
-          size: points.map((p) => (max ? (p.issuances / max) * 60 + 10 : 10)),
-          color: points.map((p) => p.issuances),
-          colorscale: BLUE_GOLD_SCALE,
-          showscale: true,
-          colorbar: { title: { text: "F1 Issuances" }, tickfont: { color: "#CBD5E1" } },
-          line: { width: 1.5, color: "rgba(255,255,255,0.4)" },
-          opacity: 0.88,
-        },
-        hovertemplate: "<b>%{text}</b><br>F1 Issuances: %{marker.color:,.0f}<extra></extra>",
-      } as Trace,
-    ];
-
-    const focus = points.find((p) => p.country === focusCountry);
-    if (focus) {
-      data.push({
-        type: "scatter",
-        x: [focus.coord.lon],
-        y: [focus.coord.lat],
-        mode: "markers+text",
-        text: [focusCountry],
-        textposition: "bottom center",
-        textfont: { size: 12, color: "#FFB81C" },
-        marker: {
-          size: 30,
-          color: "#FFB81C",
-          symbol: "star",
-          line: { width: 3, color: "white" },
-        },
-        hovertemplate: `<b>${focusCountry}</b> - Focus Country<extra></extra>`,
-      } as Trace);
-    }
-
-    const layout: ChartLayout = {
-      height: 680,
-      title: { text: "Global F1 Student Visa Issuance Signals" },
-      xaxis: {
-        title: { text: "" },
-        range: [-175, 175],
-        showgrid: true,
-        gridcolor: "rgba(255,255,255,0.06)",
-        zeroline: false,
-      },
-      yaxis: {
-        title: { text: "" },
-        range: [-55, 80],
-        showgrid: true,
-        gridcolor: "rgba(255,255,255,0.06)",
-        zeroline: false,
-      },
-      margin: { l: 10, r: 10, t: 60, b: 10 },
-      showlegend: false,
-    };
-
-    return { data, layout, plotted: points.length, total: countryRollup.length };
-  }, [countryRollup, focusCountry, dashboardData]);
 
   /* ---- Annual F1 vs J1 ---- */
   const annual = useMemo(() => {
@@ -376,22 +301,6 @@ export default function ExecutiveTab() {
           ariaLabel="Interactive global recruitment globe"
         />
         <CountryCard row={focusRow} />
-      </div>
-
-      <div>
-        <SectionTitle>Global F1 Recruitment Signal Map</SectionTitle>
-        <Chart
-          data={signalMap.data}
-          layout={signalMap.layout}
-          height={680}
-          ariaLabel="Global F1 student visa issuance signal map"
-        />
-        {signalMap.plotted < signalMap.total && (
-          <p className="mt-2 text-xs text-slate-500">
-            Showing {signalMap.plotted} of {signalMap.total} countries — this map plots only
-            countries present in the dashboard&apos;s coordinate reference table.
-          </p>
-        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

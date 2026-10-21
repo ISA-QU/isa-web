@@ -99,10 +99,6 @@ export default function Country360Tab() {
   const [recentMode, setRecentMode] = useState<RecentMode>("Full Operational Window");
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
-  // Rendered by the original but never read by any downstream calculation.
-  const [comparableMode, setComparableMode] = useState<"Calendar Year" | "Jan-Sep Comparable">(
-    "Calendar Year",
-  );
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
   const [comparePosts, setComparePosts] = useState<string[] | null>(null);
@@ -705,13 +701,6 @@ export default function Country360Tab() {
             />
           </div>
         </Field>
-
-        <RadioGroup
-          label="Comparable Period Mode"
-          value={comparableMode}
-          options={["Calendar Year", "Jan-Sep Comparable"] as const}
-          onChange={setComparableMode}
-        />
 
         {recentMode === "Custom" && opMonthOptions.length > 0 ? (
           <div className="grid grid-cols-2 gap-2">

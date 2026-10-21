@@ -121,18 +121,6 @@ export function ScopeNote({ label, children }: { label: string; children: ReactN
   );
 }
 
-export function InsightChip({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "gold" }) {
-  const styles =
-    tone === "gold"
-      ? "border-[rgba(255,184,28,0.4)] bg-[rgba(255,184,28,0.12)] text-[#ffdf87]"
-      : "border-[rgba(61,141,222,0.4)] bg-[rgba(61,141,222,0.12)] text-[#bfdcff]";
-  return (
-    <span className={`mr-2 mb-2 inline-flex items-center rounded-full border px-2.5 py-1.5 text-xs font-extrabold ${styles}`}>
-      {children}
-    </span>
-  );
-}
-
 /** Section heading with the `###`-level weight Streamlit used. */
 export function SectionTitle({ children }: { children: ReactNode }) {
   return <h3 className="mb-3 text-lg font-bold text-white">{children}</h3>;

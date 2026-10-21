@@ -21,9 +21,6 @@ import ConsulatesTab from "./tabs/ConsulatesTab";
 import ResearchCountryTab from "./tabs/ResearchCountryTab";
 import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
 import HistoricalConsulatesTab from "./tabs/HistoricalConsulatesTab";
-import StrategyTab from "./tabs/StrategyTab";
-import AnalyticsTab from "./tabs/AnalyticsTab";
-import AiTab from "./tabs/AiTab";
 
 /**
  * Tab order and labels are app.py's, verbatim. Note that the original pairs the
@@ -39,9 +36,6 @@ const TABS = [
   { id: "research-country", label: "Research: Country", Component: ResearchCountryTab },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
   { id: "historical-consulates", label: "Historical Consulates", Component: HistoricalConsulatesTab },
-  { id: "strategy", label: "Strategy", Component: StrategyTab },
-  { id: "analytics", label: "Analytics", Component: AnalyticsTab },
-  { id: "ai", label: "AI", Component: AiTab },
 ] as const;
 
 function Header() {
@@ -127,7 +121,7 @@ function DashboardBody() {
             <Hero />
             <HeaderKpis />
 
-            <div className="mb-2 overflow-x-auto">
+            <div className="mb-5 overflow-x-auto">
               <div
                 role="tablist"
                 aria-label="Dashboard sections"
@@ -151,11 +145,6 @@ function DashboardBody() {
                 ))}
               </div>
             </div>
-
-            <p className="mb-5 text-xs text-slate-500">
-              Navigation grouping: first four tabs are primary decision-support views; remaining tabs
-              are Research &amp; Legacy views retained for continuity.
-            </p>
 
             <ActiveTab />
 

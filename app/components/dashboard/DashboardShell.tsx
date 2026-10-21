@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AccountMenu } from "../AccountMenu";
 import { asset } from "../../lib/basePath";
 import { loadDashboardData } from "../../lib/dashboard/data";
 import { monthLongDisplay } from "../../lib/dashboard/format";
+import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData } from "../../lib/dashboard/types";
 import { DashboardProvider, useDashboard } from "./DashboardContext";
 import Sidebar from "./Sidebar";
@@ -83,10 +84,25 @@ function Header() {
   );
 }
 
+/** "(FY2026 covers Oct 2025 – Feb 2026 only)" when the latest fiscal year is partial. */
+function partialFiscalYearNote(annual: DashboardData["meta"]["coverage"]["annual"]): string {
+  const { latest, latestComplete, latestMonths } = annual;
+  if (latest === null || latestMonths === null || latest === latestComplete) return "";
+  // A fiscal year runs October of the previous year through September.
+  const start = (latest - 1) * 12 + 9;
+  return ` (FY${latest} covers ${monthRangeLabel({ start, end: start + latestMonths - 1 })} only)`;
+}
+
 function Hero() {
-  const { f1, allYears } = useDashboard();
-  const countryCount = new Set(f1.map((r) => r.country)).size;
-  const postCount = new Set(f1.map((r) => r.post)).size;
+  const { data } = useDashboard();
+  const { postsMonthly: postRange, annual } = data.meta.coverage;
+  const { postCount, countryCount } = useMemo(
+    () => ({
+      postCount: new Set(data.postsMonthly.map((r) => r.post)).size,
+      countryCount: new Set(data.postsMonthly.map((r) => r.country)).size,
+    }),
+    [data.postsMonthly],
+  );
 
   return (
     <section className="mb-6 rounded-lg border border-[rgba(255,184,28,0.28)] bg-[linear-gradient(135deg,rgba(12,35,64,0.95),rgba(5,16,34,0.9))] p-6">
@@ -97,8 +113,16 @@ function Hero() {
         Bobcat Global Recruitment Intelligence
       </h2>
       <p className="mt-2 text-sm text-slate-300">
-        F1 · J1 visa issuance analytics across {countryCount} countries and {postCount} consulates ·{" "}
-        {allYears.length > 0 ? `${Math.min(...allYears)}-${Math.max(...allYears)}` : "—"} data
+        F1 · J1 visa issuances · <b className="text-slate-100">By consulate:</b> {postCount}{" "}
+        consulates in {countryCount} countries, monthly, {monthRangeLabel(postRange)}
+        {annual.first !== null && annual.latest !== null && (
+          <>
+            {" "}
+            · <b className="text-slate-100">By nationality:</b> annual, FY{annual.first} – FY
+            {annual.latest}
+            {partialFiscalYearNote(annual)}
+          </>
+        )}
       </p>
     </section>
   );

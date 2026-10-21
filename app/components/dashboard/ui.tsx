@@ -27,6 +27,7 @@ export function KpiCard({
   deltaTone = "neutral",
   accent = "default",
   valueClassName = "",
+  title,
 }: {
   label: string;
   value: ReactNode;
@@ -34,12 +35,15 @@ export function KpiCard({
   deltaTone?: "pos" | "neg" | "neutral";
   accent?: Accent;
   valueClassName?: string;
+  /** Hover tooltip with the exact figures behind the card. */
+  title?: string;
 }) {
   const deltaColor =
     deltaTone === "pos" ? "text-[#4ade80]" : deltaTone === "neg" ? "text-[#f87171]" : "text-slate-300";
 
   return (
     <div
+      title={title}
       className={`group relative min-h-[118px] overflow-visible p-5 transition duration-150 hover:-translate-y-0.5 hover:border-[rgba(255,184,28,0.44)] ${CARD_SURFACE} ${ACCENT_BORDER[accent]}`}
     >
       <span

@@ -214,6 +214,14 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
 
 ## Choices the data forced
 
+- **The header cards use a rolling 12 months.** The five cards above the tabs compare the
+  latest 12 months of consulate data with the 12 months before (e.g. Mar 2025 – Feb 2026
+  vs Mar 2024 – Feb 2025), from `rollingTwelveMonths()` in `lib/dashboard/rolling.ts`.
+  They ignore the sidebar Years filter. The heading above them names the period, and
+  each card's hover tooltip gives both date ranges, both totals and the exact change. "Country" there
+  is where the visa was issued (the consulate's country), not the student's nationality,
+  because the snapshot has no monthly nationality data. A change shows only when both
+  windows have all 12 months.
 - **Growth labels are computed.** The original hardcoded `2023–2025 Jan–Sep Growth`, which
   was wrong even then. The label now names what `yoy_growth()` actually compares: the two
   most recent years in the data, over the months both contain. With data through February,

@@ -5,7 +5,14 @@ import type { ChartLayout, Trace } from "../Chart";
 
 import { MONTH_NAMES } from "../../../lib/dashboard/constants";
 import { int } from "../../../lib/dashboard/format";
-import { groupSum, sumBy, yoyGrowth } from "../../../lib/dashboard/metrics";
+import { groupSum } from "../../../lib/dashboard/metrics";
+import {
+  MOVER_MIN_ISSUANCES,
+  arrowPct,
+  monthRangeLabel,
+  risersAndFallers,
+  rollingTotals,
+} from "../../../lib/dashboard/rolling";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { DownloadCsvButton, SubHeading } from "../shared";
@@ -25,12 +32,11 @@ const HEAT_SCALE: Array<[number, string]> = [
 ];
 
 /**
- * app.py renders this "Consulate Intelligence" view under the tab labelled
- * "Research: Country" — the label and content are mismatched in the original,
- * and that pairing is preserved here.
+ * The "Consulate Intelligence" tab. (app.py showed it under a "Research: Country"
+ * label; the label now matches the content.)
  */
 export default function ResearchCountryTab() {
-  const { f1, f1Filtered, focus, focusCountry, topN, summaryGrowthLabel } = useDashboard();
+  const { data, f1Filtered, focus, focusCountry, topN } = useDashboard();
 
   const topPosts = useMemo(() => {
     const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);
@@ -62,51 +68,44 @@ export default function ResearchCountryTab() {
     return { data, layout };
   }, [topPosts, topN]);
 
-  /* ---- Fastest-growing consulates: computed on the unfiltered F1 layer ---- */
-  const postGrowth = useMemo(() => {
-    const byPost = new Map<string, typeof f1>();
-    for (const row of f1) {
-      const list = byPost.get(row.post);
-      if (list) list.push(row);
-      else byPost.set(row.post, [row]);
-    }
-    const rows: Array<{ post: string; growth: number; total: number }> = [];
-    for (const [post, postRows] of byPost) {
-      const growth = yoyGrowth(postRows);
-      const total = sumBy(postRows, (r) => r.issuances);
-      if (growth !== null && total > 500) rows.push({ post, growth, total });
-    }
-    rows.sort((a, b) => b.growth - a.growth);
-    const top = rows.slice(0, 20);
+  /* ---- Top risers and fallers: latest 12 months vs the 12 before, all F1 consulates ---- */
+  const end = data.meta.coverage.postsMonthly.end;
+  const postMovers = useMemo(() => {
+    const rolling = rollingTotals(data.postsMonthly, end, (r) => (r.visa === "F1" ? r.post : null));
+    const { risers, fallers, qualifying } = risersAndFallers(rolling.groups);
 
-    const data: Trace[] = [
-      {
+    const chart = (rows: typeof risers, title: string, color: string) => {
+      const trace: Trace = {
         type: "bar",
         orientation: "h",
-        x: top.map((r) => r.growth),
-        y: top.map((r) => r.post),
-        text: top.map((r) => r.growth.toFixed(1)),
+        x: rows.map(([, g]) => g.change),
+        y: rows.map(([post]) => post),
+        text: rows.map(([, g]) => arrowPct(g.change)),
         textposition: "auto",
-        marker: {
-          color: top.map((r) => r.growth),
-          colorscale: [
-            [0, "#F87171"],
-            [0.5, "#6B7280"],
-            [1, "#4ADE80"],
-          ],
-          cmin: -60,
-          cmax: 60,
-        },
-        hovertemplate: "<b>%{y}</b><br>Growth: %{x:.1f}%<extra></extra>",
-      },
-    ];
-    const layout: ChartLayout = {
-      height: 680,
-      title: { text: `Fastest Growing Consulates (${summaryGrowthLabel} %)` },
-      yaxis: { autorange: "reversed" },
+        customdata: rows.map(([, g]) => [int(g.current), int(g.prior)]),
+        marker: { color },
+        hovertemplate:
+          "<b>%{y}</b><br>Change: %{x:.1f}%<br>" +
+          `${monthRangeLabel(rolling.current)}: %{customdata[0]}<br>` +
+          `${monthRangeLabel(rolling.prior)}: %{customdata[1]}<extra></extra>`,
+      };
+      const layout: ChartLayout = {
+        height: 340,
+        title: { text: title },
+        xaxis: { title: { text: "% change vs previous 12 months" }, ticksuffix: "%" },
+        yaxis: { autorange: "reversed" },
+        margin: { l: 130 },
+      };
+      return { data: [trace], layout, count: rows.length };
     };
-    return { data, layout };
-  }, [f1, summaryGrowthLabel]);
+
+    return {
+      period: monthRangeLabel(rolling.current),
+      qualifying,
+      risers: chart(risers, "Top risers - F1 vs previous 12 months", "#4ADE80"),
+      fallers: chart(fallers, "Top fallers - F1 vs previous 12 months", "#F87171"),
+    };
+  }, [data.postsMonthly, end]);
 
   /* ---- Monthly heatmap for the top 20 posts ---- */
   const heatmap = useMemo(() => {
@@ -196,7 +195,23 @@ export default function ResearchCountryTab() {
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Chart data={topPostsChart.data} layout={topPostsChart.layout} height={680} />
-        <Chart data={postGrowth.data} layout={postGrowth.layout} height={680} />
+        <div>
+          {postMovers.risers.count > 0 ? (
+            <Chart data={postMovers.risers.data} layout={postMovers.risers.layout} height={340} />
+          ) : (
+            <p className="py-6 text-sm text-slate-400">No qualifying consulate grew.</p>
+          )}
+          {postMovers.fallers.count > 0 ? (
+            <Chart data={postMovers.fallers.data} layout={postMovers.fallers.layout} height={340} />
+          ) : (
+            <p className="py-6 text-sm text-slate-400">No qualifying consulate declined.</p>
+          )}
+          <p className="mt-2 text-xs text-slate-400">
+            F1 issuances by consulate, {postMovers.period} vs the previous 12 months. Only
+            consulates with at least {MOVER_MIN_ISSUANCES} F1 issuances in both 12-month periods
+            are included ({postMovers.qualifying} consulates).
+          </p>
+        </div>
       </div>
 
       <section>

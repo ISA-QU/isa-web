@@ -24,17 +24,16 @@ import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
 import HistoricalConsulatesTab from "./tabs/HistoricalConsulatesTab";
 
 /**
- * Tab order and labels are app.py's, verbatim. Note that the original pairs the
- * "Consulates" label with the Country Intelligence view and "Research: Country"
- * with Consulate Intelligence — those two labels are swapped relative to their
- * content upstream, and the pairing is preserved here rather than silently fixed.
+ * Tab order is app.py's. app.py labelled the Country Intelligence view
+ * "Consulates" and the Consulate Intelligence view "Research: Country"; the
+ * labels now match their content.
  */
 const TABS = [
   { id: "command", label: "Primary: Command", Component: CommandCenterTab },
   { id: "executive", label: "Executive", Component: ExecutiveTab },
   { id: "country360", label: "Country 360", Component: Country360Tab },
-  { id: "consulates", label: "Consulates", Component: ConsulatesTab },
-  { id: "research-country", label: "Research: Country", Component: ResearchCountryTab },
+  { id: "consulates", label: "Country Intelligence", Component: ConsulatesTab },
+  { id: "research-country", label: "Consulate Intelligence", Component: ResearchCountryTab },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
   { id: "historical-consulates", label: "Historical Consulates", Component: HistoricalConsulatesTab },
 ] as const;

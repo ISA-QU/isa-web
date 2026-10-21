@@ -90,3 +90,82 @@ export function countryF1Change(rolling: RollingTwelveMonths, country: string): 
 /** "Mar 2025 – Feb 2026". */
 export const monthRangeLabel = (range: MonthRange): string =>
   `${monthDisplay(range.start)} – ${monthDisplay(range.end)}`;
+
+export interface RollingGroup {
+  current: number;
+  prior: number;
+  /** % change, current vs prior; null when not comparable or the prior total is 0. */
+  change: number | null;
+}
+
+/**
+ * Latest-12 and previous-12 month totals per group (a post, a country, or one
+ * key for a single total), over the same windows as `rollingTwelveMonths`.
+ * Rows for which `keyOf` returns null are skipped, which doubles as a filter.
+ */
+export function rollingTotals<K>(
+  rows: readonly PostMonthlyRow[],
+  endMonth: number,
+  keyOf: (row: PostMonthlyRow) => K | null,
+): { groups: Map<K, RollingGroup>; current: MonthRange; prior: MonthRange; comparable: boolean } {
+  const current = { start: endMonth - WINDOW + 1, end: endMonth };
+  const prior = { start: endMonth - 2 * WINDOW + 1, end: endMonth - WINDOW };
+  const groups = new Map<K, RollingGroup>();
+  const currentMonths = new Set<number>();
+  const priorMonths = new Set<number>();
+
+  for (const row of rows) {
+    const inCurrent = row.monthIndex >= current.start && row.monthIndex <= current.end;
+    const inPrior = row.monthIndex >= prior.start && row.monthIndex <= prior.end;
+    if (!inCurrent && !inPrior) continue;
+    // Month coverage counts every row in the window, not only the selected ones,
+    // so a group with no rows in some month still compares complete windows.
+    (inCurrent ? currentMonths : priorMonths).add(row.monthIndex);
+    const key = keyOf(row);
+    if (key === null) continue;
+    let group = groups.get(key);
+    if (!group) {
+      group = { current: 0, prior: 0, change: null };
+      groups.set(key, group);
+    }
+    if (inCurrent) group.current += row.issuances;
+    else group.prior += row.issuances;
+  }
+
+  const comparable = currentMonths.size === WINDOW && priorMonths.size === WINDOW;
+  for (const group of groups.values()) {
+    group.change = comparable ? pctGrowth(group.current, group.prior) : null;
+  }
+  return { groups, current, prior, comparable };
+}
+
+/** "▲ 4.2%" / "▼ 34.7%" / "0.0%"; "N/A" when there is no change. */
+export function arrowPct(change: number | null): string {
+  if (change === null || Number.isNaN(change)) return "N/A";
+  if (change > 0) return `▲ ${change.toFixed(1)}%`;
+  if (change < 0) return `▼ ${Math.abs(change).toFixed(1)}%`;
+  return "0.0%";
+}
+
+/** Minimum issuances in BOTH 12-month windows for a row to count as a riser or faller. */
+export const MOVER_MIN_ISSUANCES = 100;
+
+/** Largest increases and largest decreases among groups that clear the minimum volume. */
+export function risersAndFallers<K>(
+  groups: Map<K, RollingGroup>,
+  limit = 10,
+  minimum = MOVER_MIN_ISSUANCES,
+): { risers: Array<[K, RollingGroup]>; fallers: Array<[K, RollingGroup]>; qualifying: number } {
+  const eligible = [...groups.entries()].filter(
+    ([, g]) => g.change !== null && g.current >= minimum && g.prior >= minimum,
+  );
+  const risers = eligible
+    .filter(([, g]) => g.change! > 0)
+    .sort((a, b) => b[1].change! - a[1].change!)
+    .slice(0, limit);
+  const fallers = eligible
+    .filter(([, g]) => g.change! < 0)
+    .sort((a, b) => a[1].change! - b[1].change!)
+    .slice(0, limit);
+  return { risers, fallers, qualifying: eligible.length };
+}

@@ -4,16 +4,17 @@ import { useMemo } from "react";
 
 import { int, metricPct, monthDisplay, monthLongDisplay } from "../../lib/dashboard/format";
 import { idxMaxString } from "../../lib/dashboard/metrics";
-import { countryF1Change, monthRangeLabel, rollingTwelveMonths } from "../../lib/dashboard/rolling";
+import {
+  arrowPct,
+  countryF1Change,
+  monthRangeLabel,
+  rollingTwelveMonths,
+} from "../../lib/dashboard/rolling";
 import { useDashboard } from "./DashboardContext";
 import { KpiCard, KpiRow } from "./ui";
 
 const toneOf = (change: number | null) =>
   change === null ? "neutral" : change > 0 ? "pos" : change < 0 ? "neg" : "neutral";
-
-/** "▲ 4.2%" / "▼ 34.7%" / "0.0%". */
-const arrowPct = (change: number) =>
-  change > 0 ? `▲ ${change.toFixed(1)}%` : change < 0 ? `▼ ${Math.abs(change).toFixed(1)}%` : "0.0%";
 
 /**
  * The header strip: the latest 12 months of consulate data against the 12

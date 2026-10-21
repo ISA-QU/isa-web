@@ -18,6 +18,7 @@ import {
   notNa,
   recommendedOutreachWindow,
 } from "../../../lib/dashboard/metrics";
+import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { CommandCenterRow, VisaSelection } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
@@ -265,10 +266,40 @@ export default function CommandCenterTab() {
     )
     .slice(0, 18);
 
-  const movers = sortBy(
-    filtered.filter((r) => notNa(r.latest12Momentum)),
+  const moverPeriod =
+    latestMonthIndex !== null
+      ? monthRangeLabel({ start: latestMonthIndex - 11, end: latestMonthIndex })
+      : "the latest 12 months";
+  const moverVisa = visa === "Both" ? "F1 + J1" : visa;
+  // Same windows and formula as rollingTotals(): latest 12 months vs the 12 before.
+  // Only rows with real volume in both windows, so tiny markets can't top the list.
+  const moverPool = filtered.filter(
+    (r) =>
+      notNa(r.latest12Momentum) &&
+      r.latest12Total >= MOVER_MIN_ISSUANCES &&
+      r.prior12Total >= MOVER_MIN_ISSUANCES,
+  );
+  const risers = sortBy(
+    moverPool.filter((r) => r.latest12Momentum! > 0),
     [(r) => r.latest12Momentum],
-  ).slice(0, 20);
+  ).slice(0, 10);
+  const fallers = sortBy(
+    moverPool.filter((r) => r.latest12Momentum! < 0),
+    [(r) => r.latest12Momentum],
+    true,
+  ).slice(0, 10);
+  const moverColumns: Column<CommandCenterRow>[] = [
+    { key: "country", header: "Country", render: (r) => r.country },
+    {
+      key: "momentum",
+      header: "Change vs previous 12 months",
+      numeric: true,
+      render: (r) => arrowPct(r.latest12Momentum),
+    },
+    { key: "latest", header: "Latest 12 Months", numeric: true, render: (r) => int(r.latest12Total) },
+    { key: "prior", header: "Previous 12 Months", numeric: true, render: (r) => int(r.prior12Total) },
+    { key: "action", header: "Action", render: (r) => r.recommendedAction },
+  ];
 
   const rowKey = (row: CommandCenterRow) => row.country;
 
@@ -473,19 +504,34 @@ export default function CommandCenterTab() {
       </section>
 
       <section>
-        <SubHeading>Latest Comparable-Period Movers</SubHeading>
-        <DataTable
-          rows={movers}
-          height={390}
-          rowKey={rowKey}
-          columns={[
-            { key: "country", header: "Country", render: (r) => r.country },
-            { key: "momentum", header: "Momentum", numeric: true, render: (r) => metricPct(r.latest12Momentum) },
-            { key: "latest", header: "Latest 12 Months", numeric: true, render: (r) => int(r.latest12Total) },
-            { key: "prior", header: "Prior 12 Months", numeric: true, render: (r) => int(r.prior12Total) },
-            { key: "action", header: "Action", render: (r) => r.recommendedAction },
-          ]}
-        />
+        <SubHeading>Latest 12-Month Movers</SubHeading>
+        <Caption>
+          {moverVisa} issuances, {moverPeriod} vs the previous 12 months, by the country where the
+          visa was issued. Only countries with at least {MOVER_MIN_ISSUANCES} issuances in both
+          12-month periods are included ({moverPool.length} match the current filters).
+        </Caption>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div>
+            <h5 className="mb-2 text-sm font-bold text-[#4ade80]">Top risers</h5>
+            <DataTable
+              rows={risers}
+              height={390}
+              rowKey={rowKey}
+              columns={moverColumns}
+              empty="No qualifying country grew over the previous 12 months."
+            />
+          </div>
+          <div>
+            <h5 className="mb-2 text-sm font-bold text-[#f87171]">Top fallers</h5>
+            <DataTable
+              rows={fallers}
+              height={390}
+              rowKey={rowKey}
+              columns={moverColumns}
+              empty="No qualifying country declined over the previous 12 months."
+            />
+          </div>
+        </div>
       </section>
 
       <section>

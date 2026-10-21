@@ -6,7 +6,15 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { decimals, int, metricPct, monthDisplay } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
+import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
+
+/** A rankings row: the country summary plus its latest-12-month figures. */
+interface RankingRow extends CountrySummaryRow {
+  f1Last12: number;
+  j1Last12: number;
+  f1Change: number | null;
+}
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { SubHeading } from "../shared";
@@ -19,9 +27,8 @@ const BLUE_GOLD: Array<[number, string]> = [
 ];
 
 /**
- * app.py renders this "Country Intelligence" view under the tab labelled
- * "Consulates" — the label and content are mismatched in the original, and that
- * pairing is preserved here.
+ * The "Country Intelligence" tab. (app.py showed it under a "Consulates" label;
+ * the label now matches the content.)
  */
 export default function ConsulatesTab() {
   const {
@@ -31,9 +38,38 @@ export default function ConsulatesTab() {
     f1Filtered,
     dfFiltered,
     compareCountries,
-    growthLabel,
-    summaryGrowthLabel,
+    data,
   } = useDashboard();
+
+  /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
+  const end = data.meta.coverage.postsMonthly.end;
+  const last12 = useMemo(() => {
+    const f1 = rollingTotals(data.postsMonthly, end, (r) => (r.visa === "F1" ? r.country : null));
+    const j1 = rollingTotals(data.postsMonthly, end, (r) => (r.visa === "J1" ? r.country : null));
+    return { f1: f1.groups, j1: j1.groups, current: f1.current, prior: f1.prior };
+  }, [data.postsMonthly, end]);
+  const period = monthRangeLabel(last12.current);
+  const priorPeriod = monthRangeLabel(last12.prior);
+
+  const focusF1 = last12.f1.get(focusCountry);
+  const focusJ1 = last12.j1.get(focusCountry);
+  const focusChange = focusF1?.change ?? null;
+
+  const rankings = useMemo<RankingRow[]>(
+    () =>
+      summary
+        .map((row) => {
+          const f1 = last12.f1.get(row.country);
+          return {
+            ...row,
+            f1Last12: f1?.current ?? 0,
+            j1Last12: last12.j1.get(row.country)?.current ?? 0,
+            f1Change: f1?.change ?? null,
+          };
+        })
+        .sort((a, b) => b.f1Last12 - a.f1Last12 || a.country.localeCompare(b.country)),
+    [summary, last12],
+  );
 
   /* ---- Monthly F1 trend, stacked by year ---- */
   const trend = useMemo(() => {
@@ -189,13 +225,35 @@ export default function ConsulatesTab() {
       </SectionTitle>
 
       <KpiRow>
-        <KpiCard label="F1 Issuances" value={int(focus.total)} />
-        <KpiCard label="J1 Issuances" value={int(focus.j1Total)} />
+        <KpiCard
+          label="F1 issuances, last 12 months"
+          value={int(focusF1?.current ?? 0)}
+          title={`F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`}
+        />
+        <KpiCard
+          label="J1 issuances, last 12 months"
+          value={int(focusJ1?.current ?? 0)}
+          title={`J1 issued in ${focusCountry}, ${period}: ${int(focusJ1?.current ?? 0)}`}
+        />
         <KpiCard label="Active Posts" value={focus.posts} />
-        <KpiCard label={growthLabel} value={metricPct(focus.growth)} />
+        <KpiCard
+          label="F1 vs previous 12 months"
+          value={arrowPct(focusChange)}
+          valueClassName={
+            focusChange === null ? "" : focusChange > 0 ? "!text-[#4ade80]" : focusChange < 0 ? "!text-[#f87171]" : ""
+          }
+          title={[
+            `F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`,
+            `F1 issued in ${focusCountry}, ${priorPeriod}: ${int(focusF1?.prior ?? 0)}`,
+            `Change: ${metricPct(focusChange)}`,
+          ].join("\n")}
+        />
         <KpiCard label="Seasonality CV" value={decimals(focus.cv, 2)} />
-        <KpiCard label="Opp. Score" value={`${focus.opportunity}/100`} />
       </KpiRow>
+      <p className="-mt-4 text-xs text-slate-400">
+        Last 12 months = {period}, compared with {priorPeriod}; by the country where the visa
+        was issued. These figures ignore the sidebar Years filter.
+      </p>
 
       <Divider />
 
@@ -218,17 +276,24 @@ export default function ConsulatesTab() {
 
       <section>
         <SubHeading>Full Country Rankings</SubHeading>
-        <DataTable<CountrySummaryRow>
-          rows={summary}
+        <p className="mb-3 text-xs text-slate-400">
+          Sorted by F1 issuances in the last 12 months ({period}). Top Post and Peak Month use{" "}
+          {monthRangeLabel(data.meta.coverage.operational)}.
+        </p>
+        <DataTable<RankingRow>
+          rows={rankings}
           height={420}
           rowKey={(row) => row.country}
           columns={[
             { key: "country", header: "Country", render: (r) => r.country },
-            { key: "f1", header: "F1 Total", numeric: true, render: (r) => int(r.f1Total) },
-            { key: "j1", header: "J1 Total", numeric: true, render: (r) => int(r.j1Total) },
-            { key: "growth", header: summaryGrowthLabel, numeric: true, render: (r) => metricPct(r.growthPct) },
-            { key: "tier", header: "Market Tier", render: (r) => r.tier },
-            { key: "opp", header: "Opp. Score", numeric: true, render: (r) => r.opportunityScore },
+            { key: "f1", header: "F1, last 12 months", numeric: true, render: (r) => int(r.f1Last12) },
+            { key: "j1", header: "J1, last 12 months", numeric: true, render: (r) => int(r.j1Last12) },
+            {
+              key: "growth",
+              header: "F1 vs previous 12 months",
+              numeric: true,
+              render: (r) => arrowPct(r.f1Change),
+            },
             { key: "post", header: "Top Post", render: (r) => r.topPost },
             {
               key: "peak",

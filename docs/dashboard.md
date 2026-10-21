@@ -222,11 +222,18 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   is where the visa was issued (the consulate's country), not the student's nationality,
   because the snapshot has no monthly nationality data. A change shows only when both
   windows have all 12 months.
-- **Growth labels are computed.** The original hardcoded `2023–2025 Jan–Sep Growth`, which
-  was wrong even then. The label now names what `yoy_growth()` actually compares: the two
-  most recent years in the data, over the months both contain. With data through February,
-  that is a two-month comparison ("2026 vs 2025 Jan–Feb Growth"), which is noisy. It widens
-  as the year fills in.
+- **Growth is shown as the latest 12 months vs the previous 12.** The original's
+  `yoy_growth()` compares the months of the latest calendar year with the same months a year
+  earlier, which with data through February is a noisy two-month comparison. Every growth
+  figure on the tabs (Executive focus card and globe, Country Intelligence KPIs and rankings,
+  Consulate Intelligence risers and fallers, Command Center movers, Country 360's comparison
+  line) now uses `rollingTotals()` from `lib/dashboard/rolling.ts`, labelled "vs previous
+  12 months", the same windows as the header. `yoy_growth()`, Opportunity Score and Market
+  Tier still exist in `metrics.ts` but are no longer shown, since they depend on the
+  two-month figure. Totals shown beside a change cover the same last 12 months.
+- **Risers and fallers need volume in both periods.** Command Center's movers and Consulate
+  Intelligence's risers/fallers include only rows with at least 100 issuances in both
+  12-month periods (`MOVER_MIN_ISSUANCES`), so tiny markets can't top the lists.
 - **Long-term metrics use the latest complete fiscal year** (FY2025 today), so the
   year-to-date fiscal year never reads as a collapse.
 - **Recovery Index compares the latest complete calendar year with 2019.** The original
@@ -235,13 +242,8 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   months.
 - **The PDF/Excel era filter is gone.** The new files carry no source-format column.
 
-## Known issues carried over from the Streamlit app
+## Tab changes
 
-These are defects in the original that the port reproduces rather than silently fixes.
-
-1. **Two tab labels are swapped.** The tab labelled "Consulates" shows Country
-   Intelligence; the tab labelled "Research: Country" shows Consulate Intelligence.
-
-## Removed tabs
-
-The AI, Strategy and Analytics tabs were removed in Feature 1; see git history.
+The AI, Strategy and Analytics tabs were removed in Feature 1; see git history. In Feature 3
+the tabs app.py labelled "Consulates" and "Research: Country" were renamed "Country
+Intelligence" and "Consulate Intelligence" to match their content.

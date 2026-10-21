@@ -36,6 +36,7 @@ import {
   monthlyCountryName,
   regionForCountry,
 } from "../../../lib/dashboard/metrics";
+import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CommandCenterRow, VisaSelection } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
@@ -557,15 +558,22 @@ export default function Country360Tab() {
     return { data, layout, rows };
   }, [hcCountry, country]);
 
-  const ytdCurrent = sumBy(
-    opCountry.filter((r) => r.year === endYear && r.month <= throughMonth),
-    (r) => r.issuances,
-  );
-  const ytdPrior = sumBy(
-    opCountry.filter((r) => r.year === endYear - 1 && r.month <= throughMonth),
-    (r) => r.issuances,
-  );
-  const ytdLabel = yearToDateLabel(throughMonth);
+  // Latest 12 months vs the 12 before for this country and visa selection, the
+  // same comparison the dashboard header uses.
+  const last12 = useMemo(() => {
+    const classes = selectedVisaClasses(visa);
+    const rolling = rollingTotals(data.postsMonthly, data.meta.coverage.postsMonthly.end, (r) =>
+      r.country === monthCountry && classes.includes(r.visa) ? "selected" : null,
+    );
+    const group = rolling.groups.get("selected");
+    return {
+      current: group?.current ?? 0,
+      prior: group?.prior ?? 0,
+      change: rolling.comparable ? pctGrowth(group?.current ?? 0, group?.prior ?? 0) : null,
+      period: monthRangeLabel(rolling.current),
+      priorPeriod: monthRangeLabel(rolling.prior),
+    };
+  }, [data.postsMonthly, data.meta.coverage.postsMonthly.end, monthCountry, visa]);
 
   const officialFys = fiscalYears.filter((f) => f.source === "annual").map((f) => f.fiscalYear);
   const lastOfficialFy = officialFys.length > 0 ? Math.max(...officialFys) : null;
@@ -846,8 +854,9 @@ export default function Country360Tab() {
               />
             </div>
             <Caption>
-              {endYear} {ytdLabel} comparable volume: {int(ytdCurrent)}; {endYear - 1} {ytdLabel}{" "}
-              comparable volume: {int(ytdPrior)}; change: {metricPct(pctGrowth(ytdCurrent, ytdPrior))}.
+              Last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
+              {last12.priorPeriod}): {int(last12.prior)}; {arrowPct(last12.change)} vs previous 12
+              months.
             </Caption>
           </section>
 

@@ -63,6 +63,34 @@ Rules the build applies:
 - **A broken file changes nothing.** Duplicate rows, non-numeric counts or unrecognisable
   columns fail the build with the file name and row number, and the previous snapshot stays.
 
+### The snapshot's tables
+
+| Table | Rows (today) | What it holds |
+|---|---|---|
+| `postsMonthly` | 41,965 | F1/J1 issuances by consulate (post) and month, Mar 2017 onward: **where** visas were issued |
+| `annualCountry` | 11,367 | F1/J1 by nationality and fiscal year, FY1997 onward, countries only |
+| `nationalityMonthly` | 35,967 | F1/J1 by nationality and month, Mar 2017 onward: **who** received visas |
+
+`nationalityMonthly` (Feature 7) is built from the monthly nationality file by
+`_build_nationality_monthly()` in the rebuild Lambda. It is dictionary-encoded like
+`postsMonthly`: `dims.country` lists each name once and `cols` holds `year`, `month`,
+`country` (an index into `dims.country`), `visa` (0 = F1, 1 = J1) and `issuances`.
+
+- Country names go through `NATIONALITY_ALIASES`, so they match the post data and the annual
+  table. Rows that unify to the same country, month and visa are added together.
+- Special reporting categories (`SPECIAL_REPORTING_NAMES` plus anything the file marks as not
+  a "country or area", e.g. Palestinian Authority Travel Document, Unknown) keep their own
+  names and are listed in `dims.nonCountry` (always a subset of `dims.country`): identifiable,
+  but outside the country market universe. The decoder marks them `isCountry: false`.
+- Its coverage is `coverage.nationalityMonthly`; `validation.nationalityMonthly` records rows,
+  months, countries, F1/J1 totals and the special-category totals.
+- **Nothing displays it yet.** The frontend decodes it to `DashboardData.nationalityMonthly`,
+  or `null` when a snapshot lacks the table (e.g. one built before Feature 7) or it is
+  malformed; the dashboard works the same either way. The schema stays
+  `dashboard-snapshot@1` because the table is optional.
+- It adds about 53 KB to the gzipped snapshot (90,588 → 143,731 bytes; raw 971,389 →
+  1,532,998).
+
 ## AWS setup
 
 Do these in the AWS console with the account the website uses. Everything is in
@@ -184,7 +212,12 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
   windows, and six FY2024 nationality figures. They're all historical, so they don't move
   as months are added;
 - the pure classifiers transcribed from `app.py`;
-- that every historical metric is measured from the latest *complete* fiscal year.
+- that every historical metric is measured from the latest *complete* fiscal year;
+- the monthly nationality table against audit figures (fixed months): F1 countries-only
+  252,159 (Mar 2025 – Feb 2026) and 385,674 (Mar 2024 – Feb 2025); India F1 30,292 vs
+  75,060 (−59.6%); monthly world totals within 5 of the post totals (202 of 216 month/visa
+  pairs exact); FY2025 monthly sums 287,915 F1 / 292,742 J1 (all rows) and, countries only,
+  equal to the annual table (287,520 / 292,418).
 
 ## Architecture
 
@@ -307,3 +340,41 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
 The AI, Strategy and Analytics tabs were removed in Feature 1; see git history. In Feature 3
 the tabs app.py labelled "Consulates" and "Research: Country" were renamed "Country
 Intelligence" and "Consulate Intelligence" to match their content.
+
+## Handoff notes for deployment (Koushik)
+
+The branch `dev/dashboard-improvements` changes the **`rebuild-dashboard` Lambda**. Nothing
+in AWS has been changed yet; these are the steps when it is deployed.
+
+**What changed in the Lambda** (`backend/lambdas/rebuild-dashboard/lambda_function.py`):
+1. **Feature 0, post renames.** `POST_ALIASES` maps 7 older consulate labels to current
+   names (`Mumbai (Bombay)` → `Mumbai`, `Chennai ( Madras)` and `Chennai (Madras)` →
+   `Chennai`, `Rio De Janeiro` → `Rio de Janeiro`, `Dar Es Salaam` → `Dar es Salaam`,
+   `Port Of Spain` → `Port of Spain`, `Port Au Prince` → `Port-au-Prince`). The rebuild
+   output gains a `renamed` line, and the build stops if an old and a current label report
+   the same month and visa.
+2. **Feature 7, monthly nationality table.** The snapshot gains `nationalityMonthly` and
+   `validation.nationalityMonthly`; the rebuild output gains a `nationalityMonthly` line.
+
+**Steps**
+1. Open the `rebuild-dashboard` function in the console (us-east-1), replace the code with the
+   branch's `lambda_function.py`, and **Deploy**. Keep the `BUCKET` line as it is in AWS if it
+   differs from the file.
+2. No new permissions, raw files, environment variables or layers are needed. Memory
+   (1024 MB) and timeout (1 min) are fine: the local build takes about 3 seconds.
+3. Run the **Test** event (`{}`). Expect `"ok": true`, `"warnings": []`,
+   `"postsMonthly": "41965 rows, ..."` (up from 41,524 before the renames) and
+   `"nationalityMonthly": "35967 rows, 2017-03 to 2026-02"` with the current raw files.
+   `snapshot/snapshot.json.gz` grows to about 145 KB.
+4. Optional check: download the snapshot, gunzip it to `public/dashboard-data/snapshot.json`
+   and run `npm run dashboard:verify` (70 checks).
+
+**Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito
+and the S3 bucket layout. The served response (about 190 KB base64) is far below Lambda's
+6 MB limit.
+
+**Order doesn't matter.** The site reads snapshots with or without `nationalityMonthly`, and
+the current site ignores the new table, so the Lambda and the site (`npm run deploy`) can be
+deployed in either order. Until the Lambda is redeployed, the live snapshot keeps the 7 old
+post labels unmapped (as warnings) and has no monthly nationality table.
+

@@ -64,7 +64,8 @@ Sourced event markers on the Historical Trends chart.
 
 ## 7 · Monthly nationality data
 
-- [ ] Add monthly nationality rows to the snapshot (pipeline change; the deployed Lambda would need updating, which requires approval).
+- [x] Add monthly nationality rows to the snapshot (`nationalityMonthly`, local build and verify checks). Deploying the Lambda is in the handoff notes in dashboard.md.
+- [ ] Montserrat and Western Sahara appear in the monthly nationality data but not in the annual table; handle them when a page first uses the table.
 - [ ] Offer nationality-based 12-month figures alongside the consulate-based ones; the audit benchmark is F1 last 12 months 252,159 vs prior 385,674 by nationality (the consulate basis gives 252,282 vs 386,264).
 - [ ] Coverage states instead of zero-fill: reported / reported-zero / absent / stopped (e.g. Burma, Iran, Afghanistan, Venezuela after Jun 2025). Missing rows are not zero.
 - [ ] Compare FY2026 only on equivalent months (Oct–Feb: F1 −44.7%, J1 −10.8% vs FY2025).

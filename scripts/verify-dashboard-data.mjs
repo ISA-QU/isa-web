@@ -260,6 +260,80 @@ async function main() {
   for (const row of frame) categories[row.marketCategory] = (categories[row.marketCategory] ?? 0) + 1;
   console.log(`    info  categories: ${JSON.stringify(categories)}`);
 
+  console.log("\n  Monthly nationality table  (audit controls; fixed months, so they don't move as data arrives)");
+  const n = snapshot.nationalityMonthly;
+  const nationality = n
+    ? Array.from({ length: n.rowCount }, (_, i) => {
+        const year = n.cols.year[i];
+        const month = n.cols.month[i];
+        const country = n.dims.country[n.cols.country[i]];
+        return {
+          year,
+          month,
+          monthIndex: monthIndex(year, month),
+          fiscalYear: month >= 10 ? year + 1 : year,
+          country,
+          visa: VISA[n.cols.visa[i]],
+          issuances: n.cols.issuances[i],
+          isCountry: !(n.dims.nonCountry ?? []).includes(country),
+        };
+      })
+    : [];
+  const natMonths = [...new Set(nationality.map((r) => r.monthIndex))].sort((x, y) => x - y);
+  const stamp = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+  const nonCountryInCountry = n ? (n.dims.nonCountry ?? []).every((name) => n.dims.country.includes(name)) : false;
+  check(
+    "table present: months, range, and nonCountry is a subset of country",
+    n
+      ? `${natMonths.length} months, ${stamp(natMonths[0])} to ${stamp(natMonths[natMonths.length - 1])}, subset ${nonCountryInCountry}`
+      : "missing",
+    "108 months, 2017-03 to 2026-02, subset true",
+  );
+
+  const latest12 = inWindow(monthIndex(2025, 3), monthIndex(2026, 2));
+  const prior12 = inWindow(monthIndex(2024, 3), monthIndex(2025, 2));
+  const f1Countries = nationality.filter((r) => r.visa === "F1" && r.isCountry);
+  check("F1, countries only, Mar 2025 - Feb 2026", sum(f1Countries.filter(latest12)), 252159);
+  check("F1, countries only, Mar 2024 - Feb 2025", sum(f1Countries.filter(prior12)), 385674);
+  const indiaF1 = f1Countries.filter((r) => r.country === "India");
+  const indiaNow = sum(indiaF1.filter(latest12));
+  const indiaPrior = sum(indiaF1.filter(prior12));
+  check("India F1 by nationality, Mar 2025 - Feb 2026", indiaNow, 30292);
+  check("India F1 by nationality, Mar 2024 - Feb 2025", indiaPrior, 75060);
+  checkClose(
+    "India F1 change vs previous 12 months (%)",
+    indiaPrior > 0 ? Math.round(((indiaNow - indiaPrior) / indiaPrior) * 1000) / 10 : null,
+    -59.6,
+    0.05,
+  );
+
+  // Monthly world totals by nationality (all rows) against the post totals.
+  const totalsBy = (rows) => {
+    const totals = new Map();
+    for (const r of rows) {
+      const key = `${r.monthIndex}|${r.visa}`;
+      totals.set(key, (totals.get(key) ?? 0) + r.issuances);
+    }
+    return totals;
+  };
+  const natTotals = totalsBy(nationality);
+  const postTotals = totalsBy(postsMonthly);
+  const pairs = [...new Set([...natTotals.keys(), ...postTotals.keys()])];
+  const diffs = pairs.map((key) => Math.abs((natTotals.get(key) ?? 0) - (postTotals.get(key) ?? 0)));
+  const largest = diffs.length > 0 ? Math.max(...diffs) : null;
+  check(`world totals vs post totals: largest monthly difference (${largest}) is at most 5`, largest !== null && largest <= 5, true);
+  check("world totals vs post totals: month/visa pairs that match exactly", `${diffs.filter((d) => d === 0).length} of ${pairs.length}`, "202 of 216");
+
+  const fy2025 = nationality.filter((r) => r.fiscalYear === 2025);
+  check("FY2025 monthly sum, all rows: F1", sum(fy2025.filter((r) => r.visa === "F1")), 287915);
+  check("FY2025 monthly sum, all rows: J1", sum(fy2025.filter((r) => r.visa === "J1")), 292742);
+  const annual2025 = annualCountry.filter((r) => r.fiscalYear === 2025);
+  check(
+    "FY2025 monthly sum, countries only = the snapshot's annual table",
+    `F1 ${sum(fy2025.filter((r) => r.visa === "F1" && r.isCountry))} / J1 ${sum(fy2025.filter((r) => r.visa === "J1" && r.isCountry))}`,
+    `F1 ${sum(annual2025.filter((r) => r.visa === "F1"))} / J1 ${sum(annual2025.filter((r) => r.visa === "J1"))}`,
+  );
+
   await rm(outDir, { recursive: true, force: true });
 
   console.log(

@@ -266,6 +266,9 @@ def build_snapshot(files):
     annual, fiscal_years, annual_meta = _build_annual(
         by_period["historical"], by_period["nationality"], warnings
     )
+    nationality_monthly, nationality_meta = _build_nationality_monthly(
+        by_period["nationality"], warnings
+    )
 
     end = post_meta["end"]
     end_year = end // 12
@@ -283,13 +286,75 @@ def build_snapshot(files):
             ),
             "annual": annual_meta,
         },
-        "validation": {"postsMonthly": post_meta["validation"], "annual": annual_meta["validation"]},
+        "validation": {
+            "postsMonthly": post_meta["validation"],
+            "annual": annual_meta["validation"],
+            "nationalityMonthly": nationality_meta,
+        },
         "warnings": warnings,
         "sources": sources,
         "fiscalYears": fiscal_years,
         "postsMonthly": posts,
         "annualCountry": annual,
+        "nationalityMonthly": nationality_monthly,
     }
+
+
+def _build_nationality_monthly(months, warnings):
+    """Monthly F1/J1 issuances by nationality (who received the visas).
+
+    Country names are unified with NATIONALITY_ALIASES, as in the annual table,
+    so they match the post data. Special reporting categories (e.g. Palestinian
+    Authority Travel Document, Unknown) keep their own names and are listed in
+    dims.nonCountry: identifiable, but outside the country market universe.
+    Rows that unify to the same country, month and visa are added together.
+    """
+    totals = Counter()
+    non_country, country_names = set(), set()
+    for (year, month), records in months.items():
+        for r in records:
+            if r["isCountry"]:
+                name = _canonical(r["name"])
+                country_names.add(name)
+            else:
+                name = r["name"]
+                non_country.add(name)
+            totals[(year, month, name, r["visa"])] += r["issuances"]
+
+    both = sorted(non_country & country_names)
+    if both:
+        warnings.append(
+            f"nationality names reported both as a country and as a special category: {', '.join(both)}"
+        )
+
+    rows = sorted(totals.items(), key=lambda item: (item[0][0], item[0][1], item[0][2], VISA_CODES[item[0][3]]))
+    country_dim = Dim()
+    cols = {"year": [], "month": [], "country": [], "visa": [], "issuances": []}
+    visa_totals, special_totals = Counter(), Counter()
+    for (year, month, name, visa), issuances in rows:
+        cols["year"].append(year)
+        cols["month"].append(month)
+        cols["country"].append(country_dim.id(name))
+        cols["visa"].append(VISA_CODES[visa])
+        cols["issuances"].append(issuances)
+        visa_totals[visa] += issuances
+        if name in non_country:
+            special_totals[name] += issuances
+
+    table = {
+        "rowCount": len(rows),
+        "dims": {"country": country_dim.values, "nonCountry": sorted(non_country)},
+        "cols": cols,
+    }
+    meta = {
+        "rows": len(rows),
+        "months": len(months),
+        "countries": len(country_names),
+        "f1": visa_totals["F1"],
+        "j1": visa_totals["J1"],
+        "specialCategories": dict(sorted(special_totals.items())),
+    }
+    return table, meta
 
 
 def _build_posts(months, warnings):
@@ -459,6 +524,12 @@ def summarise(snapshot, seconds):
             f"{old} -> {v['to']} ({v['rows']} rows, {v['issuances']:,})"
             for old, v in snapshot["validation"]["postsMonthly"]["renamedPosts"].items()
         ],
+        "nationalityMonthly": (
+            f"{snapshot['nationalityMonthly']['rowCount']} rows, "
+            f"{month(coverage['nationalityMonthly']['start'])} to {month(coverage['nationalityMonthly']['end'])}"
+            if coverage["nationalityMonthly"]
+            else "no monthly nationality file"
+        ),
         "warnings": snapshot["warnings"],
     }
 

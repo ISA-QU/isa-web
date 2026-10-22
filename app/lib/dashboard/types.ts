@@ -21,6 +21,23 @@ export interface AnnualCountryRow {
   issuances: number;
 }
 
+/**
+ * Monthly issuance by nationality: who received the visas (not where they were
+ * issued). Special reporting categories such as "Unknown" or "Palestinian
+ * Authority Travel Document" have `isCountry: false`.
+ */
+export interface NationalityMonthlyRow {
+  year: number;
+  month: number;
+  fiscalYear: number;
+  /** year * 12 + (month - 1). */
+  monthIndex: number;
+  country: string;
+  visa: Visa;
+  issuances: number;
+  isCountry: boolean;
+}
+
 /** Monthly issuance by consulate/post. */
 export interface PostMonthlyRow {
   year: number;
@@ -86,6 +103,15 @@ export interface SnapshotMeta {
       rows?: number;
       countries?: number;
       excludedSpecialCategories?: Record<string, number>;
+    };
+    /** Present when the snapshot carries the monthly nationality table. */
+    nationalityMonthly?: {
+      rows: number;
+      months: number;
+      countries: number;
+      f1: number;
+      j1: number;
+      specialCategories: Record<string, number>;
     };
   };
   sources: Array<{
@@ -179,6 +205,11 @@ export interface DashboardData {
   operational: OperationalRow[];
   annualCountry: AnnualCountryRow[];
   postsMonthly: PostMonthlyRow[];
+  /**
+   * Monthly nationality rows, or null when the snapshot has no such table (e.g.
+   * one built before the table was added). Nothing displays it yet.
+   */
+  nationalityMonthly: NationalityMonthlyRow[] | null;
   countryCoords: Record<string, Coord>;
   meta: SnapshotMeta;
 }

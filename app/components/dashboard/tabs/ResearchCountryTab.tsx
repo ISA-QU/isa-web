@@ -6,6 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES } from "../../../lib/dashboard/constants";
 import { int } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
+import { averagePerMonth, calendarMonthYearCounts, yearSpanLabel } from "../../../lib/dashboard/periods";
 import {
   MOVER_MIN_ISSUANCES,
   arrowPct,
@@ -118,7 +119,12 @@ export default function ResearchCountryTab() {
     const sortedPosts = [...postSet].sort();
     const months = [...new Set(rows.map((r) => r.month))].sort((a, b) => a - b);
 
-    const z = sortedPosts.map((post) => months.map((month) => totals.get(`${post}|${month}`) ?? 0));
+    // Average per calendar month, so months with an extra year of data aren't overstated.
+    const yearCounts = calendarMonthYearCounts(f1Filtered);
+    const years = yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))]);
+    const z = sortedPosts.map((post) =>
+      months.map((month) => averagePerMonth(totals.get(`${post}|${month}`) ?? 0, month, yearCounts)),
+    );
 
     const data: Trace[] = [
       {
@@ -129,12 +135,12 @@ export default function ResearchCountryTab() {
         colorscale: HEAT_SCALE,
         texttemplate: "%{z:.0f}",
         textfont: { size: 9 },
-        hovertemplate: "<b>%{y}</b><br>%{x}: %{z:,.0f}<extra></extra>",
+        hovertemplate: "<b>%{y}</b><br>%{x}: %{z:,.0f} average per month<extra></extra>",
       },
     ];
     const layout: ChartLayout = {
       height: 560,
-      title: { text: "Monthly F1 Issuance Heatmap by Consulate" },
+      title: { text: `F1 Issuance Heatmap by Consulate, average per month (${years})` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
@@ -153,11 +159,16 @@ export default function ResearchCountryTab() {
       (r) => `${r.month}|${r.post}`,
       (r) => r.issuances,
     );
+    const yearCounts = calendarMonthYearCounts(f1Filtered);
+    const years = yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))]);
 
     const data: Trace[] = top5.map((post) => {
       const points = [...byMonthPost.entries()]
         .filter(([key]) => key.slice(key.indexOf("|") + 1) === post)
-        .map(([key, value]) => ({ month: Number(key.split("|")[0]), value }))
+        .map(([key, value]) => {
+          const month = Number(key.split("|")[0]);
+          return { month, value: averagePerMonth(value, month, yearCounts) };
+        })
         .sort((a, b) => a.month - b.month);
       return {
         type: "scatter",
@@ -166,16 +177,17 @@ export default function ResearchCountryTab() {
         x: points.map((p) => p.month),
         y: points.map((p) => p.value),
         line: { shape: "spline" },
+        hovertemplate: `${post}: %{y:,.0f} average per month<extra></extra>`,
       };
     });
 
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `Consulate Seasonality - ${focusCountry}` },
+      title: { text: `Consulate Seasonality - ${focusCountry}, average per month (${years})` },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [focus.f1, focusCountry]);
+  }, [focus.f1, focusCountry, f1Filtered]);
 
   const allPosts = useMemo(() => {
     const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);

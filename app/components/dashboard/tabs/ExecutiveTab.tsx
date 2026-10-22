@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { int } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
 import {
@@ -198,36 +198,41 @@ export default function ExecutiveTab() {
   }, [f1Filtered]);
 
   /* ---- Annual F1 vs J1 ---- */
+  // The latest calendar year is partial until December: label it and draw it
+  // lighter and hatched so it isn't read as a full year.
+  const dataEnd = data.meta.coverage.postsMonthly.end;
+  const partialYear = dataEnd % 12 === 11 ? null : Math.floor(dataEnd / 12);
+  const partialMonths = dataEnd % 12 === 0 ? "Jan" : `Jan–${MONTH_NAMES[(dataEnd % 12) + 1]}`;
+  const partialLabel = partialYear !== null ? `${partialYear} (${partialMonths} only)` : null;
   const annual = useMemo(() => {
-    const f1Annual = [...groupSum(f1Filtered, (r) => r.year, (r) => r.issuances).entries()].sort(
-      (a, b) => a[0] - b[0],
-    );
-    const j1Annual = [...groupSum(j1Filtered, (r) => r.year, (r) => r.issuances).entries()].sort(
-      (a, b) => a[0] - b[0],
-    );
-    const data: Trace[] = [
-      {
+    const yearLabel = (year: number) => (year === partialYear && partialLabel ? partialLabel : String(year));
+    const bars = (rows: typeof f1Filtered, name: string, color: string): Trace => {
+      const totals = [...groupSum(rows, (r) => r.year, (r) => r.issuances).entries()].sort(
+        (a, b) => a[0] - b[0],
+      );
+      const partial = totals.map(([year]) => year === partialYear);
+      return {
         type: "bar",
-        name: "F1",
-        x: f1Annual.map(([year]) => year),
-        y: f1Annual.map(([, value]) => value),
-        marker: { color: "#FFB81C" },
-      },
-      {
-        type: "bar",
-        name: "J1",
-        x: j1Annual.map(([year]) => year),
-        y: j1Annual.map(([, value]) => value),
-        marker: { color: "#3D8DDE" },
-      },
-    ];
+        name,
+        x: totals.map(([year]) => yearLabel(year)),
+        y: totals.map(([, value]) => value),
+        marker: {
+          color,
+          opacity: partial.map((p) => (p ? 0.45 : 1)),
+          pattern: { shape: partial.map((p) => (p ? "/" : "")), fgcolor: "#FFFFFF", solidity: 0.25 },
+        },
+        hovertemplate: `<b>%{x}</b><br>${name}: %{y:,.0f}<extra></extra>`,
+      };
+    };
+    const data: Trace[] = [bars(f1Filtered, "F1", "#FFB81C"), bars(j1Filtered, "J1", "#3D8DDE")];
     const layout: ChartLayout = {
       barmode: "group",
       height: 380,
-      title: { text: "Annual F1 vs J1 Issuances" },
+      title: { text: "Annual F1 vs J1 Issuances (calendar years)" },
+      xaxis: { type: "category" },
     };
     return { data, layout };
-  }, [f1Filtered, j1Filtered]);
+  }, [f1Filtered, j1Filtered, partialYear, partialLabel]);
 
   /* ---- Top 20 treemap ---- */
   const treemap = useMemo(() => {
@@ -325,7 +330,14 @@ export default function ExecutiveTab() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Chart data={annual.data} layout={annual.layout} height={380} />
+        <div>
+          <Chart data={annual.data} layout={annual.layout} height={380} />
+          <p className="mt-2 text-xs text-slate-400">
+            Calendar years by issuing consulate, for the years selected in the sidebar.
+            {partialYear !== null &&
+              ` ${partialYear} covers ${partialMonths} only and isn't comparable with full years.`}
+          </p>
+        </div>
         <Chart data={treemap.data} layout={treemap.layout} height={380} />
       </div>
 

@@ -231,6 +231,21 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   12 months", the same windows as the header. `yoy_growth()`, Opportunity Score and Market
   Tier still exist in `metrics.ts` but are no longer shown, since they depend on the
   two-month figure. Totals shown beside a change cover the same last 12 months.
+- **FY2025 is provisional.** Complete fiscal years summed from the monthly nationality
+  reports, rather than taken from the official annual tables, are marked "provisional (from
+  monthly reports)" in Historical Trends: hollow chart markers, card labels and ranking
+  headers (`provisionalFiscalYears()` in `lib/dashboard/periods.ts`).
+- **Historical comparisons name their years and use FY2019 as the pre-pandemic base.**
+  Historical Trends compares the latest year with the year before, its peak and FY2019, and
+  shows a 10-year CAGR with both years; it no longer shows growth since FY1997 or a 5-year
+  change from FY2020, the COVID low. Its cards say "by nationality" so they aren't confused
+  with the consulate-based figures elsewhere.
+- **Seasonality charts show the average per month.** With data through February, January
+  and February have one more year of data than other months, so the Country Intelligence
+  seasonality chart and the Consulate Intelligence heatmap and seasonality chart divide each
+  month's total by the number of selected years that include it.
+- **The partial calendar year is labelled.** Executive's annual chart shows the latest year
+  as e.g. "2026 (Jan–Feb only)", lighter and hatched.
 - **Risers and fallers need volume in both periods.** Command Center's movers and Consulate
   Intelligence's risers/fallers include only rows with at least 100 issuances in both
   12-month periods (`MOVER_MIN_ISSUANCES`), so tiny markets can't top the lists.

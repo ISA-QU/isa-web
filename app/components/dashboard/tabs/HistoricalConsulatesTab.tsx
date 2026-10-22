@@ -21,12 +21,14 @@ import {
   concentrationLabel,
   groupSum,
   idxMaxNumeric,
+  latestCompleteYear,
   notNa,
   postPeriodMetrics,
   recommendedOutreachWindow,
   selectedVisaClasses,
   sumBy,
 } from "../../../lib/dashboard/metrics";
+import { arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { PostMonthlyRow, PostPeriodMetrics, VisaSelection } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
@@ -578,7 +580,39 @@ export default function HistoricalConsulatesTab() {
   const firstBy = (key: (row: ComparisonRow) => number | null) =>
     comparisonRows.length > 0 ? sortBy(comparisonRows, [key])[0].post : "N/A";
   const strongestPost = comparisonTable.length > 0 ? comparisonTable[0].post : "N/A";
-  const fastestPost = firstBy((r) => r.latest12Change);
+  // The post with the highest change; when every post fell, that is the smallest decline,
+  // so the card says "strongest trend" and shows the % rather than claiming growth.
+  const strongestTrend =
+    comparisonRows.length > 0 ? sortBy(comparisonRows, [(r) => r.latest12Change])[0] : null;
+  const strongestTrendText =
+    strongestTrend && notNa(strongestTrend.latest12Change)
+      ? `${strongestTrend.post} · ${arrowPct(strongestTrend.latest12Change)}`
+      : "N/A";
+
+  /* ---- Periods behind the comparison table's 12-month and recovery columns ---- */
+  // Each post is measured from its own last month in the range; these are the
+  // periods for posts that report through the end of the range.
+  const last12Range = { start: Math.max(endIndex - 11, startIndex), end: endIndex };
+  const prior12Range = { start: Math.max(endIndex - 23, startIndex), end: endIndex - 12 };
+  const last12Text = monthRangeLabel(last12Range);
+  const prior12Text =
+    prior12Range.end >= prior12Range.start ? monthRangeLabel(prior12Range) : "none in range";
+  const priorMonths = Math.max(prior12Range.end - prior12Range.start + 1, 0);
+  const recoveryYear = latestCompleteYear(periodCountry);
+  const recoveryHeader =
+    recoveryYear !== null ? `Recovery index (${recoveryYear} vs 2019)` : "Recovery index (vs 2019)";
+  const last12Header = `Last 12 months of range (${last12Text})`;
+  const changeHeader =
+    priorMonths === 12
+      ? `Change vs previous 12 months (${prior12Text})`
+      : `Change vs earlier ${priorMonths} months in range (${prior12Text})`;
+  const lastMonthByPost = new Map<string, number>();
+  for (const row of periodCountry) {
+    lastMonthByPost.set(row.post, Math.max(lastMonthByPost.get(row.post) ?? row.monthIndex, row.monthIndex));
+  }
+  const endedEarly = [...lastMonthByPost.entries()]
+    .filter(([, last]) => last < endIndex)
+    .map(([postName, last]) => `${postName} (last reported ${monthDisplay(last)})`);
   const seasonalPost = firstBy((r) => r.seasonalityRatio);
   const concentrationPost = firstBy((r) => r.shareOfCountry);
 
@@ -845,7 +879,11 @@ export default function HistoricalConsulatesTab() {
 
         <div className="my-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Strongest Current Post" value={strongestPost} valueClassName="!text-[16px]" />
-          <KpiCard label="Fastest-Growing Post" value={fastestPost} valueClassName="!text-[16px]" />
+          <KpiCard
+            label="Strongest trend vs previous 12 months"
+            value={strongestTrendText}
+            valueClassName="!text-[16px]"
+          />
           <KpiCard label="Most Seasonal Post" value={seasonalPost} valueClassName="!text-[16px]" />
           <KpiCard label="Highest Concentration" value={concentrationPost} valueClassName="!text-[16px]" />
         </div>
@@ -857,28 +895,33 @@ export default function HistoricalConsulatesTab() {
           columns={[
             { key: "post", header: "Post", render: (r) => r.post },
             { key: "total", header: "Full-Period Total", numeric: true, render: (r) => metricNumber(r.total) },
-            { key: "latest12", header: "Latest 12-Month Total", numeric: true, render: (r) => metricNumber(r.latest12) },
+            { key: "latest12", header: last12Header, numeric: true, render: (r) => metricNumber(r.latest12) },
             { key: "share", header: "Share of Country Issuance", numeric: true, render: (r) => share(r.shareOfCountry) },
             { key: "baseline", header: "2019 Baseline", numeric: true, render: (r) => metricNumber(r.baseline2019) },
             {
               key: "recovery",
-              header: "Latest Comparable Recovery Index",
+              header: recoveryHeader,
               numeric: true,
               render: (r) => (notNa(r.recoveryIndex) ? r.recoveryIndex.toFixed(0) : "N/A"),
             },
             { key: "peak", header: "Peak Month", render: (r) => r.peakMonthName },
             { key: "volatility", header: "Volatility", render: (r) => r.volatility },
             { key: "seasonality", header: "Seasonality Strength", render: (r) => r.seasonalityStrength },
-            { key: "growth", header: "Growth", numeric: true, render: (r) => metricPct(r.latest12Change) },
+            { key: "growth", header: changeHeader, numeric: true, render: (r) => metricPct(r.latest12Change) },
           ]}
         />
+        {endedEarly.length > 0 && (
+          <p className="mt-2 text-xs text-slate-400">
+            Measured from each post&apos;s own last month: {endedEarly.join(", ")}.
+          </p>
+        )}
         <DownloadCsvButton
           label="Download Consulate Comparison CSV"
           filename={`qu_consulate_comparison_${countrySlug}_${monthStamp(startIndex)}_${monthStamp(endIndex)}.csv`}
           headers={[
-            "Post", "Full-Period Total", "Latest 12-Month Total", "Share of Country Issuance",
-            "2019 Baseline", "Latest Comparable Recovery Index", "Peak Month", "Volatility",
-            "Volatility CV", "Seasonality Strength", "Seasonality Ratio", "Growth",
+            "Post", "Full-Period Total", last12Header, "Share of Country Issuance",
+            "2019 Baseline", recoveryHeader, "Peak Month", "Volatility",
+            "Volatility CV", "Seasonality Strength", "Seasonality Ratio", changeHeader,
           ]}
           rows={comparisonTable.map((r) => [
             r.post,

@@ -36,23 +36,23 @@ export function MethodologyExpanders({
     <Expander title="How this is calculated">
       <ul className="list-disc space-y-1.5 pl-5">
         <li>
-          <b>Recovery Index:</b> the latest complete calendar year&apos;s issuance divided by
+          <b>Recovery Index:</b>{" "}the latest complete calendar year&apos;s issuance divided by
           2019&apos;s, times 100; shown as N/A when the 2019 baseline is not positive.
         </li>
         <li>
-          <b>Volatility:</b> monthly coefficient of variation. High &gt;= 0.85; moderate &gt;= 0.45;
+          <b>Volatility:</b>{" "}monthly coefficient of variation. High &gt;= 0.85; moderate &gt;= 0.45;
           otherwise low.
         </li>
         <li>
-          <b>Seasonality Strength:</b> peak calendar-month average divided by average monthly
+          <b>Seasonality Strength:</b>{" "}peak calendar-month average divided by average monthly
           issuance. High &gt;= 2.0x; moderate &gt;= 1.4x; otherwise low.
         </li>
         <li>
-          <b>Top-One Share:</b> the largest canonical post&apos;s share of selected country/post
+          <b>Top-One Share:</b>{" "}the largest canonical post&apos;s share of selected country/post
           issuance.
         </li>
         <li>
-          <b>Top-Three Share:</b> the three largest canonical posts&apos; combined share of selected
+          <b>Top-Three Share:</b>{" "}the three largest canonical posts&apos; combined share of selected
           country/post issuance.
         </li>
         <li>
@@ -67,7 +67,7 @@ export function MethodologyExpanders({
         {includeMarket && (
           <>
             <li>
-              <b>Market Category:</b> one mutually exclusive primary label. Core is checked first for
+              <b>Market Category:</b>{" "}one mutually exclusive primary label. Core is checked first for
               large strategic markets unless both long-term and recent evidence support structural
               decline. Declining requires both negative 10-year growth &lt;= -35% and recent
               momentum &lt;= -20%.

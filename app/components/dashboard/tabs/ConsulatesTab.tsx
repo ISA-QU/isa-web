@@ -6,6 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { decimals, int, metricPct, monthDisplay } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
+import { averagePerMonth, calendarMonthYearCounts, yearSpanLabel } from "../../../lib/dashboard/periods";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
 
@@ -142,26 +143,34 @@ export default function ConsulatesTab() {
   }, [focus.f1]);
 
   /* ---- Seasonality by calendar month ---- */
+  // Average per calendar month: Jan-Feb can have one more year of data than the
+  // other months, so summing would overstate them. Year counts come from the
+  // whole filtered dataset, so a month with no issuances for this country counts.
   const seasonality = useMemo(() => {
+    const yearCounts = calendarMonthYearCounts(f1Filtered);
     const totals = groupSum(focus.f1, (r) => r.month, (r) => r.issuances);
     const months = [...totals.keys()].sort((a, b) => a - b);
+    const avg = months.map((month) => averagePerMonth(totals.get(month)!, month, yearCounts));
+    const years = yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))]);
     const data: Trace[] = [
       {
         type: "bar",
         x: months.map((month) => MONTH_NAMES[month]),
-        y: months.map((month) => totals.get(month)!),
-        text: months.map((month) => int(totals.get(month)!)),
+        y: avg,
+        text: avg.map((value) => int(Math.round(value))),
         textposition: "auto",
-        marker: { color: months.map((month) => totals.get(month)!), colorscale: BLUE_GOLD },
-        hovertemplate: "<b>%{x}</b><br>F1 Issuances: %{y:,.0f}<extra></extra>",
+        customdata: months.map((month) => yearCounts.get(month) ?? 0),
+        marker: { color: avg, colorscale: BLUE_GOLD },
+        hovertemplate:
+          "<b>%{x}</b><br>Average F1 per month: %{y:,.0f}<br>Years averaged: %{customdata}<extra></extra>",
       } as Trace,
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `F1 Seasonality - ${focusCountry}` },
+      title: { text: `F1 Seasonality - ${focusCountry}, average per month (${years})` },
     };
     return { data, layout };
-  }, [focus.f1, focusCountry]);
+  }, [focus.f1, focusCountry, f1Filtered]);
 
   /* ---- F1 vs J1 over time ---- */
   const bothVisas = useMemo(() => {

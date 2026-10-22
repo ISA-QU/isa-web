@@ -34,6 +34,7 @@ export function MethodologyExpanders({
 }) {
   return (
     <Expander title="How this is calculated">
+      <DataScopeNotice />
       <ul className="list-disc space-y-1.5 pl-5">
         <li>
           <b>Recovery Index:</b>{" "}the latest complete calendar year&apos;s issuance divided by

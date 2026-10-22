@@ -17,7 +17,7 @@ import {
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
-import { DataTable, FixedTag, ScopeNote, SectionTitle, Slider } from "../ui";
+import { DataTable, FixedTag, SectionTitle, Slider } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -189,7 +189,6 @@ export default function ResearchCountryTab() {
         name: post,
         x: points.map((p) => MONTH_NAMES[p.month]),
         y: points.map((p) => p.value),
-        line: { shape: "spline" },
         hovertemplate: `${post}: %{y:,.0f} average per month<extra></extra>`,
       };
     });
@@ -212,11 +211,6 @@ export default function ResearchCountryTab() {
 
   return (
     <div className="space-y-6">
-      <ScopeNote label="Legacy Operational View">
-        This page preserves the original recent consulate analysis. Country, Visa and Period come
-        from the control bar.
-      </ScopeNote>
-
       <SectionTitle>Consulate Intelligence</SectionTitle>
 
       <div className="max-w-xs">

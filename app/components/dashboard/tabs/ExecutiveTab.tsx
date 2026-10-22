@@ -262,34 +262,62 @@ export default function ExecutiveTab() {
   }, [coverage]);
   const annual = useMemo(() => {
     const yearLabel = (year: number) => calendarYearLabel(year, coverage);
-    const bars = (rows: readonly { year: number; issuances: number }[], name: string, color: string): Trace => {
+    // Each visa is two traces sharing one bar slot: full years (solid, in the
+    // legend) and partial years (lighter, hatched, not in the legend), so the
+    // legend shows the plain F1 and J1 colors.
+    const bars = (
+      rows: readonly { year: number; issuances: number }[],
+      name: string,
+      color: string,
+    ): Trace[] => {
       const totals = [...groupSum(rows, (r) => r.year, (r) => r.issuances).entries()].sort(
         (a, b) => a[0] - b[0],
       );
-      const partial = totals.map(([year]) => yearLabel(year) !== String(year));
-      return {
+      const isPartial = ([year]: [number, number]) => yearLabel(year) !== String(year);
+      const full = totals.filter((t) => !isPartial(t));
+      const partial = totals.filter(isPartial);
+      const base = {
         type: "bar",
-        name,
-        x: totals.map(([year]) => yearLabel(year)),
-        y: totals.map(([, value]) => value),
-        marker: {
-          color,
-          opacity: partial.map((p) => (p ? 0.45 : 1)),
-          pattern: { shape: partial.map((p) => (p ? "/" : "")), fgcolor: "#FFFFFF", solidity: 0.25 },
-        },
+        legendgroup: name,
+        offsetgroup: name,
         hovertemplate: `<b>%{x}</b><br>${name}: %{y:,.0f}<extra></extra>`,
       };
+      return [
+        {
+          ...base,
+          name,
+          x: full.map(([year]) => yearLabel(year)),
+          y: full.map(([, value]) => value),
+          marker: { color },
+        },
+        {
+          ...base,
+          name: `${name} (partial year)`,
+          showlegend: false,
+          x: partial.map(([year]) => yearLabel(year)),
+          y: partial.map(([, value]) => value),
+          marker: {
+            color,
+            opacity: 0.45,
+            pattern: { shape: "/", fgcolor: "#FFFFFF", solidity: 0.25 },
+          },
+        },
+      ];
     };
     const all = data.postsMonthly;
     const traces: Trace[] = [
-      bars(all.filter((r) => r.visa === "F1"), "F1", "#FFB81C"),
-      bars(all.filter((r) => r.visa === "J1"), "J1", "#3D8DDE"),
+      ...bars(all.filter((r) => r.visa === "F1"), "F1", "#FFB81C"),
+      ...bars(all.filter((r) => r.visa === "J1"), "J1", "#3D8DDE"),
     ];
+    const years: string[] = [];
+    for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+      years.push(yearLabel(year));
+    }
     const layout: ChartLayout = {
       barmode: "group",
       height: 380,
       title: { text: "Annual F1 vs J1 Issuances (calendar years)" },
-      xaxis: { type: "category" },
+      xaxis: { type: "category", categoryorder: "array", categoryarray: years },
     };
     return { data: traces, layout };
   }, [data.postsMonthly, coverage]);

@@ -48,6 +48,9 @@ const BASE_TITLE = {
 };
 
 const AXIS_STYLE = {
+  // Grow the margin to fit long tick labels (consulate names on horizontal bars
+  // and heatmaps) instead of clipping them.
+  automargin: true,
   title: { font: { color: "#EAF4FF", size: 13 } },
   tickfont: { color: "#CBD5E1", size: 11 },
   gridcolor: "rgba(255,255,255,0.07)",

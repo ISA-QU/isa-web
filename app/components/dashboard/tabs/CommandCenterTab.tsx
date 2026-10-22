@@ -26,11 +26,9 @@ import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import {
   Caption,
-  DataScopeNotice,
   DownloadCsvButton,
   ErrorCallout,
   InfoCallout,
-  MethodologyExpanders,
   SubHeading,
 } from "../shared";
 import { Column, DataTable, FixedTag, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
@@ -331,8 +329,6 @@ export default function CommandCenterTab() {
         </p>
       </Panel>
 
-      <DataScopeNotice />
-      <MethodologyExpanders includeMarket />
 
       <p className="text-xs text-slate-400">
         <FixedTag title="Command Center uses fixed periods and ignores the Period control.">

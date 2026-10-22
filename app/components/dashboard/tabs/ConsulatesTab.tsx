@@ -20,7 +20,7 @@ import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
 import { useDashboard } from "../DashboardContext";
 import { InfoCallout, SubHeading } from "../shared";
-import { DataTable, Divider, FixedTag, KpiCard, KpiRow, ScopeNote, SectionTitle } from "../ui";
+import { DataTable, Divider, FixedTag, KpiCard, KpiRow, SectionTitle } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -104,7 +104,7 @@ export default function ConsulatesTab() {
         name: String(year),
         x: yearPeriods,
         y: yearPeriods.map((period) => byPeriod.get(period)!),
-        line: { shape: "spline", color: palette[index % palette.length] },
+        line: { color: palette[index % palette.length] },
         marker: { color: palette[index % palette.length] },
         stackgroup: "one",
       } as Trace;
@@ -214,7 +214,7 @@ export default function ConsulatesTab() {
         name: visa,
         x: points.map((p) => monthDisplay(p.index)),
         y: points.map((p) => p.value),
-        line: { shape: "spline", color: colors[visa] },
+        line: { color: colors[visa] },
         marker: { color: colors[visa] },
       } as Trace;
     });
@@ -268,7 +268,6 @@ export default function ConsulatesTab() {
         name: country,
         x: points.map((p) => monthDisplay(p.index)),
         y: points.map((p) => p.value),
-        line: { shape: "spline" },
       } as Trace;
     });
     const layout: ChartLayout = {
@@ -281,11 +280,6 @@ export default function ConsulatesTab() {
 
   return (
     <div className="space-y-6">
-      <ScopeNote label="Legacy Operational View">
-        This page preserves the original recent country analysis. Country, Visa and Period come
-        from the control bar.
-      </ScopeNote>
-
       <SectionTitle>
         Country Intelligence - <b>{focusCountry}</b>
       </SectionTitle>
@@ -325,8 +319,8 @@ export default function ConsulatesTab() {
               12-month cards: always last 12 months
             </FixedTag>{" "}
             F1 and J1 issuances and the F1 change cover the last 12 months ({period}, compared with{" "}
-            {priorPeriod}), by the country where the visa was issued, and always use the last
-            12 months whatever the Period. Active Posts and Seasonality CV follow the Period: {filterYearsText}.
+            {priorPeriod}), by the country where the visa was issued. Active Posts and Seasonality
+            CV follow the Period: {filterYearsText}.
           </p>
 
           <Divider />

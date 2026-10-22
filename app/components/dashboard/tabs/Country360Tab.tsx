@@ -40,13 +40,11 @@ import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard
 import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
-import { useDashboard } from "../DashboardContext";
+import { useDashboard, visaLabelOf } from "../DashboardContext";
 import {
   Caption,
-  DataScopeNotice,
   DownloadCsvButton,
   InfoCallout,
-  MethodologyExpanders,
   SubHeading,
 } from "../shared";
 import {
@@ -640,7 +638,7 @@ export default function Country360Tab() {
   }
   if (metrics.topConsulate !== "N/A" && metrics.topOneShare !== null) {
     summaryBullets.push(
-      `${metrics.topConsulate} is the leading historical consulate with ${share(metrics.topOneShare)} of selected visa-class volume.`,
+      `${metrics.topConsulate} is the leading consulate over the full history (${fullRangeText}) with ${share(metrics.topOneShare)} of ${visaLabelOf(visa)} issuance.`,
     );
   }
   if (metrics.hcMetrics.peakMonthName !== "N/A") {
@@ -667,8 +665,6 @@ export default function Country360Tab() {
         </p>
       </Panel>
 
-      <DataScopeNotice />
-      <MethodologyExpanders includeMarket />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={`Trajectory chart fiscal years: FY${histStart} - FY${histEnd}`}>
@@ -746,17 +742,29 @@ export default function Country360Tab() {
           <section>
             <SubHeading>
               Primary KPIs
-              <FixedTag title="Each KPI uses its own fixed period; ignores the Period control.">Fixed periods</FixedTag>
+              <FixedTag title="The first card follows the Period; each other card names its own fixed period.">
+                First card follows the Period; others fixed
+              </FixedTag>
             </SubHeading>
             <KpiRow>
               <KpiCard accent="gold" label={`F1, ${periodRange.label}`} value={metricNumber(periodF1)} />
-              <KpiCard accent="gold" label={`FY${latestFy} Annual F1`} value={metricNumber(metrics.latestFyF1)} />
-              <KpiCard label="10-Year F1 Growth" value={metricPct(metrics.growth10)} />
               <KpiCard
-                label="Latest 12-Month Momentum"
+                accent="gold"
+                label={`F1 by nationality, FY${latestFy}${provisionalYears.has(latestFy) ? " (provisional)" : ""}`}
+                value={metricNumber(metrics.latestFyF1)}
+              />
+              <KpiCard
+                label={`F1 growth by nationality, FY${latestFy - 10} → FY${latestFy}`}
+                value={metricPct(metrics.growth10)}
+              />
+              <KpiCard
+                label={`Change vs previous 12 months (${last12.period})`}
                 value={metricPct(metrics.hcMetrics.latest12Change)}
               />
-              <KpiCard label="Recovery Index" value={metricDecimal(metrics.hcMetrics.recoveryIndex)} />
+              <KpiCard
+                label={`Recovery index (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
+                value={metricDecimal(metrics.hcMetrics.recoveryIndex)}
+              />
             </KpiRow>
 
             <Expander title="Secondary KPI Details">

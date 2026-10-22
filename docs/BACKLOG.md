@@ -24,12 +24,26 @@ one shared country and F1 defaults (5a).
   - [ ] Executive: the focus card's Top Consulate and Peak Visa Month cover Jan 2024 – Feb 2026 without saying so on the card.
   - [x] Country Intelligence: Top F1 Consulates chart and monthly trend name the Period.
   - [x] Consulate Intelligence: Top-N chart, all-consulates table and its CSV name the Period.
-  - [ ] Country 360: Operational F1/J1 (Jan 2024 – Feb 2026), 10-Year and 5-Year F1 Growth (FY years), Recovery Index (2025 vs 2019), Latest 12-Month figures (months), Full-History Issuances and risk/concentration metrics (Mar 2017 – Feb 2026), average/median-month chart, Key Risk and driver text, top-posts "Issuances" column.
+  - [x] Country 360: Operational F1/J1 now follow the Period; Primary KPI cards each name their period; the leading-consulate line names the full history.
+  - [ ] Country 360: Secondary KPI details (5-Year F1 Growth, Latest 12-Month F1/J1, shares, volatility), risk/concentration table, average/median-month chart, Key Risk and driver text, top-posts "Issuances" column.
   - [ ] Historical Consulates: Insights bullets and the Market Momentum / Recovery Status cards now use the full history, but don't name the months or recovery year.
-- [ ] Remove or rename the remaining "Legacy" wording: "Legacy Operational View" on Country Intelligence and Consulate Intelligence (the sidebar note went with the sidebar).
+- [x] Remove the remaining "Legacy" wording.
+
+## 5c · Quick fixes from the full audit
+
+- [x] Seasonality charts use a typical year (complete years except 2020–2021), tagged, with the Period as a gold line on Country Intelligence's chart; heatmap rows are the top 20 by typical-year volume.
+- [x] Country 360: Period values replace the "Operational" figures; FY2025 marked provisional on its trajectory chart; recommended action shown once.
+- [x] Globe follows the Period; Rotate button label fixed.
+- [x] Historical Consulates: only the selected visa's cards; summary names the visa and period; annual view defaults to calendar-year totals.
+- [x] One methodology panel ("How this is calculated") on every tab and a one-line footer; repeated "ignores the Period" captions removed.
+- [x] Executive monthly trend as one continuous line.
+- [x] Charts: axis labels no longer clipped; straight lines; month names on seasonality axes; readable date axis on Historical Consulates; Executive annual legend shows solid colors.
 
 ## 6 · Command Center
 
+**Command Center will be rebuilt as the "Markets" page in the 5-page redesign (Feature 8), absorbing this feature.**
+
+- [ ] Country 360 recommendation still uses the Jan 2024 – Feb 2026 operational inputs (shared with Command Center); rebuild with the Markets page.
 - [ ] Flags fire for almost every market (e.g. 161 high-concentration, 160 highly seasonal); recalibrate the thresholds so flags discriminate.
 - [ ] Review the market categories (Core, Growth, Emerging, Recovery, Watch, Declining) and the recommendation rules.
 - [ ] Make the action queue's sort key visible, and rename the "Latest Comparable Period" view (it sorts by last-12-month volume).
@@ -58,6 +72,9 @@ Sourced event markers on the Historical Trends chart.
 
 ## 8 · Five-page structure
 
+**A page blueprint will be approved before building the 5 pages.**
+
+- [ ] Draft and approve the page blueprint.
 - [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
 - [ ] Carry over what works: Historical Consulates (best page), the Country 360 narrative, the Historical Trends 30-year chart, the Command Center action queue.
 - [ ] Use the shared control bar (5b) on every page.
@@ -67,7 +84,7 @@ Sourced event markers on the Historical Trends chart.
 - [ ] Complete the region mapping for all 205 countries so region presets include every country.
 - [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
 - [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).
-- [ ] Globe improvements: it is colored by F1 issuances for Jan 2024 – Feb 2026; review what it should show and its Rotate/Pause controls (the audit found a blank Rotate button on the live site).
+- [ ] Globe improvements: it now follows the Period and the Rotate label is fixed (5c); review what else it should show.
 - [ ] Card tooltips are native browser tooltips (slow to appear, not keyboard or touch accessible); consider an accessible tooltip.
 - [ ] Remove code no longer shown: `growthLabel` / `summaryGrowthLabel`, `yoyGrowth` displays, `opportunityScore` / `marketTier`, the unused `includeOpportunity` methodology note, and `COUNTRY_COORDS` / the summary's `lat`/`lon` (kept so far because they feed shared calculations).
 - [ ] If the Years/Period range grows, Country Intelligence's monthly trend (one line per year) will get crowded; redesign it.

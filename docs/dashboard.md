@@ -276,6 +276,9 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   trajectory chart, and the recommended action appears once. The Executive globe's totals,
   colors, top consulate and peak month follow the Period; its change line and the focus card
   stay on the last 12 months.
+- **Methodology once.** "How this is calculated" (with the data-scope paragraph) appears once,
+  under every tab, and the footer is one line. Chart axes grow to fit long labels, line
+  charts use straight lines, and Historical Consulates uses a real date axis.
 - **No sidebar.** Compare Countries now lives in Country Intelligence's comparison chart (a
   type-to-search picker with chips, a "Top 5 markets" preset, one preset per region, up to 8
   countries; default: the top 5 markets by F1 in the Period), and Top-N in Consulate

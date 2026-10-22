@@ -124,8 +124,7 @@ export default function HeaderKpis() {
         />
       </KpiRow>
       <p className="-mt-4 mb-7 text-xs text-slate-400">
-        Country = where the visa was issued, not student nationality. These figures ignore the
-        Period control.
+        Country = where the visa was issued, not student nationality.
       </p>
     </>
   );

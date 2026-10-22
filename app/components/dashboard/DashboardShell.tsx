@@ -14,7 +14,7 @@ import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
 import ControlBar from "./ControlBar";
 import { DashboardProvider, useDashboard, type InitialSelection } from "./DashboardContext";
 import HeaderKpis from "./HeaderKpis";
-import { MethodologyNote } from "./ui";
+import { MethodologyExpanders } from "./shared";
 
 import CommandCenterTab from "./tabs/CommandCenterTab";
 import ExecutiveTab from "./tabs/ExecutiveTab";
@@ -238,17 +238,15 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
             <ActiveTab />
           </div>
 
-          <footer className="mt-10 border-t border-slate-400/15 pt-6 text-center text-xs text-slate-500">
-            <MethodologyNote>
-              Visa issuance volume reflects historical student mobility, not individual visa
-              approval probability. Monthly records run through{" "}
-              {monthLongDisplay(data.meta.coverage.postsMonthly.end)}.
-            </MethodologyNote>
-            <div>
-              QU Bobcat Global Recruitment Intelligence &nbsp;·&nbsp; Data: U.S. Department of
-              State Visa Issuance Statistics &nbsp;·&nbsp; Built for Quinnipiac University
-              International Admissions
-            </div>
+          {/* The methodology, once for every tab. */}
+          <div className="mt-10">
+            <MethodologyExpanders includeMarket />
+          </div>
+
+          <footer className="mt-6 border-t border-slate-400/15 pt-4 text-center text-xs text-slate-500">
+            Data: U.S. Department of State visa issuance statistics, monthly through{" "}
+            {monthLongDisplay(data.meta.coverage.postsMonthly.end)} · Built for Quinnipiac University
+            International Admissions
           </footer>
         </main>
       </div>

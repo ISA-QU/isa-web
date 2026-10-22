@@ -63,6 +63,20 @@ type SortOption = (typeof SORT_OPTIONS)[number];
 const SEASONALITY_STATS = ["Average", "Median", "Maximum"] as const;
 type SeasonalityStat = (typeof SEASONALITY_STATS)[number];
 
+/** First day of a `year * 12 + (month - 1)` month, for a Plotly date axis. */
+const monthDate = (index: number) =>
+  `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
+
+/** A readable monthly date axis: yearly ticks for long spans, quarterly for short ones. */
+const dateAxis = (months: number) => ({
+  title: { text: "Month" },
+  type: "date",
+  tickformat: "%b %Y",
+  hoverformat: "%b %Y",
+  dtick: months > 36 ? "M12" : months > 12 ? "M3" : "M1",
+  tickangle: -45,
+});
+
 interface ComparisonRow extends PostPeriodMetrics {
   post: string;
   shareOfCountry: number | null;
@@ -369,7 +383,7 @@ export default function HistoricalConsulatesTab() {
         type: "scatter",
         mode: "lines+markers",
         name: v,
-        x: points.map((p) => monthDisplay(p.index)),
+        x: points.map((p) => monthDate(p.index)),
         y: points.map((p) => p.value),
         line: { color: VISA_COLORS[v], width: 3 },
         marker: { size: 6, color: VISA_COLORS[v] },
@@ -380,22 +394,17 @@ export default function HistoricalConsulatesTab() {
       };
     });
 
-  // Shade the Period. The x axis is categorical (one label per month), so the
-  // band runs from half a category before the first month to half after the last.
-  const shadeFrom = fullMonths.findIndex((index) => index >= startIndex);
-  let shadeTo = -1;
-  fullMonths.forEach((index, position) => {
-    if (index <= endIndex) shadeTo = position;
-  });
+  // Shade the Period on a real date axis: from the first day of its first month
+  // to the first day after its last month.
   const periodShading =
-    shadeFrom !== -1 && shadeTo >= shadeFrom
+    fullMonths.length > 0
       ? [
           {
             type: "rect",
             xref: "x",
             yref: "paper",
-            x0: shadeFrom - 0.5,
-            x1: shadeTo + 0.5,
+            x0: monthDate(startIndex),
+            x1: monthDate(endIndex + 1),
             y0: 0,
             y1: 1,
             fillcolor: "#FFB81C",
@@ -416,7 +425,7 @@ export default function HistoricalConsulatesTab() {
       text: `Monthly F1/J1 Trend - ${post}, ${country}<br><sup>Full history ${historyText} · shaded: ${periodRange.label}</sup>`,
     },
     hovermode: "x unified",
-    xaxis: { title: { text: "Month" } },
+    xaxis: dateAxis(fullMonths.length),
     yaxis: { title: { text: "Issuances" } },
     legend: { title: { text: "Visa Class" } },
     shapes: periodShading,
@@ -616,7 +625,7 @@ export default function HistoricalConsulatesTab() {
       type: "scatter",
       mode: "lines",
       name: postName,
-      x: points.map((p) => monthDisplay(p.index)),
+      x: points.map((p) => monthDate(p.index)),
       y: points.map((p) => p.value),
       line: { width: 3 },
     };
@@ -948,9 +957,9 @@ export default function HistoricalConsulatesTab() {
               data={compareTraces}
               layout={{
                 height: 430,
-                title: { text: `Selected Consulate Comparison - ${country}` },
+                title: { text: `Selected Consulate Comparison - ${country}, ${periodRange.label}` },
                 hovermode: "x unified",
-                xaxis: { title: { text: "Month" } },
+                xaxis: dateAxis(monthCountBetween(startIndex, endIndex)),
                 yaxis: { title: { text: "Issuances" } },
                 legend: { title: { text: "Consulate" } },
               }}

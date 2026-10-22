@@ -39,6 +39,8 @@ export default function ConsulatesTab() {
     dfFiltered,
     compareCountries,
     data,
+    selectedYears,
+    allYears,
   } = useDashboard();
 
   /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
@@ -50,6 +52,15 @@ export default function ConsulatesTab() {
   }, [data.postsMonthly, end]);
   const period = monthRangeLabel(last12.current);
   const priorPeriod = monthRangeLabel(last12.prior);
+
+  // The years Active Posts and Seasonality CV cover; an empty selection means all years.
+  const filterYears = [...(selectedYears.length > 0 ? selectedYears : allYears)].sort((a, b) => a - b);
+  const endYear = Math.floor(end / 12);
+  const endMonth = (end % 12) + 1;
+  const filterYearsText =
+    filterYears
+      .map((year) => (year === endYear && endMonth < 12 ? `${year} (Jan–${MONTH_NAMES[endMonth]})` : String(year)))
+      .join(", ") || "none";
 
   const focusF1 = last12.f1.get(focusCountry);
   const focusJ1 = last12.j1.get(focusCountry);
@@ -251,8 +262,9 @@ export default function ConsulatesTab() {
         <KpiCard label="Seasonality CV" value={decimals(focus.cv, 2)} />
       </KpiRow>
       <p className="-mt-4 text-xs text-slate-400">
-        Last 12 months = {period}, compared with {priorPeriod}; by the country where the visa
-        was issued. These figures ignore the sidebar Years filter.
+        F1 and J1 issuances and the F1 change cover the last 12 months ({period}, compared with{" "}
+        {priorPeriod}), by the country where the visa was issued, and ignore the sidebar Years
+        filter. Active Posts and Seasonality CV follow the Years filter: {filterYearsText}.
       </p>
 
       <Divider />

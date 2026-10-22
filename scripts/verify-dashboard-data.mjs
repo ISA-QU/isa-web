@@ -61,6 +61,8 @@ async function compileLib() {
     [
       "tsc",
       "app/lib/dashboard/metrics.ts",
+      "app/lib/dashboard/consulates.ts",
+      "app/lib/dashboard/periods.ts",
       "app/lib/dashboard/constants.ts",
       "app/lib/dashboard/types.ts",
       "--outDir", outDir,
@@ -85,6 +87,8 @@ async function main() {
 
   const outDir = await compileLib();
   const metrics = await import(pathToFileURL(path.join(outDir, "metrics.js")).href);
+  const consulates = await import(pathToFileURL(path.join(outDir, "consulates.js")).href);
+  const periods = await import(pathToFileURL(path.join(outDir, "periods.js")).href);
 
   const VISA = ["F1", "J1"];
   const monthIndex = (year, month) => year * 12 + (month - 1);
@@ -332,6 +336,64 @@ async function main() {
     "FY2025 monthly sum, countries only = the snapshot's annual table",
     `F1 ${sum(fy2025.filter((r) => r.visa === "F1" && r.isCountry))} / J1 ${sum(fy2025.filter((r) => r.visa === "J1" && r.isCountry))}`,
     `F1 ${sum(annual2025.filter((r) => r.visa === "F1"))} / J1 ${sum(annual2025.filter((r) => r.visa === "J1"))}`,
+  );
+
+  console.log("\n  Consulates page  (8-1: previous equal-length period, \"—\" rule, context line)");
+  const coverage = snapshot.coverage.postsMonthly;
+  const f1Posts = postsMonthly.filter((r) => r.visa === "F1");
+  const recoveryYear = consulates.recoveryYearOf(postsMonthly);
+  const last12Range = periods.resolvePeriod({ kind: "last12" }, coverage);
+  const allRange = periods.resolvePeriod({ kind: "all" }, coverage);
+  const indiaLast12 = consulates.buildConsulateTable(
+    f1Posts, last12Range, consulates.previousPeriod(last12Range, coverage), "India", recoveryYear,
+  );
+  const mumbai12 = indiaLast12.find((r) => r.post === "Mumbai");
+  check(
+    "Mumbai F1, last 12 months: volume / change / recovery",
+    mumbai12 ? `${mumbai12.volume} / ${mumbai12.change.toFixed(1)} / ${Math.round(mumbai12.recovery)}` : "missing",
+    "6413 / -68.4 / 39",
+  );
+  const indiaAll = consulates.buildConsulateTable(
+    f1Posts, allRange, consulates.previousPeriod(allRange, coverage), "India", recoveryYear,
+  );
+  const mumbaiAll = indiaAll.find((r) => r.post === "Mumbai");
+  check(
+    "Mumbai F1, Period = All: volume / change",
+    mumbaiAll ? `${mumbaiAll.volume} / ${mumbaiAll.change === null ? "—" : mumbaiAll.change}` : "missing",
+    "162287 / —",
+  );
+  check(
+    "India scope, last 12 months: total across consulates",
+    `${sum(indiaLast12.map((r) => ({ issuances: r.volume })))} across ${indiaLast12.length}`,
+    "27258 across 5",
+  );
+  checkClose(
+    "India scope, last 12 months: shares add to 100%",
+    Math.round(indiaLast12.reduce((total, r) => total + r.share, 0) * 1000) / 1000,
+    100,
+    0.001,
+  );
+  const prior2024 = consulates.previousPeriod(periods.resolvePeriod({ kind: "year", year: 2024 }, coverage), coverage);
+  check(
+    "previous period of calendar year 2024",
+    prior2024 ? `${stamp(prior2024.start)} to ${stamp(prior2024.end)}` : "none",
+    "2023-01 to 2023-12",
+  );
+  check(
+    "pre-pandemic preset (Jan 2019 - Dec 2022) has no previous period",
+    consulates.previousPeriod(periods.resolvePeriod({ kind: "pandemic" }, coverage), coverage),
+    null,
+  );
+  const context12 = consulates.consulateContext(postsMonthly, nationality, "India", last12Range, ["F1"]);
+  check(
+    "context line, India F1, last 12 months: issued in / received by",
+    context12 ? `${context12.issuedIn} / ${context12.receivedBy}` : "hidden",
+    "27258 / 30292",
+  );
+  check(
+    "context line hidden when nationalityMonthly is missing",
+    consulates.consulateContext(postsMonthly, null, "India", last12Range, ["F1"]),
+    null,
   );
 
   await rm(outDir, { recursive: true, force: true });

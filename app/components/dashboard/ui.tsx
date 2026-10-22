@@ -169,12 +169,18 @@ export function DataTable<T>({
   height,
   rowKey,
   empty = "No rows match the selected filters.",
+  onRowClick,
+  isSelected,
 }: {
   rows: readonly T[];
   columns: readonly Column<T>[];
   height: number;
   rowKey: (row: T, index: number) => string;
   empty?: string;
+  /** Optional: makes rows clickable (pair it with a picker for keyboard users). */
+  onRowClick?: (row: T) => void;
+  /** Optional: highlights the selected row. */
+  isSelected?: (row: T) => boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -208,7 +214,14 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={rowKey(row, index)} className="border-t border-slate-400/[0.18] text-[#E5EDF7]">
+            <tr
+              key={rowKey(row, index)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              aria-selected={isSelected ? isSelected(row) : undefined}
+              className={`border-t border-slate-400/[0.18] text-[#E5EDF7] ${
+                onRowClick ? "cursor-pointer hover:bg-white/[0.04]" : ""
+              } ${isSelected?.(row) ? "bg-[rgba(255,184,28,0.12)]" : ""}`}
+            >
               {columns.map((column) => (
                 <td
                   key={column.key}

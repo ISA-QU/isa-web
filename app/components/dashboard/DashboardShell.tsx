@@ -9,6 +9,7 @@ import { asset } from "../../lib/basePath";
 import { loadDashboardData } from "../../lib/dashboard/data";
 import { monthLongDisplay } from "../../lib/dashboard/format";
 import { periodFromParam, periodToParam } from "../../lib/dashboard/periods";
+import { canonicalTab } from "../../lib/dashboard/url";
 import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
 import ControlBar from "./ControlBar";
@@ -20,9 +21,8 @@ import CommandCenterTab from "./tabs/CommandCenterTab";
 import ExecutiveTab from "./tabs/ExecutiveTab";
 import Country360Tab from "./tabs/Country360Tab";
 import ConsulatesTab from "./tabs/ConsulatesTab";
-import ResearchCountryTab from "./tabs/ResearchCountryTab";
+import ConsulatesPage from "./tabs/ConsulatesPage";
 import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
-import HistoricalConsulatesTab from "./tabs/HistoricalConsulatesTab";
 
 /**
  * Tab order is app.py's. app.py labelled the Country Intelligence view
@@ -34,9 +34,8 @@ const TABS = [
   { id: "executive", label: "Executive", Component: ExecutiveTab },
   { id: "country-360", label: "Country 360", Component: Country360Tab },
   { id: "country-intelligence", label: "Country Intelligence", Component: ConsulatesTab },
-  { id: "consulate-intelligence", label: "Consulate Intelligence", Component: ResearchCountryTab },
+  { id: "consulates", label: "Consulates", Component: ConsulatesPage },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
-  { id: "historical-consulates", label: "Historical Consulates", Component: HistoricalConsulatesTab },
 ] as const;
 
 function Header() {
@@ -142,12 +141,13 @@ function readUrlSelection(): UrlSelection {
   const period = periodFromParam(params.get("period")) ?? undefined;
   const visaParam = params.get("visa")?.toLowerCase();
   const visa = (Object.keys(VISA_PARAM) as VisaSelection[]).find((v) => VISA_PARAM[v] === visaParam);
-  const tab = params.get("tab") ?? undefined;
+  // Old tab names (pages merged into Consulates in 8-1) still open the right page.
+  const tab = canonicalTab(params.get("tab"), TABS.map((t) => t.id));
   return {
     country: params.get("country") ?? undefined,
     visa,
     period,
-    tab: TABS.some((t) => t.id === tab) ? tab : undefined,
+    tab,
   };
 }
 
@@ -159,6 +159,11 @@ function useUrlSync(country: string, visa: VisaSelection, period: string, tab: s
     params.set("visa", VISA_PARAM[visa]);
     params.set("period", period);
     params.set("tab", tab);
+    // The Consulates page's own settings only belong in its address.
+    if (tab !== "consulates") {
+      params.delete("consulate");
+      params.delete("scope");
+    }
     const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
     if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history.replaceState(window.history.state, "", next);

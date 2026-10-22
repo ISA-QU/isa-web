@@ -341,6 +341,35 @@ The AI, Strategy and Analytics tabs were removed in Feature 1; see git history. 
 the tabs app.py labelled "Consulates" and "Research: Country" were renamed "Country
 Intelligence" and "Consulate Intelligence" to match their content.
 
+In Feature 8-1, **Consulate Intelligence and Historical Consulates were merged into one
+"Consulates" page** (`tabs/ConsulatesPage.tsx`; calculations in `lib/dashboard/consulates.ts`).
+Old links with `tab=consulate-intelligence` or `tab=historical-consulates` open it
+(`lib/dashboard/url.ts`). The page's own address settings are `consulate=` and
+`scope=country|all`. The two old tab files are no longer used.
+
+The Consulates page, top to bottom:
+- **Scope:** "This country" (consulates located in the control bar's country) or "All
+  countries". Follows Visa and Period. A context line (This country only, and only when the
+  snapshot has `nationalityMonthly`) sets visas issued by consulates in the country beside
+  visas received by its citizens worldwide, for the same period, and says they measure
+  different things.
+- **Ranked consulates:** volume in the Period, change vs the previous period of equal length,
+  share of the scope total, and recovery (latest complete year vs 2019, 100 = 2019 level).
+  Change and recovery show "—" when a side has fewer than 100 issuances or there is no
+  complete earlier period (e.g. Period = All). Click a row, or use the picker, to select.
+- **Trend:** Monthly (Mar 2017 onward, Period shaded), Annual (calendar years, partial years
+  labelled) or "Same months each year" (the months the latest year has so far, worked out from
+  the data). Top 3/5/8 by Period volume (default 5) or picked consulates (up to 8).
+- **Risers and fallers:** always the last 12 months, F1, 100 in both periods; follows the Scope.
+- **Seasonality:** typical-year heatmap; all consulates in the country, or the Top-N for All
+  countries.
+- **Consulate detail:** five cards (volume, change, share of its country, recovery, peak month
+  in a typical year) and a collapsed "More details" (latest month, monthly average, F1/J1
+  split, recovery by year, admissions notes, source rows and CSVs).
+- Dropped from the old pages: the four "strongest/most" cards, the Average/Median/Maximum
+  seasonality statistic, the "recovery from visible range" checkbox, the duplicate country
+  seasonality chart and the intro and Active Range panels.
+
 ## Handoff notes for deployment (Koushik)
 
 The branch `dev/dashboard-improvements` changes the **`rebuild-dashboard` Lambda**. Nothing
@@ -372,6 +401,9 @@ in AWS has been changed yet; these are the steps when it is deployed.
 **Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito
 and the S3 bucket layout. The served response (about 190 KB base64) is far below Lambda's
 6 MB limit.
+
+**Repository clean-up:** `backend/lambdas/rebuild-dashboard/__pycache__/lambda_function.cpython-314.pyc`
+is committed on main; consider removing it and adding `__pycache__/` to `.gitignore`.
 
 **Order doesn't matter.** The site reads snapshots with or without `nationalityMonthly`, and
 the current site ignores the new table, so the Lambda and the site (`npm run deploy`) can be

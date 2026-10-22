@@ -6,7 +6,7 @@ import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { calendarYearLabel } from "../../../lib/dashboard/periods";
 import { int } from "../../../lib/dashboard/format";
-import { groupSum } from "../../../lib/dashboard/metrics";
+import { groupSum, idxMaxNumeric, idxMaxString } from "../../../lib/dashboard/metrics";
 import {
   arrowPct,
   monthRangeLabel,
@@ -80,6 +80,7 @@ export default function ExecutiveTab() {
     focusCountry,
     consulateCountries,
     visaFiltered,
+    dfFiltered,
     visaLabel,
     periodRange,
   } = useDashboard();
@@ -100,20 +101,53 @@ export default function ExecutiveTab() {
     : `No consulate data for ${focusCountry} in this view.`;
 
   /* ---- Globe: choropleth by country name, with orthographic rotation ---- */
+  // Totals, top consulate and peak month follow the control bar's Period; the
+  // change line is always the last 12 months.
+  const globeRows = useMemo(() => {
+    const byCountry = new Map<
+      string,
+      { f1: number; j1: number; posts: Map<string, number>; months: Map<number, number> }
+    >();
+    for (const row of dfFiltered) {
+      let entry = byCountry.get(row.country);
+      if (!entry) {
+        entry = { f1: 0, j1: 0, posts: new Map(), months: new Map() };
+        byCountry.set(row.country, entry);
+      }
+      if (row.visa === "J1") {
+        entry.j1 += row.issuances;
+        continue;
+      }
+      entry.f1 += row.issuances;
+      entry.posts.set(row.post, (entry.posts.get(row.post) ?? 0) + row.issuances);
+      entry.months.set(row.month, (entry.months.get(row.month) ?? 0) + row.issuances);
+    }
+    return [...byCountry.entries()]
+      .filter(([, e]) => e.f1 > 0)
+      .map(([country, e]) => ({
+        country,
+        f1: e.f1,
+        j1: e.j1,
+        topPost: idxMaxString(e.posts) ?? "N/A",
+        peakMonth: idxMaxNumeric(e.months) ?? 0,
+      }))
+      .sort((a, b) => b.f1 - a.f1);
+  }, [dfFiltered]);
+
   const globe = useMemo(() => {
-    const colorTitle = `F1 Issuances, ${operationalPeriod}`;
-    const z = summary.map((row) => row.f1Total);
+    const colorTitle = `F1 Issuances, ${periodRange.label}`;
+    const z = globeRows.map((row) => row.f1);
 
     const data: Trace[] = [
       {
         type: "choropleth",
-        locations: summary.map((row) => row.country),
+        locations: globeRows.map((row) => row.country),
         locationmode: "country names",
         z,
-        text: summary.map((row) => row.country),
-        customdata: summary.map((row) => [
-          int(row.f1Total),
-          int(row.j1Total),
+        text: globeRows.map((row) => row.country),
+        customdata: globeRows.map((row) => [
+          int(row.f1),
+          int(row.j1),
           arrowPct(last12.f1.get(row.country)?.change ?? null),
           row.topPost,
           peakLabel(row.peakMonth),
@@ -128,11 +162,11 @@ export default function ExecutiveTab() {
         },
         hovertemplate:
           "<b>%{text}</b><br>" +
-          `F1 Total, ${operationalPeriod}: %{customdata[0]}<br>` +
-          `J1 Total, ${operationalPeriod}: %{customdata[1]}<br>` +
+          `F1, ${periodRange.label}: %{customdata[0]}<br>` +
+          `J1, ${periodRange.label}: %{customdata[1]}<br>` +
           `F1 vs previous 12 months (${last12.period}): %{customdata[2]}<br>` +
-          "Top Consulate/Post: %{customdata[3]}<br>" +
-          "Peak Visa Month: %{customdata[4]}" +
+          `Top consulate (F1, ${periodRange.label}): %{customdata[3]}<br>` +
+          `Peak F1 month (${periodRange.label}): %{customdata[4]}` +
           "<extra></extra>",
       } as Trace,
     ];
@@ -166,6 +200,10 @@ export default function ExecutiveTab() {
           bgcolor: "rgba(7, 21, 46, 0.8)",
           bordercolor: "rgba(255, 184, 28, 0.28)",
           font: { color: "#FFFFFF", size: 11 },
+          // Plotly paints the "active" button light grey, which hid the white
+          // "Rotate" label. No active highlight keeps both labels readable.
+          showactive: false,
+          active: -1,
           buttons: [
             {
               label: "Rotate",
@@ -199,7 +237,7 @@ export default function ExecutiveTab() {
     }
 
     return { data, layout, frames };
-  }, [summary, last12, operationalPeriod]);
+  }, [globeRows, last12, periodRange.label]);
 
   /* ---- Country rollup for the treemap (control bar's visa) ---- */
   const countryRollup = useMemo(() => {
@@ -282,38 +320,27 @@ export default function ExecutiveTab() {
     return { data, layout };
   }, [countryRollup, visaLabel, periodRange.label]);
 
-  /* ---- Monthly trend, one line per year ---- */
+  /* ---- Monthly trend: one continuous line across the Period ---- */
   const monthlyTrend = useMemo(() => {
-    const palette = [
-      "#3D8DDE", "#FFB81C", "#86EFAC", "#F87171", "#C4B5FD",
-      "#FDBA74", "#67E8F9", "#F9A8D4", "#BEF264", "#CBD5E1",
-    ];
-    const years = [...new Set(visaFiltered.map((r) => r.year))].sort((a, b) => a - b);
-    const byYearMonth = groupSum(
-      visaFiltered,
-      (r) => `${r.year}-${String(r.month).padStart(2, "0")}`,
-      (r) => r.issuances,
-    );
-    const periods = [...byYearMonth.keys()].sort();
-
-    const data: Trace[] = years.map((year, index) => {
-      const yearPeriods = periods.filter((period) => period.startsWith(`${year}-`));
-      return {
+    const byMonth = groupSum(visaFiltered, (r) => r.year * 12 + (r.month - 1), (r) => r.issuances);
+    const months = [...byMonth.keys()].sort((a, b) => a - b);
+    const data: Trace[] = [
+      {
         type: "scatter",
         mode: "lines+markers",
-        name: String(year),
-        x: yearPeriods,
-        y: yearPeriods.map((period) => byYearMonth.get(period)!),
-        line: { shape: "spline", color: palette[index % palette.length] },
-        marker: { color: palette[index % palette.length] },
-      } as Trace;
-    });
-
+        name: visaLabel,
+        x: months.map((index) => monthRangeLabel({ start: index, end: index })),
+        y: months.map((index) => byMonth.get(index)!),
+        line: { color: "#FFB81C", width: 3 },
+        marker: { color: "#FFB81C", size: 6 },
+        hovertemplate: `<b>%{x}</b><br>${visaLabel}: %{y:,.0f}<extra></extra>`,
+      } as Trace,
+    ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `Global Monthly ${visaLabel} Issuance Trend by Year, ${periodRange.label}` },
-      xaxis: { tickangle: -45, categoryorder: "category ascending" },
-      hovermode: "x unified",
+      title: { text: `Global Monthly ${visaLabel} Issuances, ${periodRange.label}` },
+      xaxis: { tickangle: -45, type: "category" },
+      showlegend: false,
     };
     return { data, layout };
   }, [visaFiltered, visaLabel, periodRange.label]);
@@ -325,8 +352,8 @@ export default function ExecutiveTab() {
       <div className="rounded-lg border border-[rgba(61,141,222,0.24)] bg-[radial-gradient(circle_at_72%_32%,rgba(61,141,222,0.18),transparent_22rem),linear-gradient(180deg,rgba(6,24,52,0.92),rgba(3,12,28,0.9))] p-[22px]">
         <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#ffdf87]">
           Visual Intelligence Layer
-          <FixedTag title="The globe and focus card ignore the Period and Visa controls.">
-            F1 totals {operationalPeriod} · change: last 12 months
+          <FixedTag title="The globe's totals follow the Period; its change line and the focus card always use the last 12 months.">
+            Change line and focus card: always last 12 months
           </FixedTag>
         </div>
         <div className="mt-1 text-xl font-extrabold text-white">
@@ -334,7 +361,8 @@ export default function ExecutiveTab() {
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
           Drag to rotate the orthographic globe, use Rotate/Pause for motion, and hover countries for
-          F1/J1 totals, the F1 change vs the previous 12 months, top consulate, and peak month.
+          F1/J1 totals, top consulate and peak month in {periodRange.inSentence}, plus the F1 change
+          vs the previous 12 months.
           Country means where the visa was issued. This layer is visual
           only and does not control dashboard filters.
         </p>

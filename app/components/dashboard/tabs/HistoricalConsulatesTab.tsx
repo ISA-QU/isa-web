@@ -75,6 +75,7 @@ export default function HistoricalConsulatesTab() {
     consulateCountries,
     focusCountry: country,
     visa,
+    visaLabel,
     periodRange,
   } = useDashboard();
   const consulate = data.postsMonthly;
@@ -326,7 +327,7 @@ export default function HistoricalConsulatesTab() {
   const insights: string[] = [];
   if (selectedShare !== null) {
     insights.push(
-      `${post} represented ${share(selectedShare)} of ${country}'s selected-period F1/J1 issuance.`,
+      `${post} represented ${share(selectedShare)} of ${country}'s ${visaLabel} issuance in ${periodRange.inSentence}.`,
     );
   }
   if (selectedMetrics.seasonalityRatio !== null) {
@@ -426,13 +427,10 @@ export default function HistoricalConsulatesTab() {
   const comparableMode = `Comparable ${yearToDateLabel(coverageThroughMonth)} totals`;
   const annualModes =
     partialYear !== null ? ["Calendar-year totals", comparableMode] : ["Calendar-year totals"];
-  const hasPartialYear = partialYear !== null && postCoverageBase.some((r) => r.year === partialYear);
+  // Defaults to calendar-year totals; the partial year stays labelled, and the
+  // comparable same-months view is one click away.
   const effectiveAnnualMode =
-    annualMode !== null && annualModes.includes(annualMode)
-      ? annualMode
-      : hasPartialYear
-        ? comparableMode
-        : "Calendar-year totals";
+    annualMode !== null && annualModes.includes(annualMode) ? annualMode : "Calendar-year totals";
   const comparableYtd = effectiveAnnualMode === comparableMode;
   // Always every calendar year of the post's history, whatever the Period.
   const annualSource = comparableYtd
@@ -768,34 +766,43 @@ export default function HistoricalConsulatesTab() {
       {header}
 
       <KpiRow>
-        <KpiCard accent="gold" label="Total F1 Issuances" value={metricNumber(totalF1)} />
-        <KpiCard accent="navy" label="Total J1 Issuances" value={metricNumber(totalJ1)} />
-        <KpiCard
-          accent="gold"
-          label="Latest Month F1"
-          value={metricNumber(latestF1)}
-          delta={monthDisplay(latestIndex)}
-        />
-        <KpiCard
-          accent="navy"
-          label="Latest Month J1"
-          value={metricNumber(latestJ1)}
-          delta={monthDisplay(latestIndex)}
-        />
-        <KpiCard
-          label="Peak F1 Month"
-          value={monthDisplay(peakF1Month)}
-          valueClassName="!text-[18px]"
-          delta={peakF1Value !== null ? `${int(peakF1Value)} issuances` : undefined}
-        />
-        <KpiCard
-          label="Peak J1 Month"
-          value={monthDisplay(peakJ1Month)}
-          valueClassName="!text-[18px]"
-          delta={peakJ1Value !== null ? `${int(peakJ1Value)} issuances` : undefined}
-        />
-        <KpiCard accent="gold" label="Average Monthly F1" value={metricDecimal(avgF1)} />
-        <KpiCard accent="navy" label="Average Monthly J1" value={metricDecimal(avgJ1)} />
+        {/* Only the cards for the selected visa class: F1, J1, or both. */}
+        {includesF1 && <KpiCard accent="gold" label="Total F1 Issuances" value={metricNumber(totalF1)} />}
+        {includesJ1 && <KpiCard accent="navy" label="Total J1 Issuances" value={metricNumber(totalJ1)} />}
+        {includesF1 && (
+          <KpiCard
+            accent="gold"
+            label="Latest Month F1"
+            value={metricNumber(latestF1)}
+            delta={monthDisplay(latestIndex)}
+          />
+        )}
+        {includesJ1 && (
+          <KpiCard
+            accent="navy"
+            label="Latest Month J1"
+            value={metricNumber(latestJ1)}
+            delta={monthDisplay(latestIndex)}
+          />
+        )}
+        {includesF1 && (
+          <KpiCard
+            label="Peak F1 Month"
+            value={monthDisplay(peakF1Month)}
+            valueClassName="!text-[18px]"
+            delta={peakF1Value !== null ? `${int(peakF1Value)} issuances` : undefined}
+          />
+        )}
+        {includesJ1 && (
+          <KpiCard
+            label="Peak J1 Month"
+            value={monthDisplay(peakJ1Month)}
+            valueClassName="!text-[18px]"
+            delta={peakJ1Value !== null ? `${int(peakJ1Value)} issuances` : undefined}
+          />
+        )}
+        {includesF1 && <KpiCard accent="gold" label="Average Monthly F1" value={metricDecimal(avgF1)} />}
+        {includesJ1 && <KpiCard accent="navy" label="Average Monthly J1" value={metricDecimal(avgJ1)} />}
         <KpiCard label="Active Months" value={metricNumber(activeMonths)} />
         <KpiCard
           accent="navy"

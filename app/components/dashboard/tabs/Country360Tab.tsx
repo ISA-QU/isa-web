@@ -65,7 +65,7 @@ import {
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
   // Country, visa and period come from the control bar.
-  const { data, focusCountry: country, visa, periodRange } = useDashboard();
+  const { data, focusCountry: country, visa, periodRange, provisionalYears } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -113,6 +113,22 @@ export default function Country360Tab() {
         (r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
       ),
     [hcCountry, periodRange],
+  );
+
+  // F1 and J1 for the control bar's Period (whatever the Visa), shown where the
+  // old "Operational" (Jan 2024 – Feb 2026) figures were. The recommendation's
+  // inputs are unchanged (they still use the operational window).
+  const periodF1 = sumBy(
+    hcCountryAll.filter(
+      (r) => r.visa === "F1" && r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
+    ),
+    (r) => r.issuances,
+  );
+  const periodJ1 = sumBy(
+    hcCountryAll.filter(
+      (r) => r.visa === "J1" && r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
+    ),
+    (r) => r.issuances,
   );
 
   // Periods for the sections that don't follow the Period control.
@@ -311,15 +327,35 @@ export default function Country360Tab() {
       byYear.set(row.fiscalYear, entry);
     }
     const years = [...byYear.keys()].sort((a, b) => a - b);
+    // Provisional years (summed from monthly reports) get a hollow, larger marker,
+    // as on Historical Trends.
+    const isProvisional = years.map((year) => provisionalYears.has(year));
     const traces: Trace[] = (["F1", "J1"] as const).map((visaClass) => ({
       type: "scatter",
       mode: "lines+markers",
       name: visaClass,
       x: years,
       y: years.map((year) => byYear.get(year)![visaClass]),
+      customdata: isProvisional.map((p) => (p ? " (provisional, from monthly reports)" : "")),
+      hovertemplate: `<b>FY%{x}</b>%{customdata}<br>${visaClass}: %{y:,.0f}<extra></extra>`,
       line: { color: VISA_COLORS[visaClass] },
-      marker: { color: VISA_COLORS[visaClass] },
+      marker: {
+        color: VISA_COLORS[visaClass],
+        size: isProvisional.map((p) => (p ? 11 : 7)),
+        symbol: isProvisional.map((p) => (p ? "circle-open" : "circle")),
+        line: { color: VISA_COLORS[visaClass], width: 2 },
+      },
     })) as Trace[];
+    const provisionalNotes = years
+      .filter((year) => provisionalYears.has(year))
+      .map((year) => ({
+        x: year,
+        y: Math.max(byYear.get(year)!.F1, byYear.get(year)!.J1),
+        text: `FY${year} provisional`,
+        showarrow: false,
+        yshift: 20,
+        font: { color: "#CBD5E1", size: 11 },
+      }));
 
     const layout: ChartLayout = {
       height: 460,
@@ -346,8 +382,8 @@ export default function Country360Tab() {
               },
             ]
           : [],
-      annotations:
-        histStart <= 2020 && 2020 <= histEnd
+      annotations: [
+        ...(histStart <= 2020 && 2020 <= histEnd
           ? [
               {
                 x: 2020,
@@ -358,11 +394,13 @@ export default function Country360Tab() {
                 font: { color: "#FCA5A5", size: 11 },
               },
             ]
-          : [],
+          : []),
+        ...provisionalNotes,
+      ],
     } as ChartLayout;
 
     return { data: traces, layout, hasRows: histRange.length > 0 };
-  }, [histRange, histStart, histEnd, histCountry]);
+  }, [histRange, histStart, histEnd, histCountry, provisionalYears]);
 
   const networkChart = useMemo(() => {
     const byMonthVisa = groupSum(hcCountry, (r) => `${r.monthIndex}|${r.visa}`, (r) => r.issuances);
@@ -558,9 +596,9 @@ export default function Country360Tab() {
 
   const slug = country.toLowerCase().replace(/ /g, "_");
 
-  const actionCards: Array<[string, string, string, string]> = [
-    [metrics.action, metrics.profile.primaryDriver, metrics.profile.timing, metrics.profile.caveat],
-  ];
+  // The recommended action itself is shown once, in Country Recommendation; this
+  // section lists only the additional actions.
+  const actionCards: Array<[string, string, string, string]> = [];
   if (metrics.flags.includes("Highly Seasonal")) {
     actionCards.push([
       "Begin Outreach Earlier",
@@ -587,10 +625,8 @@ export default function Country360Tab() {
   }
 
   const summaryBullets: string[] = [];
-  if (metrics.opF1Total) {
-    summaryBullets.push(
-      `${country}'s operational F1 total is ${int(metrics.opF1Total)} across ${monthLongDisplay(operationalRange.start)}-${monthLongDisplay(operationalRange.end)}.`,
-    );
+  if (periodF1 > 0) {
+    summaryBullets.push(`${country}'s F1 total is ${int(periodF1)} in ${periodRange.inSentence}.`);
   }
   if (metrics.growth10 !== null) {
     summaryBullets.push(
@@ -713,7 +749,7 @@ export default function Country360Tab() {
               <FixedTag title="Each KPI uses its own fixed period; ignores the Period control.">Fixed periods</FixedTag>
             </SubHeading>
             <KpiRow>
-              <KpiCard accent="gold" label="Operational F1" value={metricNumber(metrics.opF1Total)} />
+              <KpiCard accent="gold" label={`F1, ${periodRange.label}`} value={metricNumber(periodF1)} />
               <KpiCard accent="gold" label={`FY${latestFy} Annual F1`} value={metricNumber(metrics.latestFyF1)} />
               <KpiCard label="10-Year F1 Growth" value={metricPct(metrics.growth10)} />
               <KpiCard
@@ -721,12 +757,11 @@ export default function Country360Tab() {
                 value={metricPct(metrics.hcMetrics.latest12Change)}
               />
               <KpiCard label="Recovery Index" value={metricDecimal(metrics.hcMetrics.recoveryIndex)} />
-              <KpiCard accent="navy" label="Recommended Action" value={metrics.action} valueClassName="!text-[15px]" />
             </KpiRow>
 
             <Expander title="Secondary KPI Details">
               <KpiRow>
-                <KpiCard accent="navy" label="Operational J1" value={metricNumber(metrics.opJ1Total)} />
+                <KpiCard accent="navy" label={`J1, ${periodRange.label}`} value={metricNumber(periodJ1)} />
                 <KpiCard accent="navy" label={`FY${latestFy} Annual J1`} value={metricNumber(metrics.latestFyJ1)} />
                 <KpiCard label="5-Year F1 Growth" value={metricPct(metrics.growth5)} />
                 <KpiCard accent="gold" label="Latest 12-Month F1" value={metricNumber(metrics.latest12F1)} />
@@ -741,8 +776,9 @@ export default function Country360Tab() {
             </Expander>
           </section>
 
+          {actionCards.length > 0 && (
           <section>
-            <SubHeading>Recommended Admissions Actions</SubHeading>
+            <SubHeading>Additional Admissions Actions</SubHeading>
             <div className="grid gap-4 lg:grid-cols-3">
               {actionCards.slice(0, 6).map(([title, evidence, timing, caveat], index) => (
                 <div
@@ -757,6 +793,7 @@ export default function Country360Tab() {
               ))}
             </div>
           </section>
+          )}
 
           <section>
             <SubHeading>Current Operational Signal</SubHeading>
@@ -949,16 +986,16 @@ export default function Country360Tab() {
             <div className="flex flex-wrap gap-2">
               <DownloadCsvButton
                 label="Country 360 Summary CSV"
-                filename={`qu_country360_summary_${slug}.csv`}
+                filename={`qu_country360_summary_${slug}_${periodRange.slug}.csv`}
                 headers={[
-                  "country", "operational_f1_total", "operational_j1_total", `fy${latestFy}_f1`, `fy${latestFy}_j1`,
+                  "country", `f1_total_${periodRange.slug}`, `j1_total_${periodRange.slug}`, `fy${latestFy}_f1`, `fy${latestFy}_j1`,
                   "f1_growth_5yr_pct", "f1_growth_10yr_pct", "top_consulate", "peak_month",
                   "recovery_index", "top_one_share", "top_three_share", "volatility", "data_confidence",
                 ]}
                 rows={[[
                   country,
-                  String(metrics.opF1Total),
-                  String(metrics.opJ1Total),
+                  String(periodF1),
+                  String(periodJ1),
                   String(metrics.latestFyF1),
                   String(metrics.latestFyJ1),
                   metrics.growth5 === null ? "" : String(metrics.growth5),

@@ -46,6 +46,7 @@ export default function ConsulatesTab() {
     visaFiltered,
     focusRows,
     visaLabel,
+    typical,
   } = useDashboard();
   // Active Posts and Seasonality CV follow the control bar's visa (F1 by default).
   const activePosts = new Set(focusRows.map((r) => r.post)).size;
@@ -147,31 +148,51 @@ export default function ConsulatesTab() {
   // Average per calendar month: Jan-Feb can have one more year of data than the
   // other months, so summing would overstate them. Year counts come from the
   // whole filtered dataset, so a month with no issuances for this country counts.
+  // Bars: the typical year (complete years except 2020–2021), whatever the
+  // Period. Gold line: the selected Period's average per month, for contrast.
   const seasonality = useMemo(() => {
-    const yearCounts = calendarMonthYearCounts(visaFiltered);
-    const totals = groupSum(focusRows, (r) => r.month, (r) => r.issuances);
-    const months = [...totals.keys()].sort((a, b) => a - b);
-    const avg = months.map((month) => averagePerMonth(totals.get(month)!, month, yearCounts));
-    const years = periodRange.label;
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const typicalRows = typical.rows.filter((r) => r.country === focusCountry);
+    const typicalTotals = groupSum(typicalRows, (r) => r.month, (r) => r.issuances);
+    const typicalCounts = calendarMonthYearCounts(typical.rows);
+    const typicalAvg = months.map((m) => averagePerMonth(typicalTotals.get(m) ?? 0, m, typicalCounts));
+
+    const periodCounts = calendarMonthYearCounts(visaFiltered);
+    const periodTotals = groupSum(focusRows, (r) => r.month, (r) => r.issuances);
+    const periodAvg = months.map((m) =>
+      (periodCounts.get(m) ?? 0) > 0 ? averagePerMonth(periodTotals.get(m) ?? 0, m, periodCounts) : null,
+    );
+
     const data: Trace[] = [
       {
         type: "bar",
+        name: `Typical year (${typical.label})`,
         x: months.map((month) => MONTH_NAMES[month]),
-        y: avg,
-        text: avg.map((value) => int(Math.round(value))),
-        textposition: "auto",
-        customdata: months.map((month) => yearCounts.get(month) ?? 0),
-        marker: { color: avg, colorscale: BLUE_GOLD },
+        y: typicalAvg,
+        customdata: months.map((month) => typicalCounts.get(month) ?? 0),
+        marker: { color: "#3D8DDE" },
         hovertemplate:
-          `<b>%{x}</b><br>Average ${visaLabel} per month: %{y:,.0f}<br>Years averaged: %{customdata}<extra></extra>`,
+          `<b>%{x}</b><br>Typical year: %{y:,.0f} ${visaLabel} per month<br>Years averaged: %{customdata}<extra></extra>`,
+      } as Trace,
+      {
+        type: "scatter",
+        mode: "lines+markers",
+        name: periodRange.label,
+        x: months.map((month) => MONTH_NAMES[month]),
+        y: periodAvg,
+        line: { color: "#FFB81C", width: 3 },
+        marker: { color: "#FFB81C", size: 7 },
+        connectgaps: false,
+        hovertemplate: `<b>%{x}</b><br>${periodRange.label}: %{y:,.0f} per month<extra></extra>`,
       } as Trace,
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `${visaLabel} Seasonality - ${focusCountry}, average per month (${years})` },
+      title: { text: `${visaLabel} Seasonality - ${focusCountry}, average per month` },
+      legend: { orientation: "h", y: -0.18 },
     };
     return { data, layout };
-  }, [focusRows, focusCountry, visaFiltered, visaLabel, periodRange.label]);
+  }, [focusRows, focusCountry, visaFiltered, visaLabel, periodRange.label, typical]);
 
   /* ---- F1 vs J1 over time ---- */
   const bothVisas = useMemo(() => {
@@ -322,7 +343,16 @@ export default function ConsulatesTab() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <Chart data={seasonality.data} layout={seasonality.layout} height={380} />
+                <div>
+                  <Chart data={seasonality.data} layout={seasonality.layout} height={380} />
+                  <p className="mt-2 text-xs text-slate-400">
+                    <FixedTag title="The bars ignore the Period control.">
+                      Typical year: {typical.label}
+                    </FixedTag>{" "}
+                    Bars: average per month over complete years except 2020–2021 (COVID). Gold
+                    line: {periodRange.inSentence}.
+                  </p>
+                </div>
                 <Chart data={bothVisas.data} layout={bothVisas.layout} height={380} />
               </div>
             </>

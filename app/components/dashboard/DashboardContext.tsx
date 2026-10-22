@@ -27,6 +27,8 @@ import {
   DEFAULT_PERIOD,
   provisionalFiscalYears,
   resolvePeriod,
+  typicalYears,
+  yearListLabel,
   type PeriodChoice,
   type ResolvedPeriod,
 } from "../../lib/dashboard/periods";
@@ -91,6 +93,11 @@ interface DashboardState {
   visaFiltered: OperationalRow[];
   /** `visaFiltered` for the focus country. */
   focusRows: OperationalRow[];
+  /**
+   * The seasonality baseline: complete calendar years except 2020–2021, for the
+   * control bar's visa, whatever the Period.
+   */
+  typical: { years: number[]; label: string; rows: OperationalRow[] };
 
   summary: CountrySummaryRow[];
   historicalMetrics: HistoricalMetricRow[];
@@ -219,6 +226,17 @@ export function DashboardProvider({
     [visaFiltered, focusCountry],
   );
 
+  const typical = useMemo(() => {
+    const years = typicalYears(coverage);
+    const yearSet = new Set(years);
+    const visas = visa === "Both" ? ["F1", "J1"] : [visa];
+    return {
+      years,
+      label: yearListLabel(years),
+      rows: data.postsMonthly.filter((r) => yearSet.has(r.year) && visas.includes(r.visa)),
+    };
+  }, [coverage, visa, data.postsMonthly]);
+
   // Built from the unfiltered splits, exactly as app.py does.
   const summary = useMemo(
     () => buildCountrySummary(f1, j1, data.countryCoords),
@@ -287,6 +305,7 @@ export function DashboardProvider({
     dfFiltered,
     visaFiltered,
     focusRows,
+    typical,
     summary,
     historicalMetrics,
     growthLabel,

@@ -264,6 +264,18 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   Consulates' 12-month, change and recovery columns, trend chart, annual and recovery charts
   always use the full history, with the Period shaded on the trend chart. CSV file names
   include the period.
+- **Seasonality uses a typical year.** Country Intelligence's seasonality chart, Consulate
+  Intelligence's heatmap and Consulate Seasonality average over complete calendar years
+  except 2020–2021 (COVID), e.g. 2018, 2019, 2022–2025 (`typicalYears()` in
+  `lib/dashboard/periods.ts`), whatever the Period, tagged "Typical year: …". Country
+  Intelligence's chart overlays the selected Period as a gold line. The heatmap's rows are
+  the top 20 consulates by typical-year volume.
+- **Country 360 and the globe follow the Period.** Country 360's former "Operational" F1/J1
+  figures and first summary line use the Period; its recommendation still uses the Jan 2024
+  onward operational inputs shared with Command Center. FY2025 is marked provisional on its
+  trajectory chart, and the recommended action appears once. The Executive globe's totals,
+  colors, top consulate and peak month follow the Period; its change line and the focus card
+  stay on the last 12 months.
 - **No sidebar.** Compare Countries now lives in Country Intelligence's comparison chart (a
   type-to-search picker with chips, a "Top 5 markets" preset, one preset per region, up to 8
   countries; default: the top 5 markets by F1 in the Period), and Top-N in Consulate

@@ -44,10 +44,10 @@ export default function ResearchCountryTab() {
     setTopN,
     consulateCountries,
     visaFiltered,
-    focusRows,
     visaLabel,
     visa,
     periodRange,
+    typical,
   } = useDashboard();
 
   const topPosts = useMemo(() => {
@@ -119,20 +119,22 @@ export default function ResearchCountryTab() {
     };
   }, [data.postsMonthly, end]);
 
-  /* ---- Monthly heatmap for the top 20 posts ---- */
+  /* ---- Typical-year heatmap: the top 20 posts by typical-year volume ---- */
+  // Seasonality uses the typical year (complete years except 2020–2021), not the Period.
   const heatmap = useMemo(() => {
-    const posts = topPosts.slice(0, 20).map((r) => r.post);
+    const postTotals = groupSum(typical.rows, (r) => r.post, (r) => r.issuances);
+    const posts = [...postTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([post]) => post);
     const postSet = new Set(posts);
-    const rows = visaFiltered.filter((r) => postSet.has(r.post));
+    const rows = typical.rows.filter((r) => postSet.has(r.post));
     const totals = groupSum(rows, (r) => `${r.post}|${r.month}`, (r) => r.issuances);
 
     // pandas pivots to a sorted index; imshow then draws row 0 at the top.
     const sortedPosts = [...postSet].sort();
-    const months = [...new Set(rows.map((r) => r.month))].sort((a, b) => a - b);
-
-    // Average per calendar month, so months with an extra year of data aren't overstated.
-    const yearCounts = calendarMonthYearCounts(visaFiltered);
-    const years = periodRange.label;
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const yearCounts = calendarMonthYearCounts(typical.rows);
     const z = sortedPosts.map((post) =>
       months.map((month) => averagePerMonth(totals.get(`${post}|${month}`) ?? 0, month, yearCounts)),
     );
@@ -146,46 +148,46 @@ export default function ResearchCountryTab() {
         colorscale: HEAT_SCALE,
         texttemplate: "%{z:.0f}",
         textfont: { size: 9 },
-        hovertemplate: "<b>%{y}</b><br>%{x}: %{z:,.0f} average per month<extra></extra>",
+        hovertemplate: "<b>%{y}</b><br>%{x}: %{z:,.0f} average per month (typical year)<extra></extra>",
       },
     ];
     const layout: ChartLayout = {
       height: 560,
-      title: { text: `${visaLabel} Issuance Heatmap by Consulate, average per month (${years})` },
+      title: { text: `${visaLabel} Issuance Heatmap by Consulate, typical year` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [visaFiltered, topPosts, visaLabel, periodRange.label]);
+  }, [typical, visaLabel]);
 
-  /* ---- Seasonality for the focus country's top five posts ---- */
+  /* ---- Typical-year seasonality for the focus country's top five posts ---- */
+  const focusTypicalRows = useMemo(
+    () => typical.rows.filter((r) => r.country === focusCountry),
+    [typical, focusCountry],
+  );
   const focusSeasonality = useMemo(() => {
-    const postTotals = groupSum(focusRows, (r) => r.post, (r) => r.issuances);
+    const postTotals = groupSum(focusTypicalRows, (r) => r.post, (r) => r.issuances);
     const top5 = [...postTotals.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([post]) => post);
 
     const byMonthPost = groupSum(
-      focusRows.filter((r) => top5.includes(r.post)),
+      focusTypicalRows.filter((r) => top5.includes(r.post)),
       (r) => `${r.month}|${r.post}`,
       (r) => r.issuances,
     );
-    const yearCounts = calendarMonthYearCounts(visaFiltered);
-    const years = periodRange.label;
+    const yearCounts = calendarMonthYearCounts(typical.rows);
 
     const data: Trace[] = top5.map((post) => {
-      const points = [...byMonthPost.entries()]
-        .filter(([key]) => key.slice(key.indexOf("|") + 1) === post)
-        .map(([key, value]) => {
-          const month = Number(key.split("|")[0]);
-          return { month, value: averagePerMonth(value, month, yearCounts) };
-        })
-        .sort((a, b) => a.month - b.month);
+      const points = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => ({
+        month,
+        value: averagePerMonth(byMonthPost.get(`${month}|${post}`) ?? 0, month, yearCounts),
+      }));
       return {
         type: "scatter",
         mode: "lines+markers",
         name: post,
-        x: points.map((p) => p.month),
+        x: points.map((p) => MONTH_NAMES[p.month]),
         y: points.map((p) => p.value),
         line: { shape: "spline" },
         hovertemplate: `${post}: %{y:,.0f} average per month<extra></extra>`,
@@ -194,11 +196,11 @@ export default function ResearchCountryTab() {
 
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `${visaLabel} Consulate Seasonality - ${focusCountry}, average per month (${years})` },
+      title: { text: `${visaLabel} Consulate Seasonality - ${focusCountry}, typical year` },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [focusRows, focusCountry, visaFiltered, visaLabel, periodRange.label]);
+  }, [focusTypicalRows, focusCountry, typical, visaLabel]);
 
   const allPosts = useMemo(() => {
     const totals = groupSum(visaFiltered, (r) => r.post, (r) => r.issuances);
@@ -253,18 +255,27 @@ export default function ResearchCountryTab() {
       </div>
 
       <section>
-        <SubHeading>Monthly Issuance Heatmap - Top Posts</SubHeading>
+        <SubHeading>
+          Monthly Issuance Heatmap - Top Posts
+          <FixedTag title="Ignores the Period control.">Typical year: {typical.label}</FixedTag>
+        </SubHeading>
         <Chart data={heatmap.data} layout={heatmap.layout} height={560} />
+        <p className="mt-2 text-xs text-slate-400">
+          Top 20 consulates by typical-year volume; average per month over complete years except
+          2020–2021 (COVID).
+        </p>
       </section>
 
       <section>
-        <SubHeading>Consulate Detail - {focusCountry}</SubHeading>
+        <SubHeading>
+          Consulate Detail - {focusCountry}
+          <FixedTag title="Ignores the Period control.">Typical year: {typical.label}</FixedTag>
+        </SubHeading>
         {!consulateCountries.has(focusCountry) ? (
           <InfoCallout>No consulate data for {focusCountry} in this view.</InfoCallout>
-        ) : focusRows.length === 0 ? (
+        ) : focusTypicalRows.length === 0 ? (
           <InfoCallout>
-            No {visaLabel} consulate data for {focusCountry} in{" "}
-            {periodRange.label}.
+            No {visaLabel} consulate data for {focusCountry} in the typical years ({typical.label}).
           </InfoCallout>
         ) : (
           <Chart data={focusSeasonality.data} layout={focusSeasonality.layout} height={380} />

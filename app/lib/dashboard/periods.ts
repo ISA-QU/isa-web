@@ -103,6 +103,8 @@ export const DEFAULT_PERIOD: PeriodChoice = { kind: "last12" };
 export interface ResolvedPeriod extends MonthRange {
   /** e.g. "Last 12 months (Mar 2025 – Feb 2026)", "2026 (Jan–Feb)". */
   label: string;
+  /** The same, for use inside a sentence: "the last 12 months (Mar 2025 – Feb 2026)". */
+  inSentence: string;
   /** For file names, e.g. "2025-03_2026-02". */
   slug: string;
 }
@@ -173,7 +175,13 @@ export function resolvePeriod(choice: PeriodChoice, coverage: MonthRange): Resol
     }
   }
   if (range.start > range.end) range = { start: coverage.start, end: coverage.end };
-  return { ...range, label, slug: `${stamp(range.start)}_${stamp(range.end)}` };
+  const inSentence =
+    choice.kind === "last12" || choice.kind === "last24" || choice.kind === "pandemic"
+      ? `the ${label.charAt(0).toLowerCase()}${label.slice(1)}`
+      : choice.kind === "all"
+        ? `all months since ${monthShort(coverage.start)}`
+        : label;
+  return { ...range, label, inSentence, slug: `${stamp(range.start)}_${stamp(range.end)}` };
 }
 
 /** The web-address form: last12, last24, all, pandemic, 2025, or 2023-01_2024-06. */
@@ -201,4 +209,38 @@ export function periodFromParam(param: string | null): PeriodChoice | null {
     return { kind: "custom", start, end };
   }
   return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Typical year (seasonality baseline)
+ * ------------------------------------------------------------------ */
+
+/** Years left out of the seasonality baseline: COVID disrupted both. */
+const ATYPICAL_YEARS = new Set([2020, 2021]);
+
+/**
+ * Complete calendar years in the monthly data, leaving out 2020 and 2021 (e.g.
+ * 2018, 2019, 2022–2025). Seasonality charts average over these, whatever the
+ * Period, so a partial or disrupted year can't distort the shape.
+ */
+export function typicalYears(coverage: MonthRange): number[] {
+  const years: number[] = [];
+  for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+    const complete = year * 12 >= coverage.start && year * 12 + 11 <= coverage.end;
+    if (complete && !ATYPICAL_YEARS.has(year)) years.push(year);
+  }
+  return years;
+}
+
+/** "2018, 2019, 2022–2025": consecutive runs joined with an en dash. */
+export function yearListLabel(years: readonly number[]): string {
+  const sorted = [...new Set(years)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j += 1;
+    parts.push(j - i >= 2 ? `${sorted[i]}–${sorted[j]}` : sorted.slice(i, j + 1).join(", "));
+    i = j + 1;
+  }
+  return parts.join(", ");
 }

@@ -37,7 +37,7 @@ import {
   regionForCountry,
 } from "../../../lib/dashboard/metrics";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
-import type { CommandCenterRow, VisaSelection } from "../../../lib/dashboard/types";
+import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import {
@@ -57,7 +57,6 @@ import {
   MethodologyNote,
   MultiSelect,
   Panel,
-  RadioGroup,
   Select,
   SectionTitle,
 } from "../ui";
@@ -72,7 +71,8 @@ type RecentMode = (typeof RECENT_MODES)[number];
 
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
-  const { data, allCountries, focusCountry: country, setFocusCountry: setCountry } = useDashboard();
+  const { data, allCountries, focusCountry: country, setFocusCountry: setCountry, visa } =
+    useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -85,7 +85,6 @@ export default function Country360Tab() {
   // Every country in either source, the same list as the sidebar's.
   const countryOptions = allCountries;
 
-  const [visa, setVisa] = useState<VisaSelection>("F1");
   const [recentMode, setRecentMode] = useState<RecentMode>("Full Operational Window");
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
@@ -666,12 +665,6 @@ export default function Country360Tab() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Select label="Country" value={country} options={countryOptions} onChange={setCountry} />
-        <RadioGroup<VisaSelection>
-          label="Visa Class"
-          value={visa}
-          options={["F1", "J1", "Both"]}
-          onChange={setVisa}
-        />
         <Select
           label="Recent Timeframe"
           value={recentMode}

@@ -9,8 +9,9 @@ import { asset } from "../../lib/basePath";
 import { loadDashboardData } from "../../lib/dashboard/data";
 import { monthLongDisplay } from "../../lib/dashboard/format";
 import { monthRangeLabel } from "../../lib/dashboard/rolling";
-import type { DashboardData } from "../../lib/dashboard/types";
-import { DashboardProvider, useDashboard } from "./DashboardContext";
+import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
+import ControlBar from "./ControlBar";
+import { DashboardProvider, useDashboard, type InitialSelection } from "./DashboardContext";
 import Sidebar from "./Sidebar";
 import HeaderKpis from "./HeaderKpis";
 import { MethodologyNote } from "./ui";
@@ -31,9 +32,9 @@ import HistoricalConsulatesTab from "./tabs/HistoricalConsulatesTab";
 const TABS = [
   { id: "command", label: "Primary: Command", Component: CommandCenterTab },
   { id: "executive", label: "Executive", Component: ExecutiveTab },
-  { id: "country360", label: "Country 360", Component: Country360Tab },
-  { id: "consulates", label: "Country Intelligence", Component: ConsulatesTab },
-  { id: "research-country", label: "Consulate Intelligence", Component: ResearchCountryTab },
+  { id: "country-360", label: "Country 360", Component: Country360Tab },
+  { id: "country-intelligence", label: "Country Intelligence", Component: ConsulatesTab },
+  { id: "consulate-intelligence", label: "Consulate Intelligence", Component: ResearchCountryTab },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
   { id: "historical-consulates", label: "Historical Consulates", Component: HistoricalConsulatesTab },
 ] as const;
@@ -127,16 +128,53 @@ function Hero() {
   );
 }
 
-function DashboardBody() {
-  const { data } = useDashboard();
-  const [active, setActive] = useState<string>(TABS[0].id);
+/* ---- Web address: country, visa and tab, so a view can be shared and survives a reload ---- */
+
+const VISA_PARAM: Record<VisaSelection, string> = { F1: "f1", J1: "j1", Both: "both" };
+
+interface UrlSelection extends InitialSelection {
+  tab?: string;
+}
+
+/** Reads the selection from the address. Unknown or missing values fall back to defaults. */
+function readUrlSelection(): UrlSelection {
+  const params = new URLSearchParams(window.location.search);
+  const visaParam = params.get("visa")?.toLowerCase();
+  const visa = (Object.keys(VISA_PARAM) as VisaSelection[]).find((v) => VISA_PARAM[v] === visaParam);
+  const tab = params.get("tab") ?? undefined;
+  return {
+    country: params.get("country") ?? undefined,
+    visa,
+    tab: TABS.some((t) => t.id === tab) ? tab : undefined,
+  };
+}
+
+/** Writes the selection into the address without adding browser-history entries. */
+function useUrlSync(country: string, visa: VisaSelection, tab: string) {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("country", country);
+    params.set("visa", VISA_PARAM[visa]);
+    params.set("tab", tab);
+    const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [country, visa, tab]);
+}
+
+function DashboardBody({ initialTab }: { initialTab?: string }) {
+  const { data, focusCountry, visa } = useDashboard();
+  const [active, setActive] = useState<string>(initialTab ?? TABS[0].id);
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
+  useUrlSync(focusCountry, visa, active);
 
   return (
     <div className="min-h-screen bg-[#050F22] text-slate-200">
       <Header />
 
       <div className="mx-auto max-w-[1600px] px-6 py-6">
+        <ControlBar />
         <div className="flex flex-col gap-6 lg:flex-row">
           <Sidebar />
 
@@ -228,12 +266,16 @@ function ErrorState({ message }: { message: string }) {
 export default function DashboardShell() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selection, setSelection] = useState<UrlSelection>({});
 
   useEffect(() => {
     let cancelled = false;
     loadDashboardData()
       .then((loaded) => {
-        if (!cancelled) setData(loaded);
+        if (cancelled) return;
+        // Read the address once, in the browser, before the dashboard first renders.
+        setSelection(readUrlSelection());
+        setData(loaded);
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -247,8 +289,8 @@ export default function DashboardShell() {
   if (!data) return <LoadingState />;
 
   return (
-    <DashboardProvider data={data}>
-      <DashboardBody />
+    <DashboardProvider data={data} initial={selection}>
+      <DashboardBody initialTab={selection.tab} />
     </DashboardProvider>
   );
 }

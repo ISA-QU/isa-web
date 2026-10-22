@@ -1,11 +1,11 @@
 "use client";
 
 import { useDashboard } from "./DashboardContext";
-import { MultiSelect, Select, Slider } from "./ui";
+import { MultiSelect, Slider } from "./ui";
 
 /**
- * The sidebar: years, the shared country (also set from Country 360, Historical
- * Trends and Historical Consulates), comparisons, top-N.
+ * The sidebar: years, comparisons, top-N. Country and visa are in the control
+ * bar above (ControlBar.tsx).
  */
 export default function Sidebar() {
   const {
@@ -13,9 +13,6 @@ export default function Sidebar() {
     selectedYears,
     setSelectedYears,
     countries,
-    allCountries,
-    focusCountry,
-    setFocusCountry,
     compareCountries,
     setCompareCountries,
     topN,
@@ -46,13 +43,6 @@ export default function Sidebar() {
             values={selectedYears.map(String)}
             onChange={(values) => setSelectedYears(values.map(Number))}
             maxHeight={120}
-          />
-
-          <Select
-            label="Focus Country"
-            value={focusCountry}
-            options={allCountries}
-            onChange={setFocusCountry}
           />
 
           <MultiSelect

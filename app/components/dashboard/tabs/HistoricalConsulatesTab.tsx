@@ -30,7 +30,7 @@ import {
 } from "../../../lib/dashboard/metrics";
 import { arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
-import type { PostMonthlyRow, PostPeriodMetrics, VisaSelection } from "../../../lib/dashboard/types";
+import type { PostMonthlyRow, PostPeriodMetrics } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
@@ -85,11 +85,11 @@ export default function HistoricalConsulatesTab() {
     consulateCountries,
     focusCountry: country,
     setFocusCountry: setCountry,
+    visa,
   } = useDashboard();
   const consulate = data.postsMonthly;
 
   const [postSelection, setPostSelection] = useState<string | null>(null);
-  const [visa, setVisa] = useState<VisaSelection>("F1");
   const [quickRange, setQuickRange] = useState<QuickRange>("Complete History");
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
@@ -244,12 +244,6 @@ export default function HistoricalConsulatesTab() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Select label="Country" value={country} options={countries} onChange={setCountry} />
         <Select label="Consulate" value={post} options={postOptions} onChange={setPostSelection} />
-        <RadioGroup<VisaSelection>
-          label="Visa Class"
-          value={visa}
-          options={["Both", "F1", "J1"]}
-          onChange={setVisa}
-        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">

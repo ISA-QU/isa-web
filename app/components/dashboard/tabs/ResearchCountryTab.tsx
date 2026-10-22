@@ -37,16 +37,17 @@ const HEAT_SCALE: Array<[number, string]> = [
  * label; the label now matches the content.)
  */
 export default function ResearchCountryTab() {
-  const { data, f1Filtered, focus, focusCountry, topN, consulateCountries } = useDashboard();
+  const { data, focusCountry, topN, consulateCountries, visaFiltered, focusRows, visaLabel } =
+    useDashboard();
 
   const topPosts = useMemo(() => {
-    const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);
-    const countryByPost = new Map(f1Filtered.map((r) => [r.post, r.country]));
+    const totals = groupSum(visaFiltered, (r) => r.post, (r) => r.issuances);
+    const countryByPost = new Map(visaFiltered.map((r) => [r.post, r.country]));
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, topN)
       .map(([post, issuances]) => ({ post, issuances, country: countryByPost.get(post) ?? "" }));
-  }, [f1Filtered, topN]);
+  }, [visaFiltered, topN]);
 
   const topPostsChart = useMemo(() => {
     const data: Trace[] = [
@@ -58,16 +59,16 @@ export default function ResearchCountryTab() {
         text: topPosts.map((r) => int(r.issuances)),
         textposition: "auto",
         marker: { color: topPosts.map((r) => r.issuances), colorscale: BLUE_GOLD },
-        hovertemplate: "<b>%{y}</b><br>F1 Issuances: %{x:,.0f}<extra></extra>",
+        hovertemplate: `<b>%{y}</b><br>${visaLabel} Issuances: %{x:,.0f}<extra></extra>`,
       },
     ];
     const layout: ChartLayout = {
       height: 680,
-      title: { text: `Top ${topN} F1-Issuing Consulates` },
+      title: { text: `Top ${topN} ${visaLabel}-Issuing Consulates` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [topPosts, topN]);
+  }, [topPosts, topN, visaLabel]);
 
   /* ---- Top risers and fallers: latest 12 months vs the 12 before, all F1 consulates ---- */
   const end = data.meta.coverage.postsMonthly.end;
@@ -112,7 +113,7 @@ export default function ResearchCountryTab() {
   const heatmap = useMemo(() => {
     const posts = topPosts.slice(0, 20).map((r) => r.post);
     const postSet = new Set(posts);
-    const rows = f1Filtered.filter((r) => postSet.has(r.post));
+    const rows = visaFiltered.filter((r) => postSet.has(r.post));
     const totals = groupSum(rows, (r) => `${r.post}|${r.month}`, (r) => r.issuances);
 
     // pandas pivots to a sorted index; imshow then draws row 0 at the top.
@@ -120,8 +121,8 @@ export default function ResearchCountryTab() {
     const months = [...new Set(rows.map((r) => r.month))].sort((a, b) => a - b);
 
     // Average per calendar month, so months with an extra year of data aren't overstated.
-    const yearCounts = calendarMonthYearCounts(f1Filtered);
-    const years = yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))]);
+    const yearCounts = calendarMonthYearCounts(visaFiltered);
+    const years = yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))]);
     const z = sortedPosts.map((post) =>
       months.map((month) => averagePerMonth(totals.get(`${post}|${month}`) ?? 0, month, yearCounts)),
     );
@@ -140,27 +141,27 @@ export default function ResearchCountryTab() {
     ];
     const layout: ChartLayout = {
       height: 560,
-      title: { text: `F1 Issuance Heatmap by Consulate, average per month (${years})` },
+      title: { text: `${visaLabel} Issuance Heatmap by Consulate, average per month (${years})` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [f1Filtered, topPosts]);
+  }, [visaFiltered, topPosts, visaLabel]);
 
   /* ---- Seasonality for the focus country's top five posts ---- */
   const focusSeasonality = useMemo(() => {
-    const postTotals = groupSum(focus.f1, (r) => r.post, (r) => r.issuances);
+    const postTotals = groupSum(focusRows, (r) => r.post, (r) => r.issuances);
     const top5 = [...postTotals.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([post]) => post);
 
     const byMonthPost = groupSum(
-      focus.f1.filter((r) => top5.includes(r.post)),
+      focusRows.filter((r) => top5.includes(r.post)),
       (r) => `${r.month}|${r.post}`,
       (r) => r.issuances,
     );
-    const yearCounts = calendarMonthYearCounts(f1Filtered);
-    const years = yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))]);
+    const yearCounts = calendarMonthYearCounts(visaFiltered);
+    const years = yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))]);
 
     const data: Trace[] = top5.map((post) => {
       const points = [...byMonthPost.entries()]
@@ -183,19 +184,19 @@ export default function ResearchCountryTab() {
 
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `Consulate Seasonality - ${focusCountry}, average per month (${years})` },
+      title: { text: `${visaLabel} Consulate Seasonality - ${focusCountry}, average per month (${years})` },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [focus.f1, focusCountry, f1Filtered]);
+  }, [focusRows, focusCountry, visaFiltered, visaLabel]);
 
   const allPosts = useMemo(() => {
-    const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);
-    const countryByPost = new Map(f1Filtered.map((r) => [r.post, r.country]));
+    const totals = groupSum(visaFiltered, (r) => r.post, (r) => r.issuances);
+    const countryByPost = new Map(visaFiltered.map((r) => [r.post, r.country]));
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([post, issuances]) => ({ post, issuances, country: countryByPost.get(post) ?? "" }));
-  }, [f1Filtered]);
+  }, [visaFiltered]);
 
   return (
     <div className="space-y-6">
@@ -235,10 +236,10 @@ export default function ResearchCountryTab() {
         <SubHeading>Consulate Detail - {focusCountry}</SubHeading>
         {!consulateCountries.has(focusCountry) ? (
           <InfoCallout>No consulate data for {focusCountry} in this view.</InfoCallout>
-        ) : focus.f1.length === 0 ? (
+        ) : focusRows.length === 0 ? (
           <InfoCallout>
-            No F1 consulate data for {focusCountry} in{" "}
-            {yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))])}.
+            No {visaLabel} consulate data for {focusCountry} in{" "}
+            {yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))])}.
           </InfoCallout>
         ) : (
           <Chart data={focusSeasonality.data} layout={focusSeasonality.layout} height={380} />
@@ -252,14 +253,14 @@ export default function ResearchCountryTab() {
           rowKey={(row) => row.post}
           columns={[
             { key: "post", header: "Consulate", render: (r) => r.post },
-            { key: "issuances", header: "F1 Issuances", numeric: true, render: (r) => int(r.issuances) },
+            { key: "issuances", header: `${visaLabel} Issuances`, numeric: true, render: (r) => int(r.issuances) },
             { key: "country", header: "Country", render: (r) => r.country },
           ]}
         />
         <DownloadCsvButton
           label="Export Consulate Data CSV"
           filename="qu_consulate_data.csv"
-          headers={["Consulate", "F1 Issuances", "Country"]}
+          headers={["Consulate", `${visaLabel} Issuances`, "Country"]}
           rows={allPosts.map((r) => [r.post, String(r.issuances), r.country])}
         />
       </section>

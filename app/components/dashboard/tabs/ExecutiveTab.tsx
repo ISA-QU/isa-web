@@ -73,7 +73,16 @@ function CountryCard({
 }
 
 export default function ExecutiveTab() {
-  const { data, summary, focusCountry, consulateCountries, f1Filtered, j1Filtered } = useDashboard();
+  const {
+    data,
+    summary,
+    focusCountry,
+    consulateCountries,
+    f1Filtered,
+    j1Filtered,
+    visaFiltered,
+    visaLabel,
+  } = useDashboard();
 
   /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
   const end = data.meta.coverage.postsMonthly.end;
@@ -192,13 +201,13 @@ export default function ExecutiveTab() {
     return { data, layout, frames };
   }, [summary, last12, operationalPeriod]);
 
-  /* ---- Country rollup for the treemap ---- */
+  /* ---- Country rollup for the treemap (control bar's visa) ---- */
   const countryRollup = useMemo(() => {
-    const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
+    const totals = groupSum(visaFiltered, (r) => r.country, (r) => r.issuances);
     return [...totals.entries()]
       .map(([country, issuances]) => ({ country, issuances }))
       .sort((a, b) => b.issuances - a.issuances);
-  }, [f1Filtered]);
+  }, [visaFiltered]);
 
   /* ---- Annual F1 vs J1 ---- */
   // The latest calendar year is partial until December: label it and draw it
@@ -252,23 +261,23 @@ export default function ExecutiveTab() {
           showscale: false,
         },
         textinfo: "label+value",
-        hovertemplate: "<b>%{label}</b><br>F1 Issuances: %{value:,.0f}<extra></extra>",
+        hovertemplate: `<b>%{label}</b><br>${visaLabel} Issuances: %{value:,.0f}<extra></extra>`,
       } as Trace,
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: "Top 20 F1 Markets" },
+      title: { text: `Top 20 ${visaLabel} Markets` },
       margin: { l: 0, r: 0, t: 50, b: 0 },
     };
     return { data, layout };
-  }, [countryRollup]);
+  }, [countryRollup, visaLabel]);
 
   /* ---- Monthly trend, one line per year ---- */
   const monthlyTrend = useMemo(() => {
     const palette = ["#3D8DDE", "#FFB81C", "#86EFAC"];
-    const years = [...new Set(f1Filtered.map((r) => r.year))].sort((a, b) => a - b);
+    const years = [...new Set(visaFiltered.map((r) => r.year))].sort((a, b) => a - b);
     const byYearMonth = groupSum(
-      f1Filtered,
+      visaFiltered,
       (r) => `${r.year}-${String(r.month).padStart(2, "0")}`,
       (r) => r.issuances,
     );
@@ -289,12 +298,12 @@ export default function ExecutiveTab() {
 
     const layout: ChartLayout = {
       height: 380,
-      title: { text: "Global Monthly F1 Issuance Trend by Year" },
+      title: { text: `Global Monthly ${visaLabel} Issuance Trend by Year` },
       xaxis: { tickangle: -45, categoryorder: "category ascending" },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [f1Filtered]);
+  }, [visaFiltered, visaLabel]);
 
   if (summary.length === 0) return null;
 

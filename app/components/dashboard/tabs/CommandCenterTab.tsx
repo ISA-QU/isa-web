@@ -20,7 +20,7 @@ import {
 } from "../../../lib/dashboard/metrics";
 import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
-import type { CommandCenterRow, VisaSelection } from "../../../lib/dashboard/types";
+import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import {
@@ -32,7 +32,7 @@ import {
   MethodologyExpanders,
   SubHeading,
 } from "../shared";
-import { Column, DataTable, KpiCard, KpiRow, Panel, RadioGroup, Select, Slider } from "../ui";
+import { Column, DataTable, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
 
 const PRIORITY_ACTIONS = [
   "Expand Recruitment",
@@ -49,10 +49,10 @@ const recoveryText = (value: number | null) => (notNa(value) ? value.toFixed(0) 
 export default function CommandCenterTab() {
   // The Command Center deliberately ignores the sidebar year filter — it has its
   // own controls and always reads the full operational layer, as in app.py.
-  const { data } = useDashboard();
+  // Visa comes from the control bar.
+  const { data, visa } = useDashboard();
   const operational = data.operational;
 
-  const [visa, setVisa] = useState<VisaSelection>("F1");
   const [region, setRegion] = useState("All");
   const [minVolume, setMinVolume] = useState(0);
   const [category, setCategory] = useState("All");
@@ -320,12 +320,6 @@ export default function CommandCenterTab() {
       <MethodologyExpanders includeMarket />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <RadioGroup<VisaSelection>
-          label="Visa Class"
-          value={visa}
-          options={["F1", "J1", "Both"]}
-          onChange={setVisa}
-        />
         <Select label="Region" value={region} options={regionOptions} onChange={setRegion} />
         <Slider
           label="Minimum Current Volume"

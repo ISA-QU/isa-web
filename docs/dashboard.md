@@ -246,6 +246,12 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   month's total by the number of selected years that include it.
 - **The partial calendar year is labelled.** Executive's annual chart shows the latest year
   as e.g. "2026 (Jan–Feb only)", lighter and hatched.
+- **A control bar at the top.** Country (searchable, every country in either source) and
+  Visa (F1 / J1 / F1 + J1, default F1) apply to every tab, with a "Showing: …" summary line
+  and a reset (`ControlBar.tsx`). The country, visa and active tab are kept in the web
+  address (`?country=India&visa=f1&tab=executive`), so a view can be shared and survives a
+  reload. Charts labelled with a visa follow the bar's choice; the header, risers/fallers,
+  the globe and the 12-month rankings stay F1 (or F1 and J1).
 - **One country for the whole dashboard.** The sidebar's Focus Country, Country 360's
   Country, Historical Trends' country and Historical Consulates' country are one shared
   selection (in `DashboardContext`), over every country in either data source. A tab whose

@@ -21,6 +21,7 @@ import type {
   DashboardData,
   HistoricalMetricRow,
   OperationalRow,
+  VisaSelection,
 } from "../../lib/dashboard/types";
 
 /**
@@ -36,6 +37,11 @@ interface DashboardState {
   setSelectedYears: (years: number[]) => void;
   focusCountry: string;
   setFocusCountry: (country: string) => void;
+  /** The control bar's visa: F1, J1 or Both (shown as "F1 + J1"). */
+  visa: VisaSelection;
+  setVisa: (visa: VisaSelection) => void;
+  /** "F1", "J1" or "F1 + J1", for chart titles. */
+  visaLabel: string;
   compareCountries: string[];
   setCompareCountries: (countries: string[]) => void;
   topN: number;
@@ -60,6 +66,10 @@ interface DashboardState {
   f1Filtered: OperationalRow[];
   j1Filtered: OperationalRow[];
   dfFiltered: OperationalRow[];
+  /** The year-filtered operational rows for the control bar's visa. */
+  visaFiltered: OperationalRow[];
+  /** `visaFiltered` for the focus country. */
+  focusRows: OperationalRow[];
 
   summary: CountrySummaryRow[];
   historicalMetrics: HistoricalMetricRow[];
@@ -93,11 +103,24 @@ export function useDashboard(): DashboardState {
   return context;
 }
 
+/** Starting values read from the web address. */
+export interface InitialSelection {
+  country?: string;
+  visa?: VisaSelection;
+}
+
+export const DEFAULT_COUNTRY = "India";
+export const DEFAULT_VISA: VisaSelection = "F1";
+
+export const visaLabelOf = (visa: VisaSelection): string => (visa === "Both" ? "F1 + J1" : visa);
+
 export function DashboardProvider({
   data,
+  initial,
   children,
 }: {
   data: DashboardData;
+  initial?: InitialSelection;
   children: ReactNode;
 }) {
   const { f1, j1 } = useMemo(() => splitVisa(data.operational), [data.operational]);
@@ -127,8 +150,13 @@ export function DashboardProvider({
 
   const [selectedYears, setSelectedYears] = useState<number[]>(allYears);
   const [selectedFocus, setFocusCountry] = useState<string>(() =>
-    allCountries.includes("India") ? "India" : (allCountries[0] ?? ""),
+    initial?.country && allCountries.includes(initial.country)
+      ? initial.country
+      : allCountries.includes(DEFAULT_COUNTRY)
+        ? DEFAULT_COUNTRY
+        : (allCountries[0] ?? ""),
   );
+  const [visa, setVisa] = useState<VisaSelection>(initial?.visa ?? DEFAULT_VISA);
   const [compareCountries, setCompareCountries] = useState<string[]>(() =>
     ["India", "China", "Vietnam", "Nepal", "Nigeria"].filter((c) => countries.includes(c)),
   );
@@ -158,6 +186,13 @@ export function DashboardProvider({
         ? data.operational.filter((r) => yearSet.has(r.year))
         : data.operational,
     [data.operational, yearSet, hasYearFilter],
+  );
+
+  // Charts that follow the control bar's visa read these.
+  const visaFiltered = visa === "F1" ? f1Filtered : visa === "J1" ? j1Filtered : dfFiltered;
+  const focusRows = useMemo(
+    () => visaFiltered.filter((r) => r.country === focusCountry),
+    [visaFiltered, focusCountry],
   );
 
   // Built from the unfiltered splits, exactly as app.py does.
@@ -205,6 +240,9 @@ export function DashboardProvider({
     setSelectedYears,
     focusCountry,
     setFocusCountry,
+    visa,
+    setVisa,
+    visaLabel: visaLabelOf(visa),
     compareCountries,
     setCompareCountries,
     topN,
@@ -219,6 +257,8 @@ export function DashboardProvider({
     f1Filtered,
     j1Filtered,
     dfFiltered,
+    visaFiltered,
+    focusRows,
     summary,
     historicalMetrics,
     growthLabel,

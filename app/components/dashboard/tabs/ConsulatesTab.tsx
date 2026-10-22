@@ -6,7 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { decimals, int, metricPct, monthDisplay } from "../../../lib/dashboard/format";
 import { groupSum, seasonalityCv } from "../../../lib/dashboard/metrics";
-import { averagePerMonth, calendarMonthYearCounts, yearSpanLabel } from "../../../lib/dashboard/periods";
+import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
 
@@ -19,7 +19,7 @@ interface RankingRow extends CountrySummaryRow {
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { InfoCallout, SubHeading } from "../shared";
-import { DataTable, Divider, KpiCard, KpiRow, ScopeNote, SectionTitle } from "../ui";
+import { DataTable, Divider, FixedTag, KpiCard, KpiRow, ScopeNote, SectionTitle } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -38,8 +38,7 @@ export default function ConsulatesTab() {
     dfFiltered,
     compareCountries,
     data,
-    selectedYears,
-    allYears,
+    periodRange,
     consulateCountries,
     visaFiltered,
     focusRows,
@@ -59,14 +58,8 @@ export default function ConsulatesTab() {
   const period = monthRangeLabel(last12.current);
   const priorPeriod = monthRangeLabel(last12.prior);
 
-  // The years Active Posts and Seasonality CV cover; an empty selection means all years.
-  const filterYears = [...(selectedYears.length > 0 ? selectedYears : allYears)].sort((a, b) => a - b);
-  const endYear = Math.floor(end / 12);
-  const endMonth = (end % 12) + 1;
-  const filterYearsText =
-    filterYears
-      .map((year) => (year === endYear && endMonth < 12 ? `${year} (Jan–${MONTH_NAMES[endMonth]})` : String(year)))
-      .join(", ") || "none";
+  // The months Active Posts, Seasonality CV and the charts cover (the control bar's Period).
+  const filterYearsText = periodRange.label;
 
   const focusF1 = last12.f1.get(focusCountry);
   const focusJ1 = last12.j1.get(focusCountry);
@@ -115,12 +108,12 @@ export default function ConsulatesTab() {
 
     const layout: ChartLayout = {
       height: 420,
-      title: { text: `Monthly ${visaLabel} Trend - ${focusCountry}` },
+      title: { text: `Monthly ${visaLabel} Trend - ${focusCountry}, ${periodRange.label}` },
       hovermode: "x unified",
       xaxis: { tickangle: -45, categoryorder: "category ascending" },
     };
     return { data, layout };
-  }, [focusRows, focusCountry, visaLabel]);
+  }, [focusRows, focusCountry, visaLabel, periodRange.label]);
 
   /* ---- Top 10 consulates ---- */
   const topPosts = useMemo(() => {
@@ -141,11 +134,11 @@ export default function ConsulatesTab() {
     ];
     const layout: ChartLayout = {
       height: 420,
-      title: { text: `Top ${visaLabel} Consulates` },
+      title: { text: `Top ${visaLabel} Consulates, ${periodRange.label}` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [focusRows, visaLabel]);
+  }, [focusRows, visaLabel, periodRange.label]);
 
   /* ---- Seasonality by calendar month ---- */
   // Average per calendar month: Jan-Feb can have one more year of data than the
@@ -156,7 +149,7 @@ export default function ConsulatesTab() {
     const totals = groupSum(focusRows, (r) => r.month, (r) => r.issuances);
     const months = [...totals.keys()].sort((a, b) => a - b);
     const avg = months.map((month) => averagePerMonth(totals.get(month)!, month, yearCounts));
-    const years = yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))]);
+    const years = periodRange.label;
     const data: Trace[] = [
       {
         type: "bar",
@@ -175,7 +168,7 @@ export default function ConsulatesTab() {
       title: { text: `${visaLabel} Seasonality - ${focusCountry}, average per month (${years})` },
     };
     return { data, layout };
-  }, [focusRows, focusCountry, visaFiltered, visaLabel]);
+  }, [focusRows, focusCountry, visaFiltered, visaLabel, periodRange.label]);
 
   /* ---- F1 vs J1 over time ---- */
   const bothVisas = useMemo(() => {
@@ -203,11 +196,11 @@ export default function ConsulatesTab() {
     });
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `F1 vs J1 Trends - ${focusCountry}` },
+      title: { text: `F1 vs J1 Trends - ${focusCountry}, ${periodRange.label}` },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [dfFiltered, focusCountry]);
+  }, [dfFiltered, focusCountry, periodRange.label]);
 
   /* ---- Multi-country comparison ---- */
   const comparison = useMemo(() => {
@@ -233,11 +226,11 @@ export default function ConsulatesTab() {
     });
     const layout: ChartLayout = {
       height: 420,
-      title: { text: `${visaLabel} Issuance Comparison Over Time` },
+      title: { text: `${visaLabel} Issuance Comparison Over Time, ${periodRange.label}` },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [visaFiltered, compareCountries, visaLabel]);
+  }, [visaFiltered, compareCountries, visaLabel, periodRange.label]);
 
   return (
     <div className="space-y-6">
@@ -280,9 +273,12 @@ export default function ConsulatesTab() {
             <KpiCard label={`Seasonality CV (${visaLabel})`} value={decimals(focusCv, 2)} />
           </KpiRow>
           <p className="-mt-4 text-xs text-slate-400">
+            <FixedTag title="These three cards ignore the Period control.">
+              12-month cards: always last 12 months
+            </FixedTag>{" "}
             F1 and J1 issuances and the F1 change cover the last 12 months ({period}, compared with{" "}
-            {priorPeriod}), by the country where the visa was issued, and ignore the sidebar Years
-            filter. Active Posts and Seasonality CV follow the Years filter: {filterYearsText}.
+            {priorPeriod}), by the country where the visa was issued, and always use the last
+            12 months whatever the Period. Active Posts and Seasonality CV follow the Period: {filterYearsText}.
           </p>
 
           <Divider />
@@ -315,7 +311,12 @@ export default function ConsulatesTab() {
       )}
 
       <section>
-        <SubHeading>Full Country Rankings</SubHeading>
+        <SubHeading>
+          Full Country Rankings
+          <FixedTag title="The rankings ignore the Period and Visa controls.">
+            Always last 12 months
+          </FixedTag>
+        </SubHeading>
         <p className="mb-3 text-xs text-slate-400">
           Sorted by F1 issuances in the last 12 months ({period}). Top Post and Peak Month use{" "}
           {monthRangeLabel(data.meta.coverage.operational)}.

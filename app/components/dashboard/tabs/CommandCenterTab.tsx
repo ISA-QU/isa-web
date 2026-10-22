@@ -15,6 +15,7 @@ import {
 } from "../../../lib/dashboard/format";
 import {
   buildCommandCenterFrame,
+  latestCompleteYear,
   notNa,
   recommendedOutreachWindow,
 } from "../../../lib/dashboard/metrics";
@@ -32,7 +33,7 @@ import {
   MethodologyExpanders,
   SubHeading,
 } from "../shared";
-import { Column, DataTable, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
+import { Column, DataTable, FixedTag, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
 
 const PRIORITY_ACTIONS = [
   "Expand Recruitment",
@@ -104,6 +105,19 @@ export default function CommandCenterTab() {
         : null,
     [data.postsMonthly],
   );
+
+  // The fixed periods behind the queue's columns, computed from the data.
+  const latestFy = data.meta.coverage.annual.latestComplete;
+  const recoveryYear = latestCompleteYear(data.postsMonthly);
+  const fixedPeriods = {
+    last12:
+      latestMonthIndex !== null
+        ? monthRangeLabel({ start: latestMonthIndex - 11, end: latestMonthIndex })
+        : "N/A",
+    longStart: latestFy !== null ? latestFy - 10 : "N/A",
+    longEnd: latestFy ?? "N/A",
+    recovery: recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019",
+  };
 
   if (consulateMissing) {
     return (
@@ -318,6 +332,15 @@ export default function CommandCenterTab() {
 
       <DataScopeNotice />
       <MethodologyExpanders includeMarket />
+
+      <p className="text-xs text-slate-400">
+        <FixedTag title="Command Center uses fixed periods and ignores the Period control.">
+          Not affected by Period
+        </FixedTag>{" "}
+        Current Volume: {monthRangeLabel(data.meta.coverage.operational)} · Momentum: last 12
+        months ({fixedPeriods.last12}) · Long-term growth: FY{fixedPeriods.longStart}–FY
+        {fixedPeriods.longEnd} · Recovery: {fixedPeriods.recovery}.
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Select label="Region" value={region} options={regionOptions} onChange={setRegion} />

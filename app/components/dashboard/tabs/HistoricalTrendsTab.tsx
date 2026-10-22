@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
 import { int, metricNumber, metricPct } from "../../../lib/dashboard/format";
@@ -26,7 +26,7 @@ import {
   Column,
   DataTable,
   Divider,
-  Field,
+  FixedTag,
   KpiCard,
   KpiRow,
   MethodologyNote,
@@ -53,6 +53,7 @@ export default function HistoricalTrendsTab() {
     nationalityCountries,
     focusCountry: country,
     setFocusCountry: setCountry,
+    fyRange,
   } = useDashboard();
   // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
   const firstFy = data.meta.coverage.annual.first ?? 1997;
@@ -65,8 +66,9 @@ export default function HistoricalTrendsTab() {
   const provisionalList = [...provisional].sort((a, b) => a - b);
 
   const hasData = nationalityCountries.has(country);
-  const [startYear, setStartYear] = useState(firstFy);
-  const [endYear, setEndYear] = useState(latestFy);
+  // The fiscal-year range lives in the control bar's Period slot on this tab.
+  const startYear = fyRange.start;
+  const endYear = fyRange.end;
 
   const selectedRange = useMemo(
     () =>
@@ -301,28 +303,9 @@ export default function HistoricalTrendsTab() {
           options={allCountries}
           onChange={setCountry}
         />
-        <Field label={`Historical Year Range: FY${startYear} - FY${endYear}`}>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={firstFy}
-              max={latestFy}
-              value={startYear}
-              onChange={(e) => setStartYear(Math.min(Number(e.target.value), endYear))}
-              className="w-full accent-[#FFB81C]"
-              aria-label="Historical range start"
-            />
-            <input
-              type="range"
-              min={firstFy}
-              max={latestFy}
-              value={endYear}
-              onChange={(e) => setEndYear(Math.max(Number(e.target.value), startYear))}
-              className="w-full accent-[#FFB81C]"
-              aria-label="Historical range end"
-            />
-          </div>
-        </Field>
+        <p className="self-end text-xs text-slate-400">
+          Fiscal years FY{startYear} – FY{endYear}, set in the control bar above.
+        </p>
       </div>
 
       {!hasData && (
@@ -404,6 +387,9 @@ export default function HistoricalTrendsTab() {
       <Divider />
 
       <ScopeNote label="Scope">
+        <FixedTag title="The rankings ignore the fiscal-year range.">
+          FY{rankYear - 10}–FY{rankYear}, vs FY{PRE_PANDEMIC_FY}
+        </FixedTag>{" "}
         Rankings compare {rankYearLabel} F1 issuances by nationality with FY{PRE_PANDEMIC_FY}{" "}
         (pre-pandemic) and FY{rankYear - 10}. Growing: at least 500 F1 in FY{rankYear} and up over
         10 years. Declining: at least 100 F1 in FY{rankYear} and down 25% or more vs FY

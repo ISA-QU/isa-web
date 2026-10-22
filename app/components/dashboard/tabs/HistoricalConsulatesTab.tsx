@@ -41,6 +41,7 @@ import {
   KpiRow,
   MethodologyNote,
   MultiSelect,
+  FixedTag,
   Panel,
   RadioGroup,
   ScopeNote,
@@ -48,21 +49,11 @@ import {
   Select,
 } from "../ui";
 
-const monthIndexOf = (year: number, month: number) => year * 12 + (month - 1);
 
-const QUICK_RANGES = [
-  "Complete History",
-  "Last 12 Months",
-  "Last 24 Months",
-  "Last 5 Years",
-  "Pre-Pandemic Through Recovery",
-  "Custom Range",
-] as const;
-type QuickRange = (typeof QUICK_RANGES)[number];
 
 const SORT_OPTIONS = [
   "Latest 12 Months",
-  "Full History",
+  "Period Total",
   "Recovery",
   "Growth",
   "Country Share",
@@ -86,13 +77,11 @@ export default function HistoricalConsulatesTab() {
     focusCountry: country,
     setFocusCountry: setCountry,
     visa,
+    periodRange,
   } = useDashboard();
   const consulate = data.postsMonthly;
 
   const [postSelection, setPostSelection] = useState<string | null>(null);
-  const [quickRange, setQuickRange] = useState<QuickRange>("Complete History");
-  const [customStart, setCustomStart] = useState<number | null>(null);
-  const [customEnd, setCustomEnd] = useState<number | null>(null);
   // Post comparisons belong to one country; a country change resets them.
   const [compareChoice, setCompareChoice] = useState<{ country: string; posts: string[] } | null>(
     null,
@@ -132,43 +121,9 @@ export default function HistoricalConsulatesTab() {
   const defaultPost = f1PostRanking[0] ?? postOptions[0] ?? "";
   const post = postSelection && postOptions.includes(postSelection) ? postSelection : defaultPost;
 
-  const coverageMonthOptions = useMemo(
-    () =>
-      [...new Set(consulate.map((r) => r.monthIndex))]
-        .filter((index) => index >= coverageStart && index <= coverageEnd)
-        .sort((a, b) => a - b),
-    [consulate, coverageStart, coverageEnd],
-  );
-
-  /* ---- Active range: quick range clamped to the coverage window ---- */
-  const [startIndex, endIndex] = useMemo((): [number, number] => {
-    let requestedStart: number;
-    let requestedEnd: number;
-    if (quickRange === "Last 12 Months") {
-      requestedStart = coverageEnd - 11;
-      requestedEnd = coverageEnd;
-    } else if (quickRange === "Last 24 Months") {
-      requestedStart = coverageEnd - 23;
-      requestedEnd = coverageEnd;
-    } else if (quickRange === "Last 5 Years") {
-      requestedStart = coverageEnd - 59;
-      requestedEnd = coverageEnd;
-    } else if (quickRange === "Pre-Pandemic Through Recovery") {
-      requestedStart = monthIndexOf(2019, 1);
-      requestedEnd = monthIndexOf(2022, 12);
-    } else {
-      requestedStart = coverageStart;
-      requestedEnd = coverageEnd;
-    }
-
-    if (quickRange === "Custom Range" && coverageMonthOptions.length > 0) {
-      return [
-        customStart ?? coverageMonthOptions[0],
-        customEnd ?? coverageMonthOptions[coverageMonthOptions.length - 1],
-      ];
-    }
-    return [Math.max(requestedStart, coverageStart), Math.min(requestedEnd, coverageEnd)];
-  }, [quickRange, coverageStart, coverageEnd, coverageMonthOptions, customStart, customEnd]);
+  /* ---- Active range: the control bar's Period ---- */
+  const startIndex = periodRange.start;
+  const endIndex = periodRange.end;
 
   const periodCountry = useMemo(
     () =>
@@ -186,6 +141,15 @@ export default function HistoricalConsulatesTab() {
   const selected = useMemo(
     () => periodCountry.filter((r) => r.post === post),
     [periodCountry, post],
+  );
+
+  // The whole history for this country and visa: the 12-month, change and
+  // recovery columns, the trend chart, the annual chart and the recovery chart
+  // always use it, whatever the Period.
+  const countryFull = useMemo(
+    () => countryBase.filter((r) => visaClasses.includes(r.visa)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [countryBase, visa],
   );
 
   const postCoverageBase = useMemo(
@@ -236,8 +200,8 @@ export default function HistoricalConsulatesTab() {
       <Panel>
         <div className="text-base font-extrabold text-white">Historical Consulate Filters</div>
         <div className="text-[13px] text-[#BFD2E6]">
-          These controls apply only to Historical Consulate Intelligence. The global operational
-          sidebar filters do not change this page.
+          Country, Visa and Period come from the control bar above. The consulate, compared posts
+          and the options below apply only to this page.
         </div>
       </Panel>
 
@@ -246,52 +210,17 @@ export default function HistoricalConsulatesTab() {
         <Select label="Consulate" value={post} options={postOptions} onChange={setPostSelection} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1.9fr]">
-        <RadioGroup
-          label="Quick Range"
-          value={quickRange}
-          options={QUICK_RANGES}
-          onChange={(value) => setQuickRange(value as QuickRange)}
-        />
-
-        <div>
-          {quickRange === "Custom Range" && coverageMonthOptions.length > 0 ? (
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <Select
-                label="Custom Range Start"
-                value={monthDisplay(startIndex)}
-                options={coverageMonthOptions.map(monthDisplay)}
-                onChange={(value) =>
-                  setCustomStart(
-                    coverageMonthOptions.find((index) => monthDisplay(index) === value) ?? null,
-                  )
-                }
-              />
-              <Select
-                label="Custom Range End"
-                value={monthDisplay(endIndex)}
-                options={coverageMonthOptions.map(monthDisplay)}
-                onChange={(value) =>
-                  setCustomEnd(
-                    coverageMonthOptions.find((index) => monthDisplay(index) === value) ?? null,
-                  )
-                }
-              />
-            </div>
-          ) : null}
-          <Panel className="!mb-0 !p-4">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#FFDF87]">
-              Active Range
-            </div>
-            <div className="mt-1 text-lg font-extrabold text-white">
-              {compactMonthRange(startIndex, endIndex)}
-            </div>
-            <div className="mt-1 text-xs text-[#BFD2E6]">
-              {monthCountBetween(startIndex, endIndex)} selected months
-            </div>
-          </Panel>
+      <Panel className="!p-4">
+        <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#FFDF87]">
+          Active Range (the control bar&apos;s Period)
         </div>
-      </div>
+        <div className="mt-1 text-lg font-extrabold text-white">{periodRange.label}</div>
+        <div className="mt-1 text-xs text-[#BFD2E6]">
+          {monthCountBetween(startIndex, endIndex)} selected months. Totals, KPIs, seasonality,
+          comparisons and source rows follow it; the monthly trend, annual and recovery charts and
+          the 12-month and recovery columns always use the full history.
+        </div>
+      </Panel>
 
       <MultiSelect
         label="Compare Posts"
@@ -319,8 +248,8 @@ export default function HistoricalConsulatesTab() {
       <div className="space-y-6">
         {header}
         <InfoCallout>
-          No historical consulate records match the selected filters. Try Complete History or a wider
-          date range.
+          No consulate records for {post || country} in {periodRange.label}. Try a longer Period,
+          such as All, in the control bar.
         </InfoCallout>
       </div>
     );
@@ -379,6 +308,8 @@ export default function HistoricalConsulatesTab() {
   const selectedTotal = sumBy(selected, (r) => r.issuances);
   const selectedShare = countryTotal ? selectedTotal / countryTotal : null;
   const selectedMetrics = postPeriodMetrics(selected);
+  // Momentum and recovery always use the post's full history (like the table's columns).
+  const fullPostMetrics = postPeriodMetrics(postCoverageBase);
 
   const countryPostTotals = [...groupSum(periodCountry, (r) => r.post, (r) => r.issuances).values()].sort(
     (a, b) => b - a,
@@ -401,14 +332,14 @@ export default function HistoricalConsulatesTab() {
       `${selectedMetrics.peakMonthName} averages ${decimals(selectedMetrics.seasonalityRatio, 1)} times the post's monthly mean.`,
     );
   }
-  if (selectedMetrics.latest12Change !== null) {
+  if (fullPostMetrics.latest12Change !== null) {
     insights.push(
-      `Latest 12-month issuance changed ${metricPct(selectedMetrics.latest12Change)} versus the preceding comparable 12 months.`,
+      `Latest 12-month issuance changed ${metricPct(fullPostMetrics.latest12Change)} versus the preceding comparable 12 months.`,
     );
   }
-  if (selectedMetrics.recoveryIndex !== null) {
+  if (fullPostMetrics.recoveryIndex !== null) {
     insights.push(
-      `Latest comparable recovery index is ${selectedMetrics.recoveryIndex.toFixed(0)} versus the 2019 baseline of 100.`,
+      `Latest comparable recovery index is ${fullPostMetrics.recoveryIndex.toFixed(0)} versus the 2019 baseline of 100.`,
     );
   }
   if (insights.length === 0) {
@@ -418,13 +349,19 @@ export default function HistoricalConsulatesTab() {
   }
 
   /* ------------------------------ Charts ------------------------------- */
+  // The monthly trend always shows the post's full history, with the Period shaded,
+  // so the long-term context stays visible.
+  const fullWide = new Map<number, { F1: number; J1: number }>();
+  for (const row of postCoverageBase) {
+    const entry = fullWide.get(row.monthIndex) ?? { F1: 0, J1: 0 };
+    entry[row.visa] += row.issuances;
+    fullWide.set(row.monthIndex, entry);
+  }
+  const fullMonths = [...fullWide.keys()].sort((a, b) => a - b);
   const monthlyTrace: Trace[] = (["F1", "J1"] as const)
     .filter((v) => visaClasses.includes(v))
     .map((v) => {
-      const points = monthIndexes.map((index) => ({
-        index,
-        value: monthlyWide.get(index)![v],
-      }));
+      const points = fullMonths.map((index) => ({ index, value: fullWide.get(index)![v] }));
       return {
         type: "scatter",
         mode: "lines+markers",
@@ -440,15 +377,46 @@ export default function HistoricalConsulatesTab() {
       };
     });
 
+  // Shade the Period. The x axis is categorical (one label per month), so the
+  // band runs from half a category before the first month to half after the last.
+  const shadeFrom = fullMonths.findIndex((index) => index >= startIndex);
+  let shadeTo = -1;
+  fullMonths.forEach((index, position) => {
+    if (index <= endIndex) shadeTo = position;
+  });
+  const periodShading =
+    shadeFrom !== -1 && shadeTo >= shadeFrom
+      ? [
+          {
+            type: "rect",
+            xref: "x",
+            yref: "paper",
+            x0: shadeFrom - 0.5,
+            x1: shadeTo + 0.5,
+            y0: 0,
+            y1: 1,
+            fillcolor: "#FFB81C",
+            opacity: 0.12,
+            line: { width: 0 },
+            layer: "below",
+          },
+        ]
+      : [];
+  const historyText =
+    fullMonths.length > 0
+      ? compactMonthRange(fullMonths[0], fullMonths[fullMonths.length - 1])
+      : "no data";
+
   const monthlyLayout: ChartLayout = {
     height: 500,
     title: {
-      text: `Monthly F1/J1 Trend - ${post}, ${country}<br><sup>${compactMonthRange(startIndex, endIndex)}</sup>`,
+      text: `Monthly F1/J1 Trend - ${post}, ${country}<br><sup>Full history ${historyText} · shaded: ${periodRange.label}</sup>`,
     },
     hovermode: "x unified",
     xaxis: { title: { text: "Month" } },
     yaxis: { title: { text: "Issuances" } },
     legend: { title: { text: "Visa Class" } },
+    shapes: periodShading,
   };
 
   /* ---- Annual aggregation ---- */
@@ -456,7 +424,7 @@ export default function HistoricalConsulatesTab() {
   const comparableMode = `Comparable ${yearToDateLabel(coverageThroughMonth)} totals`;
   const annualModes =
     partialYear !== null ? ["Calendar-year totals", comparableMode] : ["Calendar-year totals"];
-  const hasPartialYear = partialYear !== null && selected.some((r) => r.year === partialYear);
+  const hasPartialYear = partialYear !== null && postCoverageBase.some((r) => r.year === partialYear);
   const effectiveAnnualMode =
     annualMode !== null && annualModes.includes(annualMode)
       ? annualMode
@@ -464,9 +432,10 @@ export default function HistoricalConsulatesTab() {
         ? comparableMode
         : "Calendar-year totals";
   const comparableYtd = effectiveAnnualMode === comparableMode;
+  // Always every calendar year of the post's history, whatever the Period.
   const annualSource = comparableYtd
-    ? selected.filter((r) => r.month <= coverageThroughMonth)
-    : selected;
+    ? postCoverageBase.filter((r) => r.month <= coverageThroughMonth)
+    : postCoverageBase;
 
   const annualTotals = groupSum(
     annualSource,
@@ -553,7 +522,7 @@ export default function HistoricalConsulatesTab() {
   const seasonalityLayout: ChartLayout = {
     height: 410,
     barmode: "group",
-    title: { text: `${seasonalityStat} Calendar-Month Seasonality - ${post}` },
+    title: { text: `${seasonalityStat} Calendar-Month Seasonality - ${post}, ${periodRange.label}` },
     xaxis: {
       title: { text: "Calendar Month" },
       categoryorder: "array",
@@ -569,10 +538,23 @@ export default function HistoricalConsulatesTab() {
     if (list) list.push(row);
     else byPost.set(row.post, [row]);
   }
+  // Full history per post, for the columns that always use it.
+  const fullByPost = new Map<string, PostMonthlyRow[]>();
+  for (const row of countryFull) {
+    const list = fullByPost.get(row.post);
+    if (list) list.push(row);
+    else fullByPost.set(row.post, [row]);
+  }
   const comparisonRows: ComparisonRow[] = [...byPost.entries()].map(([postName, rows]) => {
     const metrics = postPeriodMetrics(rows);
+    const full = postPeriodMetrics(fullByPost.get(postName) ?? []);
     return {
       ...metrics,
+      // Always last 12 months vs previous 12, and latest complete year vs 2019.
+      latest12: full.latest12,
+      latest12Change: full.latest12Change,
+      baseline2019: full.baseline2019,
+      recoveryIndex: full.recoveryIndex,
       post: postName,
       shareOfCountry: countryTotal ? metrics.total / countryTotal : null,
     };
@@ -580,7 +562,7 @@ export default function HistoricalConsulatesTab() {
 
   const sortKey: Record<SortOption, (row: ComparisonRow) => number | null> = {
     "Latest 12 Months": (r) => r.latest12,
-    "Full History": (r) => r.total,
+    "Period Total": (r) => r.total,
     Recovery: (r) => r.recoveryIndex,
     Growth: (r) => r.latest12Change,
     "Country Share": (r) => r.shareOfCountry,
@@ -599,29 +581,22 @@ export default function HistoricalConsulatesTab() {
       ? `${strongestTrend.post} · ${arrowPct(strongestTrend.latest12Change)}`
       : "N/A";
 
-  /* ---- Periods behind the comparison table's 12-month and recovery columns ---- */
-  // Each post is measured from its own last month in the range; these are the
-  // periods for posts that report through the end of the range.
-  const last12Range = { start: Math.max(endIndex - 11, startIndex), end: endIndex };
-  const prior12Range = { start: Math.max(endIndex - 23, startIndex), end: endIndex - 12 };
-  const last12Text = monthRangeLabel(last12Range);
-  const prior12Text =
-    prior12Range.end >= prior12Range.start ? monthRangeLabel(prior12Range) : "none in range";
-  const priorMonths = Math.max(prior12Range.end - prior12Range.start + 1, 0);
-  const recoveryYear = latestCompleteYear(periodCountry);
-  const recoveryHeader =
-    recoveryYear !== null ? `Recovery index (${recoveryYear} vs 2019)` : "Recovery index (vs 2019)";
-  const last12Header = `Last 12 months of range (${last12Text})`;
-  const changeHeader =
-    priorMonths === 12
-      ? `Change vs previous 12 months (${prior12Text})`
-      : `Change vs earlier ${priorMonths} months in range (${prior12Text})`;
+  /* ---- Periods behind the always-full-history columns, computed from the data ---- */
+  // Each post is measured from its own last reported month; these are the
+  // periods for posts that report through the latest month in the data.
+  const last12Text = monthRangeLabel({ start: coverageEnd - 11, end: coverageEnd });
+  const prior12Text = monthRangeLabel({ start: coverageEnd - 23, end: coverageEnd - 12 });
+  const recoveryYear = latestCompleteYear(countryFull);
+  const recoveryLabel = recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019";
+  const recoveryHeader = `Recovery index (${recoveryLabel})`;
+  const last12Header = `Last 12 months (${last12Text})`;
+  const changeHeader = `Change vs previous 12 months (${prior12Text})`;
   const lastMonthByPost = new Map<string, number>();
-  for (const row of periodCountry) {
+  for (const row of countryFull) {
     lastMonthByPost.set(row.post, Math.max(lastMonthByPost.get(row.post) ?? row.monthIndex, row.monthIndex));
   }
   const endedEarly = [...lastMonthByPost.entries()]
-    .filter(([, last]) => last < endIndex)
+    .filter(([postName, last]) => last < coverageEnd && byPost.has(postName))
     .map(([postName, last]) => `${postName} (last reported ${monthDisplay(last)})`);
   const seasonalPost = firstBy((r) => r.seasonalityRatio);
   const concentrationPost = firstBy((r) => r.shareOfCountry);
@@ -727,11 +702,11 @@ export default function HistoricalConsulatesTab() {
 
   /* ---- How admissions can use this ---- */
   let recoveryStatus = "N/A";
-  if (selectedMetrics.recoveryIndex !== null) {
+  if (fullPostMetrics.recoveryIndex !== null) {
     recoveryStatus =
-      selectedMetrics.recoveryIndex >= 105
+      fullPostMetrics.recoveryIndex >= 105
         ? "Above 2019 comparable baseline"
-        : selectedMetrics.recoveryIndex >= 90
+        : fullPostMetrics.recoveryIndex >= 90
           ? "Near 2019 comparable baseline"
           : "Below 2019 comparable baseline";
   }
@@ -761,7 +736,7 @@ export default function HistoricalConsulatesTab() {
     ],
     [
       "Market Momentum",
-      `Latest 12 months versus preceding 12 months: ${metricPct(selectedMetrics.latest12Change)}.`,
+      `Latest 12 months versus preceding 12 months (always full history): ${metricPct(fullPostMetrics.latest12Change)}.`,
     ],
     ["Recovery Status", recoveryStatus],
     [
@@ -847,7 +822,10 @@ export default function HistoricalConsulatesTab() {
       </Caption>
 
       <section>
-        <SubHeading>Annual Aggregation</SubHeading>
+        <SubHeading>
+          Annual Aggregation
+          <FixedTag title="This chart ignores the Period control.">All calendar years</FixedTag>
+        </SubHeading>
         {partialYear !== null && (
           <MethodologyNote>
             {partialYear} contains {yearToDateLabel(coverageThroughMonth)} only.
@@ -880,6 +858,12 @@ export default function HistoricalConsulatesTab() {
 
       <section>
         <SubHeading>Consulate Comparison</SubHeading>
+        <p className="mb-3 text-xs text-slate-400">
+          <FixedTag title="These columns ignore the Period control.">
+            12-month, change and recovery columns: always full history
+          </FixedTag>{" "}
+          Total, share, peak month, volatility and seasonality follow the Period ({periodRange.label}).
+        </p>
         <Select
           label="Sort Posts By"
           value={sortOption}
@@ -904,10 +888,10 @@ export default function HistoricalConsulatesTab() {
           rowKey={(row) => row.post}
           columns={[
             { key: "post", header: "Post", render: (r) => r.post },
-            { key: "total", header: "Full-Period Total", numeric: true, render: (r) => metricNumber(r.total) },
+            { key: "total", header: `Total, ${periodRange.label}`, numeric: true, render: (r) => metricNumber(r.total) },
             { key: "latest12", header: last12Header, numeric: true, render: (r) => metricNumber(r.latest12) },
             { key: "share", header: "Share of Country Issuance", numeric: true, render: (r) => share(r.shareOfCountry) },
-            { key: "baseline", header: "2019 Baseline", numeric: true, render: (r) => metricNumber(r.baseline2019) },
+            { key: "baseline", header: "2019 baseline", numeric: true, render: (r) => metricNumber(r.baseline2019) },
             {
               key: "recovery",
               header: recoveryHeader,
@@ -929,8 +913,8 @@ export default function HistoricalConsulatesTab() {
           label="Download Consulate Comparison CSV"
           filename={`qu_consulate_comparison_${countrySlug}_${monthStamp(startIndex)}_${monthStamp(endIndex)}.csv`}
           headers={[
-            "Post", "Full-Period Total", last12Header, "Share of Country Issuance",
-            "2019 Baseline", recoveryHeader, "Peak Month", "Volatility",
+            "Post", `Total, ${periodRange.label}`, last12Header, "Share of Country Issuance",
+            "2019 baseline", recoveryHeader, "Peak Month", "Volatility",
             "Volatility CV", "Seasonality Strength", "Seasonality Ratio", changeHeader,
           ]}
           rows={comparisonTable.map((r) => [
@@ -970,7 +954,12 @@ export default function HistoricalConsulatesTab() {
       </section>
 
       <section>
-        <SubHeading>Pandemic Recovery Index</SubHeading>
+        <SubHeading>
+          Pandemic Recovery Index
+          <FixedTag title="Latest complete calendar year vs 2019, unless the box below is ticked.">
+            {recoveryLabel}
+          </FixedTag>
+        </SubHeading>
         <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-slate-300">
           <input
             type="checkbox"
@@ -1050,7 +1039,7 @@ export default function HistoricalConsulatesTab() {
           />
           <DownloadCsvButton
             label="Download Admissions Summary CSV"
-            filename={`qu_admissions_summary_${countrySlug}_${postSlug}.csv`}
+            filename={`qu_admissions_summary_${countrySlug}_${postSlug}_${periodRange.slug}.csv`}
             headers={[
               "post", "country", "total_f1", "total_j1", "latest_12_months", "peak_month",
               "seasonality_strength", "seasonality_ratio", "recovery_index", "share_of_country",
@@ -1061,11 +1050,11 @@ export default function HistoricalConsulatesTab() {
               country,
               totalF1 === null ? "" : String(totalF1),
               totalJ1 === null ? "" : String(totalJ1),
-              String(selectedMetrics.latest12),
+              String(fullPostMetrics.latest12),
               selectedMetrics.peakMonthName,
               selectedMetrics.seasonalityStrength,
               selectedMetrics.seasonalityRatio === null ? "" : String(selectedMetrics.seasonalityRatio),
-              selectedMetrics.recoveryIndex === null ? "" : String(selectedMetrics.recoveryIndex),
+              fullPostMetrics.recoveryIndex === null ? "" : String(fullPostMetrics.recoveryIndex),
               selectedShare === null ? "" : String(selectedShare),
               selectedMetrics.volatility,
               selectedMetrics.volatilityCv === null ? "" : String(selectedMetrics.volatilityCv),

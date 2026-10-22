@@ -3,41 +3,49 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { MONTH_NAMES } from "../../lib/dashboard/constants";
+import { DEFAULT_PERIOD, calendarYearOptions, type PeriodChoice } from "../../lib/dashboard/periods";
 import type { VisaSelection } from "../../lib/dashboard/types";
 import { DEFAULT_COUNTRY, DEFAULT_VISA, useDashboard, visaLabelOf } from "./DashboardContext";
 
 const VISAS: readonly VisaSelection[] = ["F1", "J1", "Both"];
 
 /**
- * The control bar across the top of the dashboard: the shared country, the
- * shared visa, a reset, and a one-line summary of what every tab is showing.
+ * The control bar across the top of the dashboard: the shared country, visa and
+ * period, a reset, and a one-line summary of what every tab is showing. On
+ * Historical Trends (annual nationality data) the Period slot holds a
+ * fiscal-year range instead.
  */
-export default function ControlBar() {
+export default function ControlBar({ fiscalYearMode }: { fiscalYearMode: boolean }) {
   const {
-    data,
     allCountries,
     focusCountry,
     setFocusCountry,
     visa,
     setVisa,
-    selectedYears,
-    allYears,
+    period,
+    setPeriod,
+    periodRange,
+    fyRange,
+    setFyRange,
+    fyBounds,
+    provisionalYears,
   } = useDashboard();
 
-  // The years still come from the sidebar filter; the Period control replaces it later.
-  const end = data.meta.coverage.postsMonthly.end;
-  const endYear = Math.floor(end / 12);
-  const endMonth = (end % 12) + 1;
-  const years = [...(selectedYears.length > 0 ? selectedYears : allYears)].sort((a, b) => a - b);
-  const yearsText = years
-    .map((year) =>
-      year === endYear && endMonth < 12
-        ? `${year} (${endMonth === 1 ? "Jan" : `Jan–${MONTH_NAMES[endMonth]}`})`
-        : String(year),
-    )
-    .join(", ");
+  const isDefault =
+    focusCountry === DEFAULT_COUNTRY &&
+    visa === DEFAULT_VISA &&
+    period.kind === DEFAULT_PERIOD.kind &&
+    fyRange.start === fyBounds.first &&
+    fyRange.end === fyBounds.latest;
 
-  const isDefault = focusCountry === DEFAULT_COUNTRY && visa === DEFAULT_VISA;
+  const provisionalInRange = [...provisionalYears]
+    .filter((year) => year >= fyRange.start && year <= fyRange.end)
+    .sort((a, b) => a - b);
+  const fyText = `FY${fyRange.start} – FY${fyRange.end}${
+    provisionalInRange.length > 0
+      ? ` (${provisionalInRange.map((y) => `FY${y}`).join(", ")} provisional)`
+      : ""
+  }`;
 
   return (
     <section
@@ -46,12 +54,26 @@ export default function ControlBar() {
     >
       <div className="flex flex-wrap items-end gap-4">
         <CountryCombobox value={focusCountry} options={allCountries} onChange={setFocusCountry} />
-        <VisaGroup value={visa} onChange={setVisa} />
+        {fiscalYearMode ? (
+          <FiscalYearRange
+            value={fyRange}
+            bounds={fyBounds}
+            provisional={provisionalYears}
+            onChange={setFyRange}
+          />
+        ) : (
+          <>
+            <VisaGroup value={visa} onChange={setVisa} />
+            <PeriodControl value={period} onChange={setPeriod} />
+          </>
+        )}
         <button
           type="button"
           onClick={() => {
             setFocusCountry(DEFAULT_COUNTRY);
             setVisa(DEFAULT_VISA);
+            setPeriod(DEFAULT_PERIOD);
+            setFyRange({ start: fyBounds.first, end: fyBounds.latest });
           }}
           disabled={isDefault}
           className="rounded-md border border-slate-400/30 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[#FFB81C] disabled:cursor-default disabled:opacity-40"
@@ -61,9 +83,205 @@ export default function ControlBar() {
       </div>
       <p className="mt-2 text-xs text-slate-300" aria-live="polite">
         <span className="font-bold text-slate-100">Showing:</span> {focusCountry} ·{" "}
-        {visaLabelOf(visa)} · Years {yearsText}
+        {fiscalYearMode
+          ? `F1 and J1 by nationality · ${fyText}`
+          : `${visaLabelOf(visa)} · ${periodRange.label}`}
       </p>
     </section>
+  );
+}
+
+const fieldLabel =
+  "mb-1 block text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#93a4ba]";
+const selectClass =
+  "rounded-md border border-slate-400/25 bg-[#050F22] px-3 py-2 text-sm text-slate-100 transition focus:border-[#FFB81C] focus:outline-none focus:ring-2 focus:ring-[#FFB81C]/25";
+
+/** Period for the monthly consulate data: presets, a calendar year, or custom months. */
+function PeriodControl({
+  value,
+  onChange,
+}: {
+  value: PeriodChoice;
+  onChange: (value: PeriodChoice) => void;
+}) {
+  const { data } = useDashboard();
+  const coverage = data.meta.coverage.postsMonthly;
+  const kindId = useId();
+  const yearId = useId();
+  const startId = useId();
+  const endId = useId();
+
+  const years = useMemo(() => calendarYearOptions(coverage), [coverage]);
+  const months = useMemo(() => {
+    const list: number[] = [];
+    for (let index = coverage.start; index <= coverage.end; index += 1) list.push(index);
+    return list;
+  }, [coverage]);
+  const monthLabel = (index: number) =>
+    `${MONTH_NAMES[(index % 12) + 1]} ${Math.floor(index / 12)}`;
+
+  const kinds: { kind: PeriodChoice["kind"]; label: string }[] = [
+    { kind: "last12", label: "Last 12 months" },
+    { kind: "last24", label: "Last 24 months" },
+    { kind: "year", label: "Calendar year" },
+    { kind: "custom", label: "Custom months" },
+    { kind: "all", label: `All (since ${monthLabel(coverage.start)})` },
+    { kind: "pandemic", label: "Pre-pandemic through recovery (2019–2022)" },
+  ];
+
+  const chooseKind = (kind: PeriodChoice["kind"]) => {
+    if (kind === "year") onChange({ kind, year: years[years.length - 1]?.year ?? Math.floor(coverage.end / 12) });
+    else if (kind === "custom") onChange({ kind, start: Math.max(coverage.end - 11, coverage.start), end: coverage.end });
+    else onChange({ kind });
+  };
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <label htmlFor={kindId} className={fieldLabel}>
+          Period
+        </label>
+        <select
+          id={kindId}
+          value={value.kind}
+          onChange={(event) => chooseKind(event.target.value as PeriodChoice["kind"])}
+          className={selectClass}
+        >
+          {kinds.map((k) => (
+            <option key={k.kind} value={k.kind} className="bg-[#07152E]">
+              {k.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {value.kind === "year" && (
+        <div>
+          <label htmlFor={yearId} className={fieldLabel}>
+            Year
+          </label>
+          <select
+            id={yearId}
+            value={value.year}
+            onChange={(event) => onChange({ kind: "year", year: Number(event.target.value) })}
+            className={selectClass}
+          >
+            {years.map((y) => (
+              <option key={y.year} value={y.year} className="bg-[#07152E]">
+                {y.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {value.kind === "custom" && (
+        <>
+          <div>
+            <label htmlFor={startId} className={fieldLabel}>
+              From
+            </label>
+            <select
+              id={startId}
+              value={value.start}
+              onChange={(event) => {
+                const start = Number(event.target.value);
+                onChange({ kind: "custom", start, end: Math.max(start, value.end) });
+              }}
+              className={selectClass}
+            >
+              {months.map((m) => (
+                <option key={m} value={m} className="bg-[#07152E]">
+                  {monthLabel(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={endId} className={fieldLabel}>
+              To
+            </label>
+            <select
+              id={endId}
+              value={value.end}
+              onChange={(event) => {
+                const end = Number(event.target.value);
+                onChange({ kind: "custom", start: Math.min(value.start, end), end });
+              }}
+              className={selectClass}
+            >
+              {months.map((m) => (
+                <option key={m} value={m} className="bg-[#07152E]">
+                  {monthLabel(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Fiscal-year range for the annual nationality data (Historical Trends). */
+function FiscalYearRange({
+  value,
+  bounds,
+  provisional,
+  onChange,
+}: {
+  value: { start: number; end: number };
+  bounds: { first: number; latest: number };
+  provisional: ReadonlySet<number>;
+  onChange: (value: { start: number; end: number }) => void;
+}) {
+  const fromId = useId();
+  const toId = useId();
+  const years: number[] = [];
+  for (let year = bounds.first; year <= bounds.latest; year += 1) years.push(year);
+  const label = (year: number) => `FY${year}${provisional.has(year) ? " (provisional)" : ""}`;
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <label htmlFor={fromId} className={fieldLabel}>
+          Fiscal years from
+        </label>
+        <select
+          id={fromId}
+          value={value.start}
+          onChange={(event) => {
+            const start = Number(event.target.value);
+            onChange({ start, end: Math.max(start, value.end) });
+          }}
+          className={selectClass}
+        >
+          {years.map((y) => (
+            <option key={y} value={y} className="bg-[#07152E]">
+              {label(y)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor={toId} className={fieldLabel}>
+          To
+        </label>
+        <select
+          id={toId}
+          value={value.end}
+          onChange={(event) => {
+            const end = Number(event.target.value);
+            onChange({ start: Math.min(value.start, end), end });
+          }}
+          className={selectClass}
+        >
+          {years.map((y) => (
+            <option key={y} value={y} className="bg-[#07152E]">
+              {label(y)}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
   );
 }
 

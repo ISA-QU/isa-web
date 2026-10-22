@@ -5,7 +5,6 @@ import type { ChartLayout, Trace } from "../Chart";
 
 import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
-  compactMonthRange,
   decimals,
   int,
   metricDecimal,
@@ -33,6 +32,7 @@ import {
   selectedVisaClasses,
   sumBy,
   historicalCountryName,
+  latestCompleteYear,
   monthlyCountryName,
   regionForCountry,
 } from "../../../lib/dashboard/metrics";
@@ -56,23 +56,23 @@ import {
   KpiRow,
   MethodologyNote,
   MultiSelect,
+  FixedTag,
   Panel,
   Select,
   SectionTitle,
 } from "../ui";
 
-const RECENT_MODES = [
-  "Latest 12 Months",
-  "Latest 24 Months",
-  "Full Operational Window",
-  "Custom",
-] as const;
-type RecentMode = (typeof RECENT_MODES)[number];
 
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
-  const { data, allCountries, focusCountry: country, setFocusCountry: setCountry, visa } =
-    useDashboard();
+  const {
+    data,
+    allCountries,
+    focusCountry: country,
+    setFocusCountry: setCountry,
+    visa,
+    periodRange,
+  } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -85,11 +85,8 @@ export default function Country360Tab() {
   // Every country in either source, the same list as the sidebar's.
   const countryOptions = allCountries;
 
-  const [recentMode, setRecentMode] = useState<RecentMode>("Full Operational Window");
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
-  const [customStart, setCustomStart] = useState<number | null>(null);
-  const [customEnd, setCustomEnd] = useState<number | null>(null);
   // Consulate comparisons belong to one country; a country change resets them.
   const [compareChoice, setCompareChoice] = useState<{ country: string; posts: string[] } | null>(
     null,
@@ -105,10 +102,6 @@ export default function Country360Tab() {
     () => data.operational.filter((r) => r.country === monthCountry),
     [data.operational, monthCountry],
   );
-  const opCountry = useMemo(
-    () => opCountryAll.filter((r) => visaClasses.includes(r.visa)),
-    [opCountryAll, visaClasses],
-  );
   const histCountryAll = useMemo(
     () => data.annualCountry.filter((r) => r.country === histCountry),
     [data.annualCountry, histCountry],
@@ -122,31 +115,19 @@ export default function Country360Tab() {
     [hcCountryAll, visaClasses],
   );
 
-  const opMonthOptions = useMemo(
-    () => [...new Set(opCountryAll.map((r) => r.year * 12 + (r.month - 1)))].sort((a, b) => a - b),
-    [opCountryAll],
-  );
-
-  /* ---- Operational range, per the selected timeframe mode ---- */
-  const [recentStart, recentEnd] = useMemo((): [number, number] => {
-    if (opMonthOptions.length === 0) return [operationalRange.start, operationalRange.end];
-    const latest = opMonthOptions[opMonthOptions.length - 1];
-    if (recentMode === "Custom") {
-      return [customStart ?? opMonthOptions[0], customEnd ?? latest];
-    }
-    if (recentMode === "Latest 12 Months") return [latest - 11, latest];
-    if (recentMode === "Latest 24 Months") return [latest - 23, latest];
-    return [operationalRange.start, latest];
-  }, [opMonthOptions, recentMode, customStart, customEnd, operationalRange]);
-
+  // "Current Operational Signal" follows the control bar's Period. It reads the
+  // full monthly consulate data, so any period since Mar 2017 works.
   const opPeriod = useMemo(
     () =>
-      opCountry.filter((r) => {
-        const index = r.year * 12 + (r.month - 1);
-        return index >= recentStart && index <= recentEnd;
-      }),
-    [opCountry, recentStart, recentEnd],
+      hcCountry.filter(
+        (r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
+      ),
+    [hcCountry, periodRange],
   );
+
+  // Periods for the sections that don't follow the Period control.
+  const fullRangeText = monthRangeLabel(data.meta.coverage.postsMonthly);
+  const recoveryYear = latestCompleteYear(hcCountry);
 
   /* ---- Consulate comparison defaults: top five posts by F1 volume ---- */
   const postOptions = useMemo(
@@ -310,13 +291,13 @@ export default function Country360Tab() {
     });
     const layout: ChartLayout = {
       height: 410,
-      title: { text: `Recent Operational Monthly Trend - ${country}` },
+      title: { text: `Monthly Trend - ${country}, ${periodRange.label}` },
       hovermode: "x unified",
       xaxis: { title: { text: "Month" } },
       yaxis: { title: { text: "Issuances" } },
     };
     return { data: traces, layout };
-  }, [opPeriod, country]);
+  }, [opPeriod, country, periodRange.label]);
 
   const currentPosts = useMemo(
     () =>
@@ -665,16 +646,7 @@ export default function Country360Tab() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Select label="Country" value={country} options={countryOptions} onChange={setCountry} />
-        <Select
-          label="Recent Timeframe"
-          value={recentMode}
-          options={RECENT_MODES}
-          onChange={(value) => setRecentMode(value as RecentMode)}
-        />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label={`Historical Year Range: FY${histStart} - FY${histEnd}`}>
+        <Field label={`Trajectory chart fiscal years: FY${histStart} - FY${histEnd}`}>
           <div className="flex items-center gap-2">
             <input
               type="range"
@@ -696,38 +668,6 @@ export default function Country360Tab() {
             />
           </div>
         </Field>
-
-        {recentMode === "Custom" && opMonthOptions.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Select
-              label="Custom Range Start"
-              value={monthDisplay(recentStart)}
-              options={opMonthOptions.map(monthDisplay)}
-              onChange={(value) =>
-                setCustomStart(opMonthOptions.find((index) => monthDisplay(index) === value) ?? null)
-              }
-            />
-            <Select
-              label="Custom Range End"
-              value={monthDisplay(recentEnd)}
-              options={opMonthOptions.map(monthDisplay)}
-              onChange={(value) =>
-                setCustomEnd(opMonthOptions.find((index) => monthDisplay(index) === value) ?? null)
-              }
-            />
-          </div>
-        ) : opMonthOptions.length > 0 ? (
-          <Panel className="!mb-0 !p-4">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#FFDF87]">
-              Operational Range
-            </div>
-            <div className="mt-1 font-extrabold text-white">
-              {compactMonthRange(recentStart, recentEnd)}
-            </div>
-          </Panel>
-        ) : (
-          <InfoCallout>No operational monthly records are available for this country.</InfoCallout>
-        )}
       </div>
 
       <MultiSelect
@@ -744,7 +684,10 @@ export default function Country360Tab() {
       ) : (
         <>
           <section>
-            <SubHeading>Country Recommendation</SubHeading>
+            <SubHeading>
+              Country Recommendation
+              <FixedTag title="Built from fixed periods; ignores the Period control.">Fixed periods</FixedTag>
+            </SubHeading>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
               <KpiCard label="Strategic Status" value={`${metrics.category} Market`} valueClassName="!text-[16px]" />
               <KpiCard label="Current Momentum" value={momentumLabel} valueClassName="!text-[16px]" />
@@ -771,7 +714,10 @@ export default function Country360Tab() {
           </section>
 
           <section>
-            <SubHeading>Primary KPIs</SubHeading>
+            <SubHeading>
+              Primary KPIs
+              <FixedTag title="Each KPI uses its own fixed period; ignores the Period control.">Fixed periods</FixedTag>
+            </SubHeading>
             <KpiRow>
               <KpiCard accent="gold" label="Operational F1" value={metricNumber(metrics.opF1Total)} />
               <KpiCard accent="gold" label={`FY${latestFy} Annual F1`} value={metricNumber(metrics.latestFyF1)} />
@@ -821,14 +767,13 @@ export default function Country360Tab() {
           <section>
             <SubHeading>Current Operational Signal</SubHeading>
             <MethodologyNote wide>
-              Operational data currently covers {monthLongDisplay(operationalRange.start)} through{" "}
-              {monthLongDisplay(operationalRange.end)}.
+              Follows the control bar&apos;s Period: {periodRange.label}.
             </MethodologyNote>
             <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
               {opPeriod.length > 0 ? (
                 <Chart data={opTrend.data} layout={opTrend.layout} height={410} />
               ) : (
-                <InfoCallout>No operational rows match the selected recent timeframe.</InfoCallout>
+                <InfoCallout>No consulate rows for {country} in {periodRange.label}.</InfoCallout>
               )}
               <DataTable
                 rows={currentPosts}
@@ -841,6 +786,7 @@ export default function Country360Tab() {
               />
             </div>
             <Caption>
+              <FixedTag title="This line ignores the Period control.">Always last 12 months</FixedTag>{" "}
               Last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
               {last12.priorPeriod}): {int(last12.prior)}; {arrowPct(last12.change)} vs previous 12
               months.
@@ -848,7 +794,10 @@ export default function Country360Tab() {
           </section>
 
           <section>
-            <SubHeading>Long-Term Country Trajectory</SubHeading>
+            <SubHeading>
+              Long-Term Country Trajectory
+              <FixedTag title="Uses the fiscal-year range set on this page.">FY{histStart}–FY{histEnd}</FixedTag>
+            </SubHeading>
             <MethodologyNote wide>
               {annualSourceNote}
             </MethodologyNote>
@@ -862,7 +811,10 @@ export default function Country360Tab() {
           </section>
 
           <section>
-            <SubHeading>Historical Consulate Network</SubHeading>
+            <SubHeading>
+              Historical Consulate Network
+              <FixedTag title="Ignores the Period control.">{fullRangeText}</FixedTag>
+            </SubHeading>
             {hcCountry.length > 0 ? (
               <>
                 <Chart data={networkChart.data} layout={networkChart.layout} height={440} />
@@ -910,7 +862,12 @@ export default function Country360Tab() {
           </section>
 
           <section>
-            <SubHeading>Recovery</SubHeading>
+            <SubHeading>
+              Recovery
+              <FixedTag title="Latest complete calendar year vs 2019; ignores the Period control.">
+                {recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"}
+              </FixedTag>
+            </SubHeading>
             {recovery.rows.length > 0 ? (
               <Chart data={recovery.data} layout={recovery.layout} height={390} />
             ) : (
@@ -923,7 +880,10 @@ export default function Country360Tab() {
 
           {hcCountry.length > 0 && (
             <section>
-              <SubHeading>Seasonality and Recruitment Timing</SubHeading>
+              <SubHeading>
+                Seasonality and Recruitment Timing
+                <FixedTag title="Ignores the Period control.">{fullRangeText}</FixedTag>
+              </SubHeading>
               <Chart data={seasonality.data} layout={seasonality.layout} height={420} />
               <Caption>
                 Peak month: {metrics.hcMetrics.peakMonthName}; seasonality strength:{" "}
@@ -935,7 +895,10 @@ export default function Country360Tab() {
           )}
 
           <section>
-            <SubHeading>Momentum, Risk, and Concentration</SubHeading>
+            <SubHeading>
+              Momentum, Risk, and Concentration
+              <FixedTag title="Ignores the Period control.">{fullRangeText} · momentum: last 12 months</FixedTag>
+            </SubHeading>
             <DataTable
               height={260}
               rowKey={(row) => row.metric}
@@ -1045,7 +1008,7 @@ export default function Country360Tab() {
               />
               <DownloadCsvButton
                 label="Current Operational Country CSV"
-                filename={`qu_country360_operational_${slug}.csv`}
+                filename={`qu_country360_operational_${slug}_${visa.toLowerCase()}_${periodRange.slug}.csv`}
                 headers={["post", "visa_class", "issuances", "year", "month"]}
                 rows={opPeriod.map((r) => [
                   r.post, r.visa, String(r.issuances), String(r.year), String(r.month),

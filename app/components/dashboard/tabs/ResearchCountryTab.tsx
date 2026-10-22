@@ -6,7 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES } from "../../../lib/dashboard/constants";
 import { int } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
-import { averagePerMonth, calendarMonthYearCounts, yearSpanLabel } from "../../../lib/dashboard/periods";
+import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
 import {
   MOVER_MIN_ISSUANCES,
   arrowPct,
@@ -17,7 +17,7 @@ import {
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
-import { DataTable, ScopeNote, SectionTitle } from "../ui";
+import { DataTable, FixedTag, ScopeNote, SectionTitle } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -37,8 +37,17 @@ const HEAT_SCALE: Array<[number, string]> = [
  * label; the label now matches the content.)
  */
 export default function ResearchCountryTab() {
-  const { data, focusCountry, topN, consulateCountries, visaFiltered, focusRows, visaLabel } =
-    useDashboard();
+  const {
+    data,
+    focusCountry,
+    topN,
+    consulateCountries,
+    visaFiltered,
+    focusRows,
+    visaLabel,
+    visa,
+    periodRange,
+  } = useDashboard();
 
   const topPosts = useMemo(() => {
     const totals = groupSum(visaFiltered, (r) => r.post, (r) => r.issuances);
@@ -64,11 +73,11 @@ export default function ResearchCountryTab() {
     ];
     const layout: ChartLayout = {
       height: 680,
-      title: { text: `Top ${topN} ${visaLabel}-Issuing Consulates` },
+      title: { text: `Top ${topN} ${visaLabel}-Issuing Consulates, ${periodRange.label}` },
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [topPosts, topN, visaLabel]);
+  }, [topPosts, topN, visaLabel, periodRange.label]);
 
   /* ---- Top risers and fallers: latest 12 months vs the 12 before, all F1 consulates ---- */
   const end = data.meta.coverage.postsMonthly.end;
@@ -122,7 +131,7 @@ export default function ResearchCountryTab() {
 
     // Average per calendar month, so months with an extra year of data aren't overstated.
     const yearCounts = calendarMonthYearCounts(visaFiltered);
-    const years = yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))]);
+    const years = periodRange.label;
     const z = sortedPosts.map((post) =>
       months.map((month) => averagePerMonth(totals.get(`${post}|${month}`) ?? 0, month, yearCounts)),
     );
@@ -145,7 +154,7 @@ export default function ResearchCountryTab() {
       yaxis: { autorange: "reversed" },
     };
     return { data, layout };
-  }, [visaFiltered, topPosts, visaLabel]);
+  }, [visaFiltered, topPosts, visaLabel, periodRange.label]);
 
   /* ---- Seasonality for the focus country's top five posts ---- */
   const focusSeasonality = useMemo(() => {
@@ -161,7 +170,7 @@ export default function ResearchCountryTab() {
       (r) => r.issuances,
     );
     const yearCounts = calendarMonthYearCounts(visaFiltered);
-    const years = yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))]);
+    const years = periodRange.label;
 
     const data: Trace[] = top5.map((post) => {
       const points = [...byMonthPost.entries()]
@@ -188,7 +197,7 @@ export default function ResearchCountryTab() {
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [focusRows, focusCountry, visaFiltered, visaLabel]);
+  }, [focusRows, focusCountry, visaFiltered, visaLabel, periodRange.label]);
 
   const allPosts = useMemo(() => {
     const totals = groupSum(visaFiltered, (r) => r.post, (r) => r.issuances);
@@ -220,6 +229,9 @@ export default function ResearchCountryTab() {
             <p className="py-6 text-sm text-slate-400">No qualifying consulate declined.</p>
           )}
           <p className="mt-2 text-xs text-slate-400">
+            <FixedTag title="Risers and fallers ignore the Period and Visa controls.">
+              Always last 12 months · F1
+            </FixedTag>{" "}
             F1 issuances by consulate, {postMovers.period} vs the previous 12 months. Only
             consulates with at least {MOVER_MIN_ISSUANCES} F1 issuances in both 12-month periods
             are included ({postMovers.qualifying} consulates).
@@ -239,7 +251,7 @@ export default function ResearchCountryTab() {
         ) : focusRows.length === 0 ? (
           <InfoCallout>
             No {visaLabel} consulate data for {focusCountry} in{" "}
-            {yearSpanLabel([...new Set(visaFiltered.map((r) => r.year))])}.
+            {periodRange.label}.
           </InfoCallout>
         ) : (
           <Chart data={focusSeasonality.data} layout={focusSeasonality.layout} height={380} />
@@ -247,6 +259,9 @@ export default function ResearchCountryTab() {
       </section>
 
       <section>
+        <p className="mb-2 text-xs text-slate-400">
+          All consulates, {visaLabel} issuances, {periodRange.label}.
+        </p>
         <DataTable
           rows={allPosts}
           height={360}
@@ -259,7 +274,7 @@ export default function ResearchCountryTab() {
         />
         <DownloadCsvButton
           label="Export Consulate Data CSV"
-          filename="qu_consulate_data.csv"
+          filename={`qu_consulate_data_${visa.toLowerCase()}_${periodRange.slug}.csv`}
           headers={["Consulate", `${visaLabel} Issuances`, "Country"]}
           rows={allPosts.map((r) => [r.post, String(r.issuances), r.country])}
         />

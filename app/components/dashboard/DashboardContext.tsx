@@ -23,6 +23,13 @@ import type {
   OperationalRow,
   VisaSelection,
 } from "../../lib/dashboard/types";
+import {
+  DEFAULT_PERIOD,
+  provisionalFiscalYears,
+  resolvePeriod,
+  type PeriodChoice,
+  type ResolvedPeriod,
+} from "../../lib/dashboard/periods";
 
 /**
  * Holds every value app.py computed at module scope before rendering its tabs:
@@ -32,9 +39,17 @@ import type {
 interface DashboardState {
   data: DashboardData;
 
-  /** Sidebar filters. */
-  selectedYears: number[];
-  setSelectedYears: (years: number[]) => void;
+  /** The control bar's Period (monthly consulate data) and its resolved months and label. */
+  period: PeriodChoice;
+  setPeriod: (period: PeriodChoice) => void;
+  periodRange: ResolvedPeriod;
+  /** The fiscal-year range Historical Trends uses (shown in the bar's Period slot there). */
+  fyRange: { start: number; end: number };
+  setFyRange: (range: { start: number; end: number }) => void;
+  /** First fiscal year and latest complete fiscal year in the nationality data. */
+  fyBounds: { first: number; latest: number };
+  /** Complete fiscal years summed from monthly reports (FY2025 today). */
+  provisionalYears: ReadonlySet<number>;
   focusCountry: string;
   setFocusCountry: (country: string) => void;
   /** The control bar's visa: F1, J1 or Both (shown as "F1 + J1"). */
@@ -48,7 +63,6 @@ interface DashboardState {
   setTopN: (topN: number) => void;
 
   /** Options derived from the data. */
-  allYears: number[];
   countries: string[];
   /**
    * Every country in either data source (consulate and nationality), for the
@@ -60,13 +74,16 @@ interface DashboardState {
   /** Countries present in the annual nationality data. */
   nationalityCountries: ReadonlySet<string>;
 
-  /** Unfiltered operational splits, and the year-filtered views the tabs use. */
+  /**
+   * Unfiltered operational splits (Jan 2024 onward), and the Period-filtered
+   * monthly consulate rows the tabs use (any months since Mar 2017).
+   */
   f1: OperationalRow[];
   j1: OperationalRow[];
   f1Filtered: OperationalRow[];
   j1Filtered: OperationalRow[];
   dfFiltered: OperationalRow[];
-  /** The year-filtered operational rows for the control bar's visa. */
+  /** The Period-filtered rows for the control bar's visa. */
   visaFiltered: OperationalRow[];
   /** `visaFiltered` for the focus country. */
   focusRows: OperationalRow[];
@@ -107,6 +124,7 @@ export function useDashboard(): DashboardState {
 export interface InitialSelection {
   country?: string;
   visa?: VisaSelection;
+  period?: PeriodChoice;
 }
 
 export const DEFAULT_COUNTRY = "India";
@@ -125,10 +143,6 @@ export function DashboardProvider({
 }) {
   const { f1, j1 } = useMemo(() => splitVisa(data.operational), [data.operational]);
 
-  const allYears = useMemo(
-    () => [...new Set(data.operational.map((r) => r.year))].sort((a, b) => a - b),
-    [data.operational],
-  );
   const countries = useMemo(
     () => [...new Set(f1.map((r) => r.country))].sort(),
     [f1],
@@ -148,7 +162,6 @@ export function DashboardProvider({
     [consulateCountries, nationalityCountries],
   );
 
-  const [selectedYears, setSelectedYears] = useState<number[]>(allYears);
   const [selectedFocus, setFocusCountry] = useState<string>(() =>
     initial?.country && allCountries.includes(initial.country)
       ? initial.country
@@ -157,6 +170,22 @@ export function DashboardProvider({
         : (allCountries[0] ?? ""),
   );
   const [visa, setVisa] = useState<VisaSelection>(initial?.visa ?? DEFAULT_VISA);
+  const [period, setPeriod] = useState<PeriodChoice>(initial?.period ?? DEFAULT_PERIOD);
+  const coverage = data.meta.coverage.postsMonthly;
+  const periodRange = useMemo(
+    () => resolvePeriod(period, coverage),
+    [period, coverage],
+  );
+
+  const fyBounds = useMemo(() => {
+    const first = data.meta.coverage.annual.first ?? 1997;
+    return { first, latest: data.meta.coverage.annual.latestComplete ?? first };
+  }, [data.meta.coverage.annual]);
+  const [fyRange, setFyRange] = useState(() => ({ start: fyBounds.first, end: fyBounds.latest }));
+  const provisionalYears = useMemo(
+    () => provisionalFiscalYears(data.meta.fiscalYears),
+    [data.meta.fiscalYears],
+  );
   const [compareCountries, setCompareCountries] = useState<string[]>(() =>
     ["India", "China", "Vietnam", "Nepal", "Nigeria"].filter((c) => countries.includes(c)),
   );
@@ -169,24 +198,17 @@ export function DashboardProvider({
       ? selectedFocus
       : (allCountries.includes("India") ? "India" : allCountries[0]);
 
-  const yearSet = useMemo(() => new Set(selectedYears), [selectedYears]);
-  const hasYearFilter = selectedYears.length > 0;
-
-  const f1Filtered = useMemo(
-    () => (hasYearFilter ? f1.filter((r) => yearSet.has(r.year)) : f1),
-    [f1, yearSet, hasYearFilter],
-  );
-  const j1Filtered = useMemo(
-    () => (hasYearFilter ? j1.filter((r) => yearSet.has(r.year)) : j1),
-    [j1, yearSet, hasYearFilter],
-  );
+  // The Period can reach back to Mar 2017, so these come from the full monthly
+  // consulate data, not the operational layer (which starts Jan 2024).
   const dfFiltered = useMemo(
     () =>
-      hasYearFilter
-        ? data.operational.filter((r) => yearSet.has(r.year))
-        : data.operational,
-    [data.operational, yearSet, hasYearFilter],
+      data.postsMonthly.filter(
+        (r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
+      ),
+    [data.postsMonthly, periodRange],
   );
+  const f1Filtered = useMemo(() => dfFiltered.filter((r) => r.visa === "F1"), [dfFiltered]);
+  const j1Filtered = useMemo(() => dfFiltered.filter((r) => r.visa === "J1"), [dfFiltered]);
 
   // Charts that follow the control bar's visa read these.
   const visaFiltered = visa === "F1" ? f1Filtered : visa === "J1" ? j1Filtered : dfFiltered;
@@ -236,8 +258,13 @@ export function DashboardProvider({
 
   const value: DashboardState = {
     data,
-    selectedYears,
-    setSelectedYears,
+    period,
+    setPeriod,
+    periodRange,
+    fyRange,
+    setFyRange,
+    fyBounds,
+    provisionalYears,
     focusCountry,
     setFocusCountry,
     visa,
@@ -247,7 +274,6 @@ export function DashboardProvider({
     setCompareCountries,
     topN,
     setTopN,
-    allYears,
     countries,
     allCountries,
     consulateCountries,

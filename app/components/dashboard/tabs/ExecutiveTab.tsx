@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
+import { calendarYearLabel } from "../../../lib/dashboard/periods";
 import { int } from "../../../lib/dashboard/format";
 import { groupSum } from "../../../lib/dashboard/metrics";
 import {
@@ -15,7 +16,7 @@ import {
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { Panel } from "../ui";
+import { FixedTag, Panel } from "../ui";
 
 const BLUE_GOLD_SCALE: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -78,10 +79,9 @@ export default function ExecutiveTab() {
     summary,
     focusCountry,
     consulateCountries,
-    f1Filtered,
-    j1Filtered,
     visaFiltered,
     visaLabel,
+    periodRange,
   } = useDashboard();
 
   /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
@@ -209,20 +209,26 @@ export default function ExecutiveTab() {
       .sort((a, b) => b.issuances - a.issuances);
   }, [visaFiltered]);
 
-  /* ---- Annual F1 vs J1 ---- */
-  // The latest calendar year is partial until December: label it and draw it
-  // lighter and hatched so it isn't read as a full year.
-  const dataEnd = data.meta.coverage.postsMonthly.end;
-  const partialYear = dataEnd % 12 === 11 ? null : Math.floor(dataEnd / 12);
-  const partialMonths = dataEnd % 12 === 0 ? "Jan" : `Jan–${MONTH_NAMES[(dataEnd % 12) + 1]}`;
-  const partialLabel = partialYear !== null ? `${partialYear} (${partialMonths} only)` : null;
+  /* ---- Annual F1 vs J1: always every calendar year, whatever the Period ---- */
+  // The first and last years are usually partial (e.g. "2017 (Mar–Dec)",
+  // "2026 (Jan–Feb)"): labelled and drawn lighter and hatched so they aren't
+  // read as full years. Labels come from the data's coverage.
+  const coverage = data.meta.coverage.postsMonthly;
+  const partialYearLabels = useMemo(() => {
+    const labels: string[] = [];
+    for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+      const label = calendarYearLabel(year, coverage);
+      if (label !== String(year)) labels.push(label);
+    }
+    return labels;
+  }, [coverage]);
   const annual = useMemo(() => {
-    const yearLabel = (year: number) => (year === partialYear && partialLabel ? partialLabel : String(year));
-    const bars = (rows: typeof f1Filtered, name: string, color: string): Trace => {
+    const yearLabel = (year: number) => calendarYearLabel(year, coverage);
+    const bars = (rows: readonly { year: number; issuances: number }[], name: string, color: string): Trace => {
       const totals = [...groupSum(rows, (r) => r.year, (r) => r.issuances).entries()].sort(
         (a, b) => a[0] - b[0],
       );
-      const partial = totals.map(([year]) => year === partialYear);
+      const partial = totals.map(([year]) => yearLabel(year) !== String(year));
       return {
         type: "bar",
         name,
@@ -236,15 +242,19 @@ export default function ExecutiveTab() {
         hovertemplate: `<b>%{x}</b><br>${name}: %{y:,.0f}<extra></extra>`,
       };
     };
-    const data: Trace[] = [bars(f1Filtered, "F1", "#FFB81C"), bars(j1Filtered, "J1", "#3D8DDE")];
+    const all = data.postsMonthly;
+    const traces: Trace[] = [
+      bars(all.filter((r) => r.visa === "F1"), "F1", "#FFB81C"),
+      bars(all.filter((r) => r.visa === "J1"), "J1", "#3D8DDE"),
+    ];
     const layout: ChartLayout = {
       barmode: "group",
       height: 380,
       title: { text: "Annual F1 vs J1 Issuances (calendar years)" },
       xaxis: { type: "category" },
     };
-    return { data, layout };
-  }, [f1Filtered, j1Filtered, partialYear, partialLabel]);
+    return { data: traces, layout };
+  }, [data.postsMonthly, coverage]);
 
   /* ---- Top 20 treemap ---- */
   const treemap = useMemo(() => {
@@ -266,15 +276,18 @@ export default function ExecutiveTab() {
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `Top 20 ${visaLabel} Markets` },
+      title: { text: `Top 20 ${visaLabel} Markets, ${periodRange.label}` },
       margin: { l: 0, r: 0, t: 50, b: 0 },
     };
     return { data, layout };
-  }, [countryRollup, visaLabel]);
+  }, [countryRollup, visaLabel, periodRange.label]);
 
   /* ---- Monthly trend, one line per year ---- */
   const monthlyTrend = useMemo(() => {
-    const palette = ["#3D8DDE", "#FFB81C", "#86EFAC"];
+    const palette = [
+      "#3D8DDE", "#FFB81C", "#86EFAC", "#F87171", "#C4B5FD",
+      "#FDBA74", "#67E8F9", "#F9A8D4", "#BEF264", "#CBD5E1",
+    ];
     const years = [...new Set(visaFiltered.map((r) => r.year))].sort((a, b) => a - b);
     const byYearMonth = groupSum(
       visaFiltered,
@@ -298,12 +311,12 @@ export default function ExecutiveTab() {
 
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `Global Monthly ${visaLabel} Issuance Trend by Year` },
+      title: { text: `Global Monthly ${visaLabel} Issuance Trend by Year, ${periodRange.label}` },
       xaxis: { tickangle: -45, categoryorder: "category ascending" },
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [visaFiltered, visaLabel]);
+  }, [visaFiltered, visaLabel, periodRange.label]);
 
   if (summary.length === 0) return null;
 
@@ -312,6 +325,9 @@ export default function ExecutiveTab() {
       <div className="rounded-lg border border-[rgba(61,141,222,0.24)] bg-[radial-gradient(circle_at_72%_32%,rgba(61,141,222,0.18),transparent_22rem),linear-gradient(180deg,rgba(6,24,52,0.92),rgba(3,12,28,0.9))] p-[22px]">
         <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#ffdf87]">
           Visual Intelligence Layer
+          <FixedTag title="The globe and focus card ignore the Period and Visa controls.">
+            F1 totals {operationalPeriod} · change: last 12 months
+          </FixedTag>
         </div>
         <div className="mt-1 text-xl font-extrabold text-white">
           Interactive Global Recruitment Globe
@@ -355,9 +371,10 @@ export default function ExecutiveTab() {
         <div>
           <Chart data={annual.data} layout={annual.layout} height={380} />
           <p className="mt-2 text-xs text-slate-400">
-            Calendar years by issuing consulate, for the years selected in the sidebar.
-            {partialYear !== null &&
-              ` ${partialYear} covers ${partialMonths} only and isn't comparable with full years.`}
+            <FixedTag title="This chart ignores the Period control.">All calendar years</FixedTag>{" "}
+            Calendar years by issuing consulate, {monthRangeLabel(coverage)}.
+            {partialYearLabels.length > 0 &&
+              ` Partial years (${partialYearLabels.join(", ")}) aren't comparable with full years.`}
           </p>
         </div>
         <Chart data={treemap.data} layout={treemap.layout} height={380} />

@@ -378,3 +378,18 @@ export function MultiSelect({
     </Field>
   );
 }
+
+/**
+ * A small pill marking a section that does not follow the control bar's
+ * Period, e.g. "Always last 12 months" or "All calendar years".
+ */
+export function FixedTag({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <span
+      title={title}
+      className="ml-2 inline-flex items-center rounded-full border border-slate-400/30 bg-white/[0.04] px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-[0.06em] text-slate-300"
+    >
+      {children}
+    </span>
+  );
+}

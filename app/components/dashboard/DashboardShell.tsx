@@ -8,6 +8,7 @@ import { AccountMenu } from "../AccountMenu";
 import { asset } from "../../lib/basePath";
 import { loadDashboardData } from "../../lib/dashboard/data";
 import { monthLongDisplay } from "../../lib/dashboard/format";
+import { periodFromParam, periodToParam } from "../../lib/dashboard/periods";
 import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
 import ControlBar from "./ControlBar";
@@ -139,42 +140,45 @@ interface UrlSelection extends InitialSelection {
 /** Reads the selection from the address. Unknown or missing values fall back to defaults. */
 function readUrlSelection(): UrlSelection {
   const params = new URLSearchParams(window.location.search);
+  const period = periodFromParam(params.get("period")) ?? undefined;
   const visaParam = params.get("visa")?.toLowerCase();
   const visa = (Object.keys(VISA_PARAM) as VisaSelection[]).find((v) => VISA_PARAM[v] === visaParam);
   const tab = params.get("tab") ?? undefined;
   return {
     country: params.get("country") ?? undefined,
     visa,
+    period,
     tab: TABS.some((t) => t.id === tab) ? tab : undefined,
   };
 }
 
 /** Writes the selection into the address without adding browser-history entries. */
-function useUrlSync(country: string, visa: VisaSelection, tab: string) {
+function useUrlSync(country: string, visa: VisaSelection, period: string, tab: string) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     params.set("country", country);
     params.set("visa", VISA_PARAM[visa]);
+    params.set("period", period);
     params.set("tab", tab);
     const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
     if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [country, visa, tab]);
+  }, [country, visa, period, tab]);
 }
 
 function DashboardBody({ initialTab }: { initialTab?: string }) {
-  const { data, focusCountry, visa } = useDashboard();
+  const { data, focusCountry, visa, period } = useDashboard();
   const [active, setActive] = useState<string>(initialTab ?? TABS[0].id);
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
-  useUrlSync(focusCountry, visa, active);
+  useUrlSync(focusCountry, visa, periodToParam(period), active);
 
   return (
     <div className="min-h-screen bg-[#050F22] text-slate-200">
       <Header />
 
       <div className="mx-auto max-w-[1600px] px-6 py-6">
-        <ControlBar />
+        <ControlBar fiscalYearMode={active === "historical-trends"} />
         <div className="flex flex-col gap-6 lg:flex-row">
           <Sidebar />
 

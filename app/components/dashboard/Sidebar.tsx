@@ -4,14 +4,11 @@ import { useDashboard } from "./DashboardContext";
 import { MultiSelect, Slider } from "./ui";
 
 /**
- * The sidebar: years, comparisons, top-N. Country and visa are in the control
- * bar above (ControlBar.tsx).
+ * The sidebar: comparisons and top-N. Country, visa and period are in the
+ * control bar above (ControlBar.tsx).
  */
 export default function Sidebar() {
   const {
-    allYears,
-    selectedYears,
-    setSelectedYears,
     countries,
     compareCountries,
     setCompareCountries,
@@ -36,14 +33,6 @@ export default function Sidebar() {
 
         <div className="space-y-4">
           <div className="text-sm font-bold text-white">Filters</div>
-
-          <MultiSelect
-            label="Years"
-            options={allYears.map(String)}
-            values={selectedYears.map(String)}
-            onChange={(values) => setSelectedYears(values.map(Number))}
-            maxHeight={120}
-          />
 
           <MultiSelect
             label="Compare Countries"

@@ -11,7 +11,7 @@ import {
   rollingTwelveMonths,
 } from "../../lib/dashboard/rolling";
 import { useDashboard } from "./DashboardContext";
-import { KpiCard, KpiRow } from "./ui";
+import { FixedTag, KpiCard, KpiRow } from "./ui";
 
 const toneOf = (change: number | null) =>
   change === null ? "neutral" : change > 0 ? "pos" : change < 0 ? "neg" : "neutral";
@@ -61,6 +61,7 @@ export default function HeaderKpis() {
     <>
       <h2 className="mb-3 text-sm font-semibold text-slate-200">
         Last 12 months · {period}, compared with the previous 12 months
+        <FixedTag title="These cards ignore the Period control.">Always last 12 months</FixedTag>
       </h2>
       <KpiRow>
         <KpiCard
@@ -124,7 +125,7 @@ export default function HeaderKpis() {
       </KpiRow>
       <p className="-mt-4 mb-7 text-xs text-slate-400">
         Country = where the visa was issued, not student nationality. These figures ignore the
-        sidebar Years filter.
+        Period control.
       </p>
     </>
   );

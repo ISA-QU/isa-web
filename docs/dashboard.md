@@ -252,6 +252,16 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   address (`?country=India&visa=f1&tab=executive`), so a view can be shared and survives a
   reload. Charts labelled with a visa follow the bar's choice; the header, risers/fallers,
   the globe and the 12-month rankings stay F1 (or F1 and J1).
+- **One Period for monthly consulate data.** The control bar's Period (last 12 months by
+  default; last 24 months; a calendar year, partial years labelled; custom months; All since
+  Mar 2017; pre-pandemic through recovery 2019–2022) replaces the sidebar Years filter,
+  Country 360's Recent Timeframe and Historical Consulates' Quick Range. Period-following
+  data comes from the full monthly consulate history, not the operational layer. On
+  Historical Trends the same slot holds the fiscal-year range. Sections that don't follow the
+  Period carry a small tag (e.g. "Always last 12 months", "All calendar years"); Historical
+  Consulates' 12-month, change and recovery columns, trend chart, annual and recovery charts
+  always use the full history, with the Period shaded on the trend chart. CSV file names
+  include the period.
 - **One country for the whole dashboard.** The sidebar's Focus Country, Country 360's
   Country, Historical Trends' country and Historical Consulates' country are one shared
   selection (in `DashboardContext`), over every country in either data source. A tab whose

@@ -23,8 +23,10 @@ import type {
   OperationalRow,
   VisaSelection,
 } from "../../lib/dashboard/types";
+import { matchOption } from "../../lib/dashboard/url";
 import {
   DEFAULT_PERIOD,
+  periodInCoverage,
   provisionalFiscalYears,
   resolvePeriod,
   typicalYears,
@@ -174,15 +176,16 @@ export function DashboardProvider({
   );
 
   const [selectedFocus, setFocusCountry] = useState<string>(() =>
-    initial?.country && allCountries.includes(initial.country)
-      ? initial.country
-      : allCountries.includes(DEFAULT_COUNTRY)
-        ? DEFAULT_COUNTRY
-        : (allCountries[0] ?? ""),
+    // country=china opens China: links match the country name whatever its capitalisation.
+    matchOption(initial?.country, allCountries) ??
+      (allCountries.includes(DEFAULT_COUNTRY) ? DEFAULT_COUNTRY : (allCountries[0] ?? "")),
   );
   const [visa, setVisa] = useState<VisaSelection>(initial?.visa ?? DEFAULT_VISA);
-  const [period, setPeriod] = useState<PeriodChoice>(initial?.period ?? DEFAULT_PERIOD);
   const coverage = data.meta.coverage.postsMonthly;
+  // A linked period entirely outside the data (e.g. period=2010) falls back to the default.
+  const [period, setPeriod] = useState<PeriodChoice>(() =>
+    initial?.period && periodInCoverage(initial.period, coverage) ? initial.period : DEFAULT_PERIOD,
+  );
   const periodRange = useMemo(
     () => resolvePeriod(period, coverage),
     [period, coverage],

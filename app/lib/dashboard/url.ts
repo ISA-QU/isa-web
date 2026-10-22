@@ -15,3 +15,11 @@ export function canonicalTab(raw: string | null | undefined, tabIds: readonly st
   const tab = TAB_ALIASES[raw] ?? raw;
   return tabIds.includes(tab) ? tab : undefined;
 }
+
+/** The option matching a `country=` value, ignoring capitalisation (country=china opens China). */
+export function matchOption(raw: string | null | undefined, options: readonly string[]): string | undefined {
+  if (!raw) return undefined;
+  if (options.includes(raw)) return raw;
+  const wanted = raw.trim().toLowerCase();
+  return options.find((option) => option.toLowerCase() === wanted);
+}

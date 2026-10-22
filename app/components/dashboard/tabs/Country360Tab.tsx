@@ -15,31 +15,36 @@ import {
   yearToDateLabel,
 } from "../../../lib/dashboard/format";
 import {
+  LOW_VOLUME,
+  MIN_BASE,
+  NO_LOCAL_VISAS,
+  changeText,
+  changeVsBase,
+  isLowVolume,
+  lastTwelve,
+  latestCompleteYearOf,
+} from "../../../lib/dashboard/measures";
+import {
+  buildCommandCenterFrame,
   concentrationLabel,
   fiscalYearGrowth,
   groupMean,
   groupMedian,
   groupSum,
-  marketCategory,
   notNa,
-  pctGrowth,
-  postPeriodMetrics,
-  recommendationProfile,
-  recommendedAction,
   recommendedOutreachWindow,
-  secondaryFlags,
   selectedVisaClasses,
+  seasonalityStrengthLabel,
   sumBy,
   historicalCountryName,
-  latestCompleteYear,
   monthlyCountryName,
   regionForCountry,
   seasonalityCv,
+  volatilityLabel,
 } from "../../../lib/dashboard/metrics";
-import { buildConsulateTable, recoveryYearOf } from "../../../lib/dashboard/consulates";
+import { buildConsulateTable } from "../../../lib/dashboard/consulates";
 import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
-import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
@@ -143,7 +148,8 @@ export default function Country360Tab() {
 
   // Periods for the sections that don't follow the Period control.
   const fullRangeText = monthRangeLabel(data.meta.coverage.postsMonthly);
-  const recoveryYear = latestCompleteYear(hcCountry);
+  // The data's latest complete year, the same for every country (never this country's own last row).
+  const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
 
 
   const empty =
@@ -151,8 +157,6 @@ export default function Country360Tab() {
 
   /* ---- Headline metrics ---- */
   const metrics = useMemo(() => {
-    const opF1Total = sumBy(opCountryAll.filter((r) => r.visa === "F1"), (r) => r.issuances);
-    const opJ1Total = sumBy(opCountryAll.filter((r) => r.visa === "J1"), (r) => r.issuances);
     const latestFyF1 = sumBy(
       histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "F1"),
       (r) => r.issuances,
@@ -170,83 +174,79 @@ export default function Country360Tab() {
         ? fiscalYearGrowth(histCountryAll, ["F1"], latestFy, latestFy - 10)
         : null;
 
-    const latestHcIndex =
-      hcCountry.length > 0 ? Math.max(...hcCountry.map((r) => r.monthIndex)) : null;
-    const latest12Start = latestHcIndex !== null ? latestHcIndex - 11 : null;
-    const latest12Hc =
-      latest12Start !== null ? hcCountry.filter((r) => r.monthIndex >= latest12Start) : [];
-
+    // Last 12 months end at the data's last month for every country.
+    const twelve = lastTwelve(hcCountry, endIndex);
+    const inLast12 = (r: { monthIndex: number }) =>
+      r.monthIndex >= twelve.currentRange.start && r.monthIndex <= twelve.currentRange.end;
     const latest12F1 = visaClasses.includes("F1")
-      ? sumBy(latest12Hc.filter((r) => r.visa === "F1"), (r) => r.issuances)
+      ? sumBy(hcCountry.filter((r) => r.visa === "F1" && inLast12(r)), (r) => r.issuances)
       : null;
     const latest12J1 = visaClasses.includes("J1")
-      ? sumBy(latest12Hc.filter((r) => r.visa === "J1"), (r) => r.issuances)
+      ? sumBy(hcCountry.filter((r) => r.visa === "J1" && inLast12(r)), (r) => r.issuances)
       : null;
 
-    const hcMetrics = postPeriodMetrics(hcCountry);
     const postTotals = [...groupSum(hcCountry, (r) => r.post, (r) => r.issuances).entries()].sort(
       (a, b) => b[1] - a[1],
     );
-    const hcTotal = postTotals.reduce((total, [, value]) => total + value, 0);
-    const topOneShare = hcTotal ? postTotals.slice(0, 1).reduce((t, [, v]) => t + v, 0) / hcTotal : null;
-    const topThreeShare = hcTotal ? postTotals.slice(0, 3).reduce((t, [, v]) => t + v, 0) / hcTotal : null;
     const topConsulate = postTotals.length > 0 ? postTotals[0][0] : "N/A";
     const dataConfidence =
       hcCountryAll.length > 0 && histCountryAll.length > 0 && opCountryAll.length > 0
         ? "High"
         : "Partial";
 
-    // Assembled to match the shape the shared classifiers expect.
-    const decision = {
-      country,
-      region: regionForCountry(country),
-      currentVolume: opF1Total,
-      growth5yr: growth5,
-      growth10yr: growth10,
-      cagr10yr: null,
-      latest12Total: sumBy(latest12Hc, (r) => r.issuances),
-      prior12Total: 0,
-      latest12Momentum: hcMetrics.latest12Change,
-      recoveryIndex: hcMetrics.recoveryIndex,
-      peakMonth: hcMetrics.peakMonth,
-      peakMonthName: hcMetrics.peakMonthName,
-      seasonalityRatio: hcMetrics.seasonalityRatio,
-      volatilityCv: hcMetrics.volatilityCv,
-      topOneShare,
-      topThreeShare,
-      concentrationRisk: concentrationLabel(topOneShare),
-    } satisfies Omit<
-      CommandCenterRow,
-      | "marketCategory" | "secondaryFlags" | "secondaryFlagsText" | "confidence"
-      | "recommendedAction" | "primaryDriver" | "counterSignal" | "timing" | "caveat" | "evidence"
-    >;
-
-    const category = marketCategory(decision);
-    const flags = secondaryFlags({ ...decision, marketCategory: category });
+    // "What to do" uses the same row as the Command Center, so the two pages always agree.
+    const row =
+      buildCommandCenterFrame(
+        data.operational,
+        data.annualCountry,
+        data.postsMonthly,
+        visa,
+        coverage.annual.latestComplete,
+        coverage.postsMonthly,
+        [monthCountry],
+      )[0] ?? null;
+    const hcMetrics = {
+      latest12Change: row?.latest12Momentum ?? null,
+      recoveryIndex: row?.recoveryIndex ?? null,
+      peakMonth: row?.peakMonth ?? null,
+      peakMonthName: row?.peakMonthName ?? "N/A",
+      seasonalityRatio: row?.seasonalityRatio ?? null,
+      seasonalityStrength: seasonalityStrengthLabel(row?.seasonalityRatio ?? null),
+      volatilityCv: row?.volatilityCv ?? null,
+      volatility: volatilityLabel(row?.volatilityCv ?? null),
+    };
+    const flags = row?.secondaryFlags ?? [];
     const confidence =
       dataConfidence === "High" && !flags.includes("Low Confidence") ? "High" : dataConfidence;
-    const action = recommendedAction({
-      ...decision,
-      marketCategory: category,
-      secondaryFlags: flags,
-    });
-    const profile = recommendationProfile({
-      ...decision,
-      recommendedAction: action,
-      confidence,
-    });
 
     return {
-      opF1Total, opJ1Total, latestFyF1, latestFyJ1, growth5, growth10,
-      latest12Hc, latest12F1, latest12J1, hcMetrics,
-      topOneShare, topThreeShare, topConsulate, dataConfidence,
-      category, flags, confidence, action, profile,
+      latestFyF1, latestFyJ1, growth5, growth10,
+      twelve, latest12F1, latest12J1, hcMetrics,
+      topOneShare: row?.topOneShare ?? null,
+      topThreeShare: row?.topThreeShare ?? null,
+      topConsulate, dataConfidence,
+      category: row?.marketCategory ?? "Watch",
+      flags,
+      confidence,
+      action: row?.recommendedAction ?? "Insufficient Evidence",
+      profile: {
+        primaryDriver: row?.primaryDriver ?? NO_LOCAL_VISAS,
+        counterSignal: row?.counterSignal ?? "No material counter-signal",
+        timing: row?.timing ?? "Review during the next recruitment-cycle planning window",
+        caveat: row?.caveat ?? "",
+      },
     };
-  }, [opCountryAll, histCountryAll, hcCountry, hcCountryAll, visaClasses, country, latestFy]);
+  }, [
+    opCountryAll, histCountryAll, hcCountry, hcCountryAll, visaClasses, latestFy, endIndex,
+    data.operational, data.annualCountry, data.postsMonthly, visa, coverage, monthCountry,
+  ]);
 
   const momentum = metrics.hcMetrics.latest12Change;
+  const hasConsulateRows = hcCountry.length > 0;
   const momentumLabel = !notNa(momentum)
-    ? "N/A"
+    ? hasConsulateRows && isLowVolume(metrics.twelve.prior)
+      ? "low volume"
+      : "N/A"
     : momentum <= -20
       ? "Weak"
       : momentum >= 15
@@ -367,7 +367,7 @@ export default function Country360Tab() {
       const baseline = sumBy(hcCountry.filter((r) => r.year === 2019), (r) => r.issuances);
       for (let year = 2019; year <= lastFullYear; year += 1) {
         const value = sumBy(hcCountry.filter((r) => r.year === year), (r) => r.issuances);
-        if (baseline > 0) rows.push({ period: String(year), index: (value / baseline) * 100 });
+        if (baseline >= MIN_BASE) rows.push({ period: String(year), index: (value / baseline) * 100 });
       }
       if (throughMonth < 12) {
         const baselineYtd = sumBy(
@@ -378,7 +378,7 @@ export default function Country360Tab() {
           hcCountry.filter((r) => r.year === endYear && r.month <= throughMonth),
           (r) => r.issuances,
         );
-        if (baselineYtd > 0) {
+        if (baseline >= MIN_BASE && baselineYtd > 0) {
           rows.push({
             period: `${endYear} ${yearToDateLabel(throughMonth)}`,
             index: (valueYtd / baselineYtd) * 100,
@@ -466,20 +466,25 @@ export default function Country360Tab() {
 
   // Latest 12 months vs the 12 before for this country and visa selection, the
   // same comparison the dashboard header uses.
+  // The change is "— (low volume)" when the previous 12 months are below 100.
   const last12 = useMemo(() => {
-    const classes = selectedVisaClasses(visa);
-    const rolling = rollingTotals(data.postsMonthly, data.meta.coverage.postsMonthly.end, (r) =>
-      r.country === monthCountry && classes.includes(r.visa) ? "selected" : null,
-    );
-    const group = rolling.groups.get("selected");
+    const twelve = lastTwelve(hcCountry, endIndex);
     return {
-      current: group?.current ?? 0,
-      prior: group?.prior ?? 0,
-      change: rolling.comparable ? pctGrowth(group?.current ?? 0, group?.prior ?? 0) : null,
-      period: monthRangeLabel(rolling.current),
-      priorPeriod: monthRangeLabel(rolling.prior),
+      current: twelve.current,
+      prior: twelve.prior,
+      change: twelve.change,
+      period: monthRangeLabel(twelve.currentRange),
+      priorPeriod: monthRangeLabel(twelve.priorRange),
     };
-  }, [data.postsMonthly, data.meta.coverage.postsMonthly.end, monthCountry, visa]);
+  }, [hcCountry, endIndex]);
+  /** A change for this country's consulates: "N/A" with no consulate rows, "— (low volume)" below 100. */
+  const consulateChangeText = (format: (value: number) => string) =>
+    !hasConsulateRows ? "N/A" : changeText(last12.change, last12.prior, format);
+  const recoveryValueText = notNa(metrics.hcMetrics.recoveryIndex)
+    ? metrics.hcMetrics.recoveryIndex.toFixed(0)
+    : hasConsulateRows
+      ? LOW_VOLUME
+      : "N/A";
 
   const officialFys = fiscalYears.filter((f) => f.source === "annual").map((f) => f.fiscalYear);
   const lastOfficialFy = officialFys.length > 0 ? Math.max(...officialFys) : null;
@@ -565,7 +570,7 @@ export default function Country360Tab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.postsMonthly, visa],
   );
-  const consulateRecoveryYear = useMemo(() => recoveryYearOf(data.postsMonthly), [data.postsMonthly]);
+  const consulateRecoveryYear = recoveryYear;
   const fullRange = coverage.postsMonthly;
   const periodLeader = useMemo(
     () => buildConsulateTable(visaRows, periodRange, null, monthCountry, consulateRecoveryYear)[0] ?? null,
@@ -738,7 +743,8 @@ export default function Country360Tab() {
             ...row,
             f1Last12: f1?.current ?? 0,
             j1Last12: rankingWindow.j1.get(row.country)?.current ?? 0,
-            f1Change: f1?.change ?? null,
+            f1Change: f1 ? changeVsBase(f1.current, f1.prior) : null,
+            f1Prior: f1?.prior ?? 0,
           };
         })
         .sort((a, b) => b.f1Last12 - a.f1Last12 || a.country.localeCompare(b.country)),
@@ -778,11 +784,11 @@ export default function Country360Tab() {
               />
               <KpiCard
                 label={`Change vs previous 12 months (${last12.period})`}
-                value={metricPct(metrics.hcMetrics.latest12Change)}
+                value={consulateChangeText(metricPct)}
               />
               <KpiCard
                 label={`Recovery (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
-                value={notNa(metrics.hcMetrics.recoveryIndex) ? metrics.hcMetrics.recoveryIndex.toFixed(0) : "N/A"}
+                value={recoveryValueText}
                 delta="100 = 2019 level"
               />
             </KpiRow>
@@ -825,7 +831,7 @@ export default function Country360Tab() {
             <Caption>
               <FixedTag title="This line ignores the Period control.">Always last 12 months</FixedTag>{" "}
               Last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
-              {last12.priorPeriod}): {int(last12.prior)}; {arrowPct(last12.change)} vs previous 12
+              {last12.priorPeriod}): {int(last12.prior)}; {consulateChangeText(arrowPct)} vs previous 12
               months.
             </Caption>
           </section>
@@ -978,8 +984,8 @@ export default function Country360Tab() {
               <Chart data={recovery.data} layout={recovery.layout} height={390} />
             ) : (
               <InfoCallout>
-                Recovery index is N/A because this country has no positive 2019 baseline in the
-                selected visa classes.
+                Recovery index {hasConsulateRows ? LOW_VOLUME : "N/A"}: needs at least {MIN_BASE} issuances
+                in 2019 in the selected visa classes.
               </InfoCallout>
             )}
 
@@ -994,7 +1000,7 @@ export default function Country360Tab() {
                 { metric: "Top-one post share", value: share(metrics.topOneShare), interpretation: concentrationLabel(metrics.topOneShare) },
                 { metric: "Top-three post share", value: share(metrics.topThreeShare), interpretation: concentrationLabel(metrics.topThreeShare) },
                 { metric: "Monthly volatility CV", value: decimals(metrics.hcMetrics.volatilityCv, 2), interpretation: metrics.hcMetrics.volatility },
-                { metric: "Latest 12-month momentum", value: metricPct(metrics.hcMetrics.latest12Change), interpretation: "Comparable 12-month change" },
+                { metric: "Latest 12-month momentum", value: consulateChangeText(metricPct), interpretation: "Comparable 12-month change" },
                 {
                   metric: "Seasonality ratio",
                   value: notNa(metrics.hcMetrics.seasonalityRatio) ? `${metrics.hcMetrics.seasonalityRatio.toFixed(1)}x` : "N/A",
@@ -1035,7 +1041,7 @@ export default function Country360Tab() {
                 { key: "country", header: "Country", render: (r) => r.country },
                 { key: "f1", header: "F1, last 12 months", numeric: true, render: (r) => int(r.f1Last12) },
                 { key: "j1", header: "J1, last 12 months", numeric: true, render: (r) => int(r.j1Last12) },
-                { key: "growth", header: "F1 vs previous 12 months", numeric: true, render: (r) => arrowPct(r.f1Change) },
+                { key: "growth", header: "F1 vs previous 12 months", numeric: true, render: (r) => changeText(r.f1Change, r.f1Prior, arrowPct) },
                 { key: "post", header: "Top Post", render: (r) => r.topPost },
                 { key: "peak", header: "Peak Month", render: (r) => MONTH_NAMES_FULL[r.peakMonth] ?? "N/A" },
               ]}

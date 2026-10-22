@@ -174,7 +174,8 @@ export function resolvePeriod(choice: PeriodChoice, coverage: MonthRange): Resol
       break;
     }
   }
-  if (range.start > range.end) range = { start: coverage.start, end: coverage.end };
+  // A period entirely outside the data: show all of it, labelled as such.
+  if (range.start > range.end) return resolvePeriod({ kind: "all" }, coverage);
   const inSentence =
     choice.kind === "last12" || choice.kind === "last24" || choice.kind === "pandemic"
       ? `the ${label.charAt(0).toLowerCase()}${label.slice(1)}`
@@ -204,11 +205,38 @@ export function periodFromParam(param: string | null): PeriodChoice | null {
   if (/^\d{4}$/.test(param)) return { kind: "year", year: Number(param) };
   const custom = /^(\d{4})-(\d{2})_(\d{4})-(\d{2})$/.exec(param);
   if (custom) {
+    const validMonth = (m: string) => Number(m) >= 1 && Number(m) <= 12;
+    if (!validMonth(custom[2]) || !validMonth(custom[4])) return null;
     const start = Number(custom[1]) * 12 + Number(custom[2]) - 1;
     const end = Number(custom[3]) * 12 + Number(custom[4]) - 1;
     return { kind: "custom", start, end };
   }
   return null;
+}
+
+/**
+ * Whether a period read from a link overlaps the data at all. A year or range
+ * entirely outside it (e.g. period=2010) is rejected, so the dashboard falls
+ * back to the default instead of mislabelling the whole history.
+ */
+export function periodInCoverage(choice: PeriodChoice, coverage: MonthRange): boolean {
+  switch (choice.kind) {
+    case "year":
+      return choice.year * 12 + 11 >= coverage.start && choice.year * 12 <= coverage.end;
+    case "custom": {
+      const start = Math.min(choice.start, choice.end);
+      const end = Math.max(choice.start, choice.end);
+      return end >= coverage.start && start <= coverage.end;
+    }
+    default:
+      return true;
+  }
+}
+
+/** A `period=` value checked against the data: null when unreadable or outside it. */
+export function periodFromLink(param: string | null, coverage: MonthRange): PeriodChoice | null {
+  const choice = periodFromParam(param);
+  return choice && periodInCoverage(choice, coverage) ? choice : null;
 }
 
 /* ------------------------------------------------------------------ *

@@ -18,12 +18,14 @@ import {
   MONTHLY_COUNTRY_ALIASES,
   REGION_MAP,
 } from "./constants";
+import { NO_LOCAL_VISAS, changeVsBase, lastTwelve, latestCompleteYearOf, recoveryVs2019 } from "./measures";
 import type {
   AnnualCountryRow,
   CommandCenterRow,
   CountrySummaryRow,
   Coord,
   HistoricalMetricRow,
+  MonthRange,
   OperationalRow,
   PostMonthlyRow,
   PostPeriodMetrics,
@@ -521,7 +523,17 @@ export function latestCompleteYear(rows: readonly PostMonthlyRow[]): number | nu
   return complete.length > 0 ? Math.max(...complete) : null;
 }
 
-export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMetrics {
+/**
+ * One post's or country's monthly consulate rows, summarised. The last-12-month
+ * window and the recovery year come from `window` (the data's coverage), never
+ * from the rows' own last month: a consulate that stopped reporting must not
+ * be measured over a different period. Without `window` those three figures are
+ * left empty (0 / null).
+ */
+export function postPeriodMetrics(
+  rows: readonly PostMonthlyRow[],
+  window?: { dataEnd: number; recoveryYear: number | null },
+): PostPeriodMetrics {
   if (rows.length === 0) {
     return {
       total: 0,
@@ -539,17 +551,7 @@ export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMe
   }
 
   const monthly = groupSum(rows, (r) => r.monthIndex, (r) => r.issuances);
-  const latestIndex = Math.max(...monthly.keys());
-  const latest12Start = latestIndex - 11;
-  const prior12Start = latestIndex - 23;
-
-  let latest12 = 0;
-  let prior12 = 0;
-  for (const [index, value] of monthly) {
-    if (index >= latest12Start) latest12 += value;
-    else if (index >= prior12Start) prior12 += value;
-  }
-  const latest12Change = prior12 > 0 ? pctGrowth(latest12, prior12) : null;
+  const twelve = window ? lastTwelve(rows, window.dataEnd) : null;
 
   const monthAvg = groupMean(rows, (r) => r.month, (r) => r.issuances);
   const monthAvgValues = [...monthAvg.values()];
@@ -565,30 +567,21 @@ export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMe
       ? stdPopulation(monthlyValues) / monthlyMean
       : null;
 
-  const annual = groupSum(rows, (r) => r.year, (r) => r.issuances);
-  const baseline2019 = annual.get(2019) ?? 0;
-
-  // Latest complete calendar year against 2019, so both sides are full years.
-  let recoveryIndex: number | null = null;
-  if (baseline2019 > 0) {
-    const completeYear = latestCompleteYear(rows);
-    if (completeYear !== null && annual.has(completeYear)) {
-      recoveryIndex = (annual.get(completeYear)! / baseline2019) * 100;
-    }
-  }
+  // The data's latest complete year against 2019; shown only when 2019 has MIN_BASE issuances.
+  const recovery = window ? recoveryVs2019(rows, window.recoveryYear) : null;
 
   return {
     total: sumBy(rows, (r) => r.issuances),
-    latest12,
+    latest12: twelve?.current ?? 0,
     peakMonth,
     peakMonthName: peakMonth !== null ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A",
     seasonalityRatio,
     seasonalityStrength: seasonalityStrengthLabel(seasonalityRatio),
     volatilityCv: cv,
     volatility: volatilityLabel(cv),
-    baseline2019: baseline2019 > 0 ? baseline2019 : null,
-    recoveryIndex,
-    latest12Change,
+    baseline2019: recovery && recovery.base2019 > 0 ? recovery.base2019 : null,
+    recoveryIndex: recovery?.index ?? null,
+    latest12Change: twelve?.change ?? null,
   };
 }
 
@@ -685,6 +678,10 @@ export function recommendedAction(
 ): string {
   const { marketCategory: category, secondaryFlags: flags } = row;
   const seasonality = row.seasonalityRatio;
+
+  // No visas issued in the country in the last 12 months (e.g. a closed consulate):
+  // nothing current to act on, whatever its history says.
+  if (row.latest12Total === 0) return "Insufficient Evidence";
   const momentum = row.latest12Momentum;
   const growth10yr = row.growth10yr;
 
@@ -740,6 +737,7 @@ export function recommendationProfile(
   if (action === "Begin Outreach Earlier" && row.peakMonthName) {
     primaryDriver = `Peak issuance month is ${row.peakMonthName}`;
   }
+  if (row.latest12Total === 0) primaryDriver = NO_LOCAL_VISAS;
 
   if (
     notNa(row.growth10yr) &&
@@ -797,6 +795,10 @@ export function buildCommandCenterFrame(
   consulate: readonly PostMonthlyRow[],
   visaSelection: VisaSelection,
   latestCompleteFiscalYear: number | null,
+  /** The monthly consulate data's coverage: the last 12 months and the recovery year come from it. */
+  coverage: MonthRange,
+  /** Only these countries (monthly-data names); Country 360 passes its one country. */
+  onlyCountries?: readonly string[],
 ): CommandCenterRow[] {
   const visaClasses = selectedVisaClasses(visaSelection);
   if (annualCountry.length === 0 || latestCompleteFiscalYear === null) return [];
@@ -809,7 +811,9 @@ export function buildCommandCenterFrame(
       ...consulate.map((r) => r.country),
       ...annualCountry.map((r) => monthlyCountryName(r.country)),
     ]),
-  ].sort();
+  ]
+    .filter((country) => !onlyCountries || onlyCountries.includes(country))
+    .sort();
 
   const opTotals = groupSum(
     operational.filter((r) => visaClasses.includes(r.visa)),
@@ -832,11 +836,8 @@ export function buildCommandCenterFrame(
     else consulateByCountry.set(row.country, [row]);
   }
 
-  const latestIndex = consulate.length > 0 ? Math.max(...consulate.map((r) => r.monthIndex)) : null;
-  const latest12Start = latestIndex !== null ? latestIndex - 11 : null;
-  const prior12Start = latestIndex !== null ? latestIndex - 23 : null;
-  // Recovery compares the latest complete calendar year with 2019, both full years.
-  const recoveryYear = latestCompleteYear(consulate);
+  // The same windows for every country: the data's last month and latest complete year.
+  const recoveryYear = latestCompleteYearOf(coverage);
 
   const rows = countries.map((country) => {
     const annualRows = annualByCountry.get(historicalCountryName(country)) ?? [];
@@ -846,29 +847,22 @@ export function buildCommandCenterFrame(
     let latest12Total = 0;
     let prior12Total = 0;
     let recoveryIndex: number | null = null;
+    let baseline2019 = 0;
     let seasonalityRatio: number | null = null;
     let volatilityCv: number | null = null;
     let peakMonth: number | null = null;
     let topOneShare: number | null = null;
     let topThreeShare: number | null = null;
 
-    if (consulateRows.length > 0 && latest12Start !== null && prior12Start !== null) {
-      for (const row of consulateRows) {
-        if (row.monthIndex >= latest12Start) latest12Total += row.issuances;
-        else if (row.monthIndex >= prior12Start) prior12Total += row.issuances;
-      }
+    if (consulateRows.length > 0) {
+      const twelve = lastTwelve(consulateRows, coverage.end);
+      latest12Total = twelve.current;
+      prior12Total = twelve.prior;
 
-      if (recoveryYear !== null) {
-        const current = sumBy(
-          consulateRows.filter((r) => r.year === recoveryYear),
-          (r) => r.issuances,
-        );
-        const baseline = sumBy(
-          consulateRows.filter((r) => r.year === 2019),
-          (r) => r.issuances,
-        );
-        recoveryIndex = baseline > 0 ? (current / baseline) * 100 : null;
-      }
+      // Shown only when 2019 had MIN_BASE issuances, so tiny bases can't top the list.
+      const recovery = recoveryVs2019(consulateRows, recoveryYear);
+      recoveryIndex = recovery.index;
+      baseline2019 = recovery.base2019;
 
       const monthly = groupSum(consulateRows, (r) => r.monthIndex, (r) => r.issuances);
       const monthlyValues = [...monthly.values()];
@@ -919,7 +913,8 @@ export function buildCommandCenterFrame(
       cagr10yr = calcCagr(current, baseline, 10);
     }
 
-    const momentum = prior12Total > 0 ? pctGrowth(latest12Total, prior12Total) : null;
+    // null ("— (low volume)") when the previous 12 months are below MIN_BASE.
+    const momentum = changeVsBase(latest12Total, prior12Total);
 
     const base: ClassificationInput = {
       country,
@@ -932,6 +927,8 @@ export function buildCommandCenterFrame(
       prior12Total,
       latest12Momentum: momentum,
       recoveryIndex,
+      baseline2019,
+      hasConsulateData: consulateRows.length > 0,
       peakMonth,
       peakMonthName: peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A",
       seasonalityRatio,

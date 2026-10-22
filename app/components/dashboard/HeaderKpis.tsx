@@ -3,13 +3,9 @@
 import { useMemo } from "react";
 
 import { int, metricPct, monthDisplay, monthLongDisplay } from "../../lib/dashboard/format";
+import { LOW_VOLUME, changeVsBase } from "../../lib/dashboard/measures";
 import { idxMaxString } from "../../lib/dashboard/metrics";
-import {
-  arrowPct,
-  countryF1Change,
-  monthRangeLabel,
-  rollingTwelveMonths,
-} from "../../lib/dashboard/rolling";
+import { arrowPct, monthRangeLabel, rollingTwelveMonths } from "../../lib/dashboard/rolling";
 import { useDashboard } from "./DashboardContext";
 import { FixedTag, KpiCard, KpiRow } from "./ui";
 
@@ -33,10 +29,14 @@ export default function HeaderKpis() {
   const priorPeriod = monthRangeLabel(prior);
   const comparable = current.complete && prior.complete;
 
-  /** The short line under a value; keeps the "No comparison" fallbacks. */
+  /** A change that needs both complete windows and 100+ in the previous 12 months. */
+  const changeOf = (now: number, before: number): number | null =>
+    comparable ? changeVsBase(now, before) : null;
+
+  /** The short line under a value; "— (low volume)" when the previous 12 months had fewer than 100. */
   const changeLine = (change: number | null, suffix = "") => {
     if (!comparable) return "No comparison: needs 24 complete months of data";
-    if (change === null) return `No F1 in ${priorPeriod} to compare with`;
+    if (change === null) return LOW_VOLUME;
     return `${arrowPct(change)}${suffix}`;
   };
 
@@ -45,7 +45,7 @@ export default function HeaderKpis() {
     [
       `${what}, ${period}: ${int(now)}`,
       `${what}, ${priorPeriod}: ${int(before)}`,
-      `Change: ${comparable && change !== null ? metricPct(change) : "not available"}`,
+      `Change: ${!comparable ? "not available" : change !== null ? metricPct(change) : `${LOW_VOLUME}, fewer than 100 in ${priorPeriod}`}`,
     ].join("\n");
 
   const topCountry = idxMaxString(current.f1ByCountry);
@@ -55,7 +55,7 @@ export default function HeaderKpis() {
 
   const focusF1 = current.f1ByCountry.get(focusCountry) ?? 0;
   const focusPrior = prior.f1ByCountry.get(focusCountry) ?? 0;
-  const focusChange = countryF1Change(rolling, focusCountry);
+  const focusChange = changeOf(focusF1, focusPrior);
 
   return (
     <>
@@ -92,7 +92,7 @@ export default function HeaderKpis() {
           title={
             topCountry
               ? [
-                  detail(`F1 issued in ${topCountry}`, topF1, topPrior, countryF1Change(rolling, topCountry)),
+                  detail(`F1 issued in ${topCountry}`, topF1, topPrior, changeOf(topF1, topPrior)),
                   `Share of all F1, ${period}: ${topShare !== null ? `${topShare.toFixed(1)}%` : "N/A"}`,
                 ].join("\n")
               : undefined

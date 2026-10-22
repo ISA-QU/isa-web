@@ -61,6 +61,10 @@ async function compileLib() {
     [
       "tsc",
       "app/lib/dashboard/metrics.ts",
+      "app/lib/dashboard/measures.ts",
+      "app/lib/dashboard/sort.ts",
+      "app/lib/dashboard/rolling.ts",
+      "app/lib/dashboard/format.ts",
       "app/lib/dashboard/consulates.ts",
       "app/lib/dashboard/periods.ts",
       "app/lib/dashboard/url.ts",
@@ -91,6 +95,9 @@ async function main() {
   const consulates = await import(pathToFileURL(path.join(outDir, "consulates.js")).href);
   const periods = await import(pathToFileURL(path.join(outDir, "periods.js")).href);
   const url = await import(pathToFileURL(path.join(outDir, "url.js")).href);
+  const measures = await import(pathToFileURL(path.join(outDir, "measures.js")).href);
+  const sorting = await import(pathToFileURL(path.join(outDir, "sort.js")).href);
+  const rolling = await import(pathToFileURL(path.join(outDir, "rolling.js")).href);
 
   const VISA = ["F1", "J1"];
   const monthIndex = (year, month) => year * 12 + (month - 1);
@@ -222,7 +229,9 @@ async function main() {
   );
 
   console.log("\n  Command Center and historical metrics");
-  const frame = metrics.buildCommandCenterFrame(operational, annualCountry, postsMonthly, "F1", latestComplete);
+  const frame = metrics.buildCommandCenterFrame(
+    operational, annualCountry, postsMonthly, "F1", latestComplete, snapshot.coverage.postsMonthly,
+  );
   console.log(`    info  ${frame.length} countries classified, latest complete fiscal year FY${latestComplete}`);
   const india = frame.find((r) => r.country === "India");
   // A market's category moves with the data (India was Core on the old data and is Declining
@@ -343,7 +352,7 @@ async function main() {
   console.log("\n  Consulates page  (8-1: previous equal-length period, \"—\" rule, context line)");
   const coverage = snapshot.coverage.postsMonthly;
   const f1Posts = postsMonthly.filter((r) => r.visa === "F1");
-  const recoveryYear = consulates.recoveryYearOf(postsMonthly);
+  const recoveryYear = consulates.recoveryYearOf(coverage);
   const last12Range = periods.resolvePeriod({ kind: "last12" }, coverage);
   const allRange = periods.resolvePeriod({ kind: "all" }, coverage);
   const indiaLast12 = consulates.buildConsulateTable(
@@ -407,7 +416,7 @@ async function main() {
     "consulates / consulates",
   );
   const indiaF1History = postsMonthly.filter((r) => r.country === "India" && r.visa === "F1");
-  const indiaHc = metrics.postPeriodMetrics(indiaF1History);
+  const indiaHc = metrics.postPeriodMetrics(indiaF1History, { dataEnd: coverage.end, recoveryYear });
   check(
     "Country 360 India F1: last 12 months / change / recovery",
     `${sum(indiaF1History.filter(inWindow(last12Range.start, last12Range.end)))} / ${indiaHc.latest12Change.toFixed(1)} / ${Math.round(indiaHc.recoveryIndex)}`,
@@ -419,6 +428,116 @@ async function main() {
     periodLeader ? `${periodLeader.post} ${periodLeader.share.toFixed(1)}%` : "missing",
     "Hyderabad 29.9%",
   );
+
+
+  console.log("\n  Fix Pack A1  (data end, minimum base of 100, links, What to do; expected values recounted with pandas from the raw by-post workbook)");
+  check("latest complete year from the coverage", measures.latestCompleteYearOf(coverage), 2025);
+  const lowOr = (value, digits = 1) => (value === null ? "low volume" : value.toFixed(digits));
+  const rowFor = (country, visa = "F1") =>
+    metrics.buildCommandCenterFrame(
+      operational, annualCountry, postsMonthly, visa, latestComplete, coverage, [country],
+    )[0];
+  const signals = (country) => {
+    const r = rowFor(country);
+    return `${r.latest12Total} / ${r.prior12Total} / ${lowOr(r.latest12Momentum)} / ${lowOr(r.recoveryIndex)}`;
+  };
+  check("Venezuela F1 (Caracas last reported Jan 2019): last 12 / previous 12 / change / recovery", signals("Venezuela"), "0 / 0 / low volume / low volume");
+  const venezuela = rowFor("Venezuela");
+  check(
+    "Venezuela What to do: action / why",
+    `${venezuela.recommendedAction} / ${venezuela.primaryDriver}`,
+    "Insufficient Evidence / No visas issued locally in the last 12 months",
+  );
+  check("Russia F1: last 12 / previous 12 / change / recovery", signals("Russia"), "5 / 21 / low volume / 0.1");
+  check("Myanmar F1: last 12 / previous 12 / change / recovery", signals("Myanmar"), "130 / 1705 / -92.4 / 25.2");
+  check("Ukraine F1: last 12 / previous 12 / change / recovery", signals("Ukraine"), "8 / 5 / low volume / 1.1");
+  check("Afghanistan F1 recovery (2025 vs 2019, not 2019 vs 2019)", lowOr(rowFor("Afghanistan").recoveryIndex), "0.0");
+  check(
+    "Ukraine and Myanmar not flagged Recovery Leader",
+    ["Ukraine", "Myanmar"].filter((c) => rowFor(c).secondaryFlags.includes("Recovery Leader")).length,
+    0,
+  );
+  check(
+    "Country 360 (one country) and Command Center (all) give the same action for every country, F1",
+    frame.filter((r) => rowFor(r.country).recommendedAction !== r.recommendedAction).length,
+    0,
+  );
+  const leaders = sorting.sortBy(frame.filter((r) => r.recoveryIndex !== null), [(r) => r.recoveryIndex]).slice(0, 12);
+  check("Recovery Leaders: top", `${leaders[0].country} ${Math.round(leaders[0].recoveryIndex)}`, "Nepal 323");
+  check(
+    "Recovery Leaders: Guinea (2019 base 19) and Eritrea (1) left out",
+    ["Guinea", "Eritrea"].filter((c) => leaders.some((r) => r.country === c)).length,
+    0,
+  );
+  check(
+    "no Recovery Leader flag on a 2019 base below 100",
+    frame.filter((r) => r.secondaryFlags.includes("Recovery Leader") && r.baseline2019 < 100).length,
+    0,
+  );
+  const zeroLocal = frame.filter((r) => r.latest12Total === 0);
+  console.log(
+    `    info  ${zeroLocal.length} countries with no F1 issued locally in the last 12 months ` +
+      `(${zeroLocal.filter((r) => r.hasConsulateData).length} with consulate history)`,
+  );
+  const allF1Last12 = consulates.buildConsulateTable(
+    f1Posts, last12Range, consulates.previousPeriod(last12Range, coverage), null, recoveryYear,
+  );
+  const postRow = (post) => allF1Last12.find((r) => r.post === post);
+  const kinshasa = postRow("Kinshasa");
+  check("Consulates, Kinshasa F1 last 12 months: 80 vs 716, change", `${kinshasa.volume} vs ${kinshasa.prior}, ${lowOr(kinshasa.change)}`, "80 vs 716, -88.8");
+  check("Consulates, Moscow F1 recovery (3,768 in 2019 to 6)", lowOr(postRow("Moscow").recovery), "0.2");
+  const kyiv = postRow("Kyiv");
+  check("Consulates, Kyiv F1: change (5 to 8) / recovery", `${lowOr(kyiv.change)} / ${lowOr(kyiv.recovery)}`, "low volume / 1.1");
+
+  const f1Rolling = rolling.rollingTotals(postsMonthly, coverage.end, (r) => (r.visa === "F1" ? r.country : null));
+  const lowCountries = [...f1Rolling.groups.values()].filter((g) => g.prior > 0 && measures.changeVsBase(g.current, g.prior) === null);
+  check("header and globe: countries whose F1 change is now low volume", lowCountries.length, 26);
+  checkClose("header India F1 change unchanged", Math.round(measures.changeVsBase(27258, 72112) * 10) / 10, -62.2, 0);
+
+  const movers = (visa) => {
+    const pool = metrics
+      .buildCommandCenterFrame(operational, annualCountry, postsMonthly, visa, latestComplete, coverage)
+      .filter((r) => r.latest12Momentum !== null && r.latest12Total >= 100 && r.prior12Total >= 100);
+    const up = sorting.sortBy(pool.filter((r) => r.latest12Momentum > 0), [(r) => r.latest12Momentum]).slice(0, 10);
+    const down = sorting.sortBy(pool.filter((r) => r.latest12Momentum < 0), [(r) => r.latest12Momentum], true).slice(0, 10);
+    return `${up.map((r) => r.country).join(", ")} | ${down.map((r) => r.country).join(", ")}`;
+  };
+  check(
+    "Command Center risers | fallers, F1 (identical to before A1)",
+    movers("F1"),
+    "Belgium, Lithuania, Austria, Romania, Iceland, Slovenia, Luxembourg, Cyprus, Curacao | Myanmar, Armenia, Cote d'Ivoire, Nepal, Netherlands, Nigeria, India, Eswatini, Angola, Malawi",
+  );
+  check(
+    "Command Center risers | fallers, F1 + J1 (identical to before A1)",
+    movers("Both"),
+    "Bosnia and Herzegovina, Kazakhstan, Belgium, Albania, Moldova, Kosovo, Hungary, Serbia, United Kingdom, Austria | Myanmar, Democratic Republic of the Congo, Turkmenistan, Armenia, Cote d'Ivoire, Nepal, Paraguay, Netherlands, India, Nigeria",
+  );
+  const postMovers = rolling.risersAndFallers(
+    rolling.rollingTotals(postsMonthly, coverage.end, (r) => (r.visa === "F1" ? r.post : null)).groups,
+  );
+  check(
+    "Consulates risers | fallers, F1 (identical to before A1)",
+    `${postMovers.risers.map(([p]) => p).join(", ")} | ${postMovers.fallers.map(([p]) => p).join(", ")}`,
+    "Porto Alegre, Naples, Brussels, Brasilia, Vilnius, Guadalajara, Warsaw, Rome, Vienna, Tijuana | Rangoon, Yerevan, Abidjan, Abuja, Mumbai, Kathmandu, Vancouver, Amsterdam, Ottawa, Karachi",
+  );
+
+  const linked = (param) => {
+    const choice = periods.periodFromLink(param, coverage);
+    return choice ? periods.resolvePeriod(choice, coverage).label : "rejected";
+  };
+  check(
+    "links: period=2010 / 2030-01_2031-01 / 2023-13_2024-01",
+    `${linked("2010")} / ${linked("2030-01_2031-01")} / ${linked("2023-13_2024-01")}`,
+    "rejected / rejected / rejected",
+  );
+  check("links: period=2017 is kept, labelled as partial", linked("2017"), "2017 (Mar–Dec)");
+  check(
+    "a period outside the data is labelled as all months, not the requested year",
+    periods.resolvePeriod({ kind: "year", year: 2010 }, coverage).label,
+    "All (since Mar 2017)",
+  );
+  const countryNames = [...new Set([...postsMonthly.map((r) => r.country), ...annualCountry.map((r) => r.country)])];
+  check("links: country=china / INDIA / unknown", `${url.matchOption("china", countryNames)} / ${url.matchOption("INDIA", countryNames)} / ${url.matchOption("Atlantis", countryNames)}`, "China / India / undefined");
 
   await rm(outDir, { recursive: true, force: true });
 

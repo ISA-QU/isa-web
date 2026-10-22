@@ -6,8 +6,8 @@
  */
 
 import { MONTH_NAMES } from "./constants";
-import { groupSum, latestCompleteYear, pctGrowth, sumBy } from "./metrics";
-import { MOVER_MIN_ISSUANCES } from "./rolling";
+import { changeVsBase, latestCompleteYearOf, recoveryVs2019 as recoveryOf } from "./measures";
+import { groupSum, sumBy } from "./metrics";
 import type { MonthRange, NationalityMonthlyRow, PostMonthlyRow, Visa } from "./types";
 
 /**
@@ -21,22 +21,18 @@ export function previousPeriod(range: MonthRange, coverage: MonthRange): MonthRa
 }
 
 /**
- * % change, or null ("—") when either side has fewer than 100 issuances: the
- * same qualifying rule as risers and fallers, so tiny volumes can't produce
- * misleading percentages.
+ * % change, or null: "—" when there is no previous period, "— (low volume)"
+ * when the previous period has fewer than 100 issuances. Only the earlier side
+ * needs 100, so a big drop to almost nothing still shows.
  */
 export function qualifiedChange(current: number, prior: number | null): number | null {
-  if (prior === null || current < MOVER_MIN_ISSUANCES || prior < MOVER_MIN_ISSUANCES) return null;
-  return pctGrowth(current, prior);
+  if (prior === null) return null;
+  return changeVsBase(current, prior);
 }
 
-/** Latest complete calendar year vs 2019 (100 = 2019 level); null below 100 issuances either year. */
+/** Latest complete year vs 2019 (100 = 2019 level); null ("— (low volume)") when 2019 had fewer than 100. */
 export function recoveryVs2019(rows: readonly PostMonthlyRow[], year: number | null): number | null {
-  if (year === null) return null;
-  const latest = sumBy(rows.filter((r) => r.year === year), (r) => r.issuances);
-  const base = sumBy(rows.filter((r) => r.year === 2019), (r) => r.issuances);
-  if (latest < MOVER_MIN_ISSUANCES || base < MOVER_MIN_ISSUANCES) return null;
-  return (latest / base) * 100;
+  return recoveryOf(rows, year).index;
 }
 
 export interface ConsulateRow {
@@ -103,8 +99,8 @@ export function buildConsulateTable(
     .sort((a, b) => b.volume - a.volume || a.post.localeCompare(b.post));
 }
 
-/** The latest complete calendar year in the monthly data (2025 today). */
-export const recoveryYearOf = (rows: readonly PostMonthlyRow[]): number | null => latestCompleteYear(rows);
+/** The latest complete calendar year in the monthly data's coverage (2025 today), the same for every consulate. */
+export const recoveryYearOf = (coverage: MonthRange): number | null => latestCompleteYearOf(coverage);
 
 /**
  * The context line's two counts for one country and period: visas issued by

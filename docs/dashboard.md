@@ -218,6 +218,12 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
   75,060 (−59.6%); monthly world totals within 5 of the post totals (202 of 216 month/visa
   pairs exact); FY2025 monthly sums 287,915 F1 / 292,742 J1 (all rows) and, countries only,
   equal to the annual table (287,520 / 292,418).
+- Fix Pack A1 (rules above), against figures recounted with pandas from the raw by-post
+  workbook: Venezuela 0 / low volume / low volume and "Insufficient Evidence"; Russia 5 vs
+  21, low volume, recovery 0.1; Myanmar 130 vs 1,705, −92.4%, 25.2; Ukraine recovery 1.1;
+  Nepal tops Recovery Leaders at 323 (Guinea and Eritrea left out); Kinshasa −88.8%; 26
+  countries' F1 change now low volume; Country 360 and Command Center agree for every
+  country; risers and fallers unchanged; `period=2010` rejected; `country=china` opens China.
 
 ## Architecture
 
@@ -246,6 +252,31 @@ scripts/
 
 Plotly (~5 MB uncompressed) is dynamically imported, so it lands in its own chunk and no
 page loads it until a chart mounts. `/transcript` and `/calculator` never pay for it.
+
+## Shared number rules (Fix Pack A)
+
+Every page works these out the same way, through `lib/dashboard/measures.ts`, so no page
+has its own version:
+
+- **Data end, not a country's own last row.** "Last 12 months" always ends at the data's
+  last month (`coverage.postsMonthly.end`, Feb 2026 today) and "latest complete year" is
+  the last calendar year fully inside the coverage (2025), for every country and
+  consulate. A consulate that stopped reporting (Caracas, Jan 2019; Kabul, Aug 2021) counts
+  0 for the months after, rather than being measured over an earlier window.
+- **Minimum base of 100.** A % change is shown only when the previous period had at least
+  100 issuances, and a recovery index (latest complete year vs 2019) only when 2019 had at
+  least 100. Otherwise the page shows "— (low volume)". Only the earlier side needs 100,
+  so a big base falling to almost nothing still shows (Myanmar ▼ 92.4%; Moscow recovery
+  0.2). This applies on Country 360, Consulates, Command Center (momentum and Recovery
+  Leaders), the header country cards and the globe. Risers and fallers keep their own rule
+  (100 in both periods).
+- **One "What to do".** Country 360 takes its row from `buildCommandCenterFrame()` for its
+  one country, so it always gives the same advice as Command Center. A country with no
+  visas issued in it in the last 12 months gets "Insufficient Evidence" with the reason
+  "No visas issued locally in the last 12 months".
+- **Links are checked.** A `period=` year or range entirely outside the data (e.g.
+  `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
+  `country=` ignores capitalisation (`country=china` opens China).
 
 ## Choices the data forced
 

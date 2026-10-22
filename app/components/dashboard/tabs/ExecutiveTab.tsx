@@ -6,6 +6,7 @@ import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { calendarYearLabel } from "../../../lib/dashboard/periods";
 import { int } from "../../../lib/dashboard/format";
+import { changeText, changeVsBase } from "../../../lib/dashboard/measures";
 import { groupSum, idxMaxNumeric, idxMaxString } from "../../../lib/dashboard/metrics";
 import {
   arrowPct,
@@ -23,6 +24,10 @@ const BLUE_GOLD_SCALE: Array<[number, string]> = [
   [0.5, "#3D8DDE"],
   [1, "#FFB81C"],
 ];
+
+/** F1 change vs the previous 12 months; "— (low volume)" when that period had fewer than 100. */
+const groupChange = (group: RollingGroup | undefined): string =>
+  changeText(group ? changeVsBase(group.current, group.prior) : null, group?.prior ?? 0, arrowPct);
 
 const peakLabel = (peakMonth: number): string =>
   peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A";
@@ -42,7 +47,7 @@ function CountryCard({
   const stats: Array<[string, string]> = [
     ["F1, last 12 months", int(f1?.current ?? 0)],
     ["J1, last 12 months", int(j1?.current ?? 0)],
-    ["F1 vs previous 12 months", arrowPct(f1?.change ?? null)],
+    ["F1 vs previous 12 months", groupChange(f1)],
     ["Top Consulate", row.topPost],
     ["Peak Visa Month", peakLabel(row.peakMonth)],
   ];
@@ -148,7 +153,7 @@ export default function ExecutiveTab() {
         customdata: globeRows.map((row) => [
           int(row.f1),
           int(row.j1),
-          arrowPct(last12.f1.get(row.country)?.change ?? null),
+          groupChange(last12.f1.get(row.country)),
           row.topPost,
           peakLabel(row.peakMonth),
         ]),

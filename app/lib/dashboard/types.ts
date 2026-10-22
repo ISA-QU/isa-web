@@ -164,8 +164,14 @@ export interface CommandCenterRow {
   cagr10yr: number | null;
   latest12Total: number;
   prior12Total: number;
+  /** null when the previous 12 months are below 100 issuances ("— (low volume)"). */
   latest12Momentum: number | null;
+  /** null when 2019 is below 100 issuances ("— (low volume)") or there is no consulate data. */
   recoveryIndex: number | null;
+  /** Issuances in 2019, the recovery base. */
+  baseline2019: number;
+  /** Whether the country has any monthly consulate rows for the selected visas. */
+  hasConsulateData: boolean;
   peakMonth: number | null;
   peakMonthName: string;
   seasonalityRatio: number | null;

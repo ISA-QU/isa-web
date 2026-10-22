@@ -13,9 +13,9 @@ import {
   share,
   yearToDateLabel,
 } from "../../../lib/dashboard/format";
+import { LOW_VOLUME, MIN_BASE, latestCompleteYearOf } from "../../../lib/dashboard/measures";
 import {
   buildCommandCenterFrame,
-  latestCompleteYear,
   notNa,
   recommendedOutreachWindow,
 } from "../../../lib/dashboard/metrics";
@@ -44,7 +44,17 @@ const PRIORITY_ACTIONS = [
 const VIEWS = ["Last-12-month volume", "Long-term growth", "Momentum"] as const;
 type View = (typeof VIEWS)[number];
 
-const recoveryText = (value: number | null) => (notNa(value) ? value.toFixed(0) : "N/A");
+/** Recovery index; "— (low volume)" when 2019 had fewer than 100 issuances. */
+const recoveryText = (r: CommandCenterRow) =>
+  notNa(r.recoveryIndex) ? r.recoveryIndex.toFixed(0) : r.hasConsulateData ? LOW_VOLUME : "N/A";
+
+/** Momentum; "— (low volume)" when the previous 12 months had fewer than 100 issuances. */
+const momentumText = (r: CommandCenterRow, format: (value: number) => string = metricPct) =>
+  notNa(r.latest12Momentum)
+    ? format(r.latest12Momentum)
+    : r.hasConsulateData && r.prior12Total < MIN_BASE
+      ? LOW_VOLUME
+      : "N/A";
 
 export default function CommandCenterTab() {
   // The Command Center deliberately ignores the sidebar year filter — it has its
@@ -70,6 +80,7 @@ export default function CommandCenterTab() {
             data.postsMonthly,
             visa,
             data.meta.coverage.annual.latestComplete,
+            data.meta.coverage.postsMonthly,
           ),
     [consulateMissing, operational, data.annualCountry, data.postsMonthly, visa, data.meta],
   );
@@ -97,17 +108,12 @@ export default function CommandCenterTab() {
     return sortBy(rows, [(r) => r.latest12Total, (r) => r.currentVolume]);
   }, [frame, minVolume, region, category, view]);
 
-  const latestMonthIndex = useMemo(
-    () =>
-      data.postsMonthly.length > 0
-        ? Math.max(...data.postsMonthly.map((row) => row.monthIndex))
-        : null,
-    [data.postsMonthly],
-  );
+  // The data's last month, the same for every country.
+  const latestMonthIndex = data.postsMonthly.length > 0 ? data.meta.coverage.postsMonthly.end : null;
 
   // The fixed periods behind the queue's columns, computed from the data.
   const latestFy = data.meta.coverage.annual.latestComplete;
-  const recoveryYear = latestCompleteYear(data.postsMonthly);
+  const recoveryYear = latestCompleteYearOf(data.meta.coverage.postsMonthly);
   const fixedPeriods = {
     last12:
       latestMonthIndex !== null
@@ -157,9 +163,9 @@ export default function CommandCenterTab() {
       key: "momentum",
       header: "Latest 12-Month Momentum",
       numeric: true,
-      render: (r) => metricPct(r.latest12Momentum),
+      render: (r) => momentumText(r),
     },
-    { key: "recovery", header: "Recovery Status", numeric: true, render: (r) => recoveryText(r.recoveryIndex) },
+    { key: "recovery", header: "Recovery Status", numeric: true, render: (r) => recoveryText(r) },
     { key: "peak", header: "Peak Recruitment Month", render: (r) => r.peakMonthName },
     { key: "concentration", header: "Concentration Risk", render: (r) => r.concentrationRisk },
     { key: "flags", header: "Secondary Flags", render: (r) => r.secondaryFlagsText },
@@ -177,8 +183,8 @@ export default function CommandCenterTab() {
     r.marketCategory,
     int(r.currentVolume),
     metricPct(r.growth10yr),
-    metricPct(r.latest12Momentum),
-    recoveryText(r.recoveryIndex),
+    momentumText(r),
+    recoveryText(r),
     r.peakMonthName,
     r.concentrationRisk,
     r.secondaryFlagsText,
@@ -307,7 +313,7 @@ export default function CommandCenterTab() {
       key: "momentum",
       header: "Change vs previous 12 months",
       numeric: true,
-      render: (r) => arrowPct(r.latest12Momentum),
+      render: (r) => momentumText(r, (value) => arrowPct(value)),
     },
     { key: "latest", header: "Latest 12 Months", numeric: true, render: (r) => int(r.latest12Total) },
     { key: "prior", header: "Previous 12 Months", numeric: true, render: (r) => int(r.prior12Total) },
@@ -420,7 +426,7 @@ export default function CommandCenterTab() {
               columns={[
                 { key: "country", header: "Country", render: (r) => r.country },
                 { key: "volume", header: "Current Volume", numeric: true, render: (r) => int(r.currentVolume) },
-                { key: "momentum", header: "Momentum", numeric: true, render: (r) => metricPct(r.latest12Momentum) },
+                { key: "momentum", header: "Momentum", numeric: true, render: (r) => momentumText(r) },
                 { key: "action", header: "Action", render: (r) => r.recommendedAction },
                 { key: "evidence", header: "Evidence", render: (r) => r.evidence },
               ]}
@@ -443,7 +449,7 @@ export default function CommandCenterTab() {
               columns={[
                 { key: "country", header: "Country", render: (r) => r.country },
                 { key: "volume", header: "Current Volume", numeric: true, render: (r) => int(r.currentVolume) },
-                { key: "momentum", header: "Momentum", numeric: true, render: (r) => metricPct(r.latest12Momentum) },
+                { key: "momentum", header: "Momentum", numeric: true, render: (r) => momentumText(r) },
                 { key: "growth", header: "10-Year Growth", numeric: true, render: (r) => metricPct(r.growth10yr) },
                 { key: "action", header: "Action", render: (r) => r.recommendedAction },
               ]}
@@ -463,7 +469,7 @@ export default function CommandCenterTab() {
             rowKey={rowKey}
             columns={[
               { key: "country", header: "Country", render: (r) => r.country },
-              { key: "index", header: "Recovery Index", numeric: true, render: (r) => recoveryText(r.recoveryIndex) },
+              { key: "index", header: "Recovery Index", numeric: true, render: (r) => recoveryText(r) },
               { key: "volume", header: "Latest 12-Month Volume", numeric: true, render: (r) => int(r.latest12Total) },
               { key: "peak", header: "Peak Month", render: (r) => r.peakMonthName },
               { key: "action", header: "Action", render: (r) => r.recommendedAction },

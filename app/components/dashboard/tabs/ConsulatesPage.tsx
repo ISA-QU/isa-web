@@ -13,6 +13,7 @@ import {
   type ConsulateRow,
 } from "../../../lib/dashboard/consulates";
 import { int, metricNumber, metricPct, monthDisplay, monthLongDisplay, share } from "../../../lib/dashboard/format";
+import { LOW_VOLUME, MIN_BASE } from "../../../lib/dashboard/measures";
 import {
   groupSum,
   idxMaxNumeric,
@@ -117,7 +118,10 @@ export default function ConsulatesPage() {
     [data.postsMonthly, visas],
   );
   const prior = previousPeriod(periodRange, coverage);
-  const recoveryYear = useMemo(() => recoveryYearOf(data.postsMonthly), [data.postsMonthly]);
+  const recoveryYear = recoveryYearOf(coverage);
+  /** Recovery index; "— (low volume)" when the consulate had fewer than 100 issuances in 2019. */
+  const recoveryCell = (value: number | null) =>
+    value !== null ? value.toFixed(0) : recoveryYear === null ? "—" : LOW_VOLUME;
   const scopeCountry = scope === "country" ? focusCountry : null;
   const scopeName = scopeCountry ?? "all countries";
 
@@ -379,7 +383,8 @@ export default function ConsulatesPage() {
   // More details: the selected consulate's own figures for the Period.
   const periodMetrics = postPeriodMetrics(selectedPeriodRows);
   const activeMonths = new Set(selectedPeriodRows.map((r) => r.monthIndex)).size;
-  const latestIndex = selectedHistory.length > 0 ? Math.max(...selectedHistory.map((r) => r.monthIndex)) : null;
+  // The data's last month (the same for every consulate), not this consulate's own last row.
+  const latestIndex = selectedHistory.length > 0 ? coverage.end : null;
   const latestMonthTotal =
     latestIndex !== null
       ? sumBy(selectedHistory.filter((r) => r.monthIndex === latestIndex), (r) => r.issuances)
@@ -474,13 +479,15 @@ export default function ConsulatesPage() {
       "Momentum",
       selectedRow?.change !== null && selectedRow?.change !== undefined && prior
         ? `${arrowPct(selectedRow.change)} vs ${monthRangeLabel(prior)}.`
-        : "No comparison for this period.",
+        : prior && selectedRow
+          ? `${LOW_VOLUME}: fewer than ${MIN_BASE} issuances in ${monthRangeLabel(prior)}.`
+          : "No comparison for this period.",
     ],
     [
       "Recovery",
       selectedRow?.recovery !== null && selectedRow?.recovery !== undefined
         ? `${selectedRow.recovery.toFixed(0)} (100 = 2019 level).`
-        : "Not available (needs 100+ issuances in 2019 and in the latest complete year).",
+        : `${LOW_VOLUME}: needs ${MIN_BASE}+ issuances in 2019.`,
     ],
   ];
 
@@ -572,20 +579,20 @@ export default function ConsulatesPage() {
               ? [{ key: "country", header: "Country", render: (r: ConsulateRow) => r.country }]
               : []),
             { key: "volume", header: periodRange.label, numeric: true, render: (r) => int(r.volume) },
-            { key: "change", header: changeLabel, numeric: true, render: (r) => arrowPctOrDash(r.change) },
+            { key: "change", header: changeLabel, numeric: true, render: (r) => changeCell(r) },
             { key: "share", header: `Share of ${scopeName}`, numeric: true, render: (r) => `${r.share.toFixed(1)}%` },
             {
               key: "recovery",
               header: `${recoveryLabel} · 100 = 2019 level`,
               numeric: true,
-              render: (r) => (r.recovery === null ? "—" : r.recovery.toFixed(0)),
+              render: (r) => recoveryCell(r.recovery),
             },
           ]}
         />
         <p className="mt-2 text-xs text-slate-400">
-          Click a row, or use the picker, to select a consulate. Total {int(scopeTotal)}. &quot;—&quot;
-          means no comparison: fewer than {MOVER_MIN_ISSUANCES} issuances in a period or year, or
-          no earlier period. {noPriorNote}
+          Click a row, or use the picker, to select a consulate. Total {int(scopeTotal)}. &quot;{LOW_VOLUME}&quot;
+          means fewer than {MIN_BASE} issuances in the previous period (change) or in 2019 (recovery);
+          &quot;—&quot; means no earlier period. {noPriorNote}
         </p>
         <DownloadCsvButton
           label="Download consulate table CSV"
@@ -709,7 +716,7 @@ export default function ConsulatesPage() {
           <SubHeading>Consulate detail: {selectedRow.post}</SubHeading>
           <KpiRow>
             <KpiCard accent="gold" label={`${visaLabel}, ${periodRange.label}`} value={int(selectedRow.volume)} />
-            <KpiCard label={changeLabel} value={arrowPctOrDash(selectedRow.change)} delta={noPriorNote ?? undefined} />
+            <KpiCard label={changeLabel} value={changeCell(selectedRow)} delta={noPriorNote ?? undefined} />
             <KpiCard
               label={`Share of ${selectedRow.country}, ${periodRange.label}`}
               value={`${selectedRow.countryShare.toFixed(1)}%`}
@@ -717,7 +724,7 @@ export default function ConsulatesPage() {
             <KpiCard
               accent="navy"
               label={recoveryLabel}
-              value={selectedRow.recovery === null ? "—" : selectedRow.recovery.toFixed(0)}
+              value={recoveryCell(selectedRow.recovery)}
               delta="100 = 2019 level"
             />
             <KpiCard label="Peak month (typical year)" value={peakName} valueClassName="!text-[18px]" />
@@ -825,7 +832,9 @@ export default function ConsulatesPage() {
   );
 }
 
-const arrowPctOrDash = (value: number | null) => (value === null ? "—" : arrowPct(value));
+/** "—" with no previous period; "— (low volume)" when the previous period had fewer than 100. */
+const changeCell = (row: { change: number | null; prior: number | null }) =>
+  row.prior === null ? "—" : row.change === null ? LOW_VOLUME : arrowPct(row.change);
 
 /** "This country / All countries" switch: a radio group, arrow keys to move. */
 function ScopeSwitch({

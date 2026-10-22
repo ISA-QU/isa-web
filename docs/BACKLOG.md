@@ -40,7 +40,12 @@ one shared country and F1 defaults (5a).
 
 ## 4b · Events timeline
 
-- [ ] Agree the scope and the list of events. (Named as a planned feature; not yet specified in these notes.)
+Sourced event markers on the Historical Trends chart.
+
+- [ ] Research and draft the events, for example: 2001 9/11 and visa screening; 2008–09 financial crisis; 2010–15 China/India growth; 2016–17 decline; 2020 COVID; 2021–23 recovery; 2025 US visa-policy changes.
+- [ ] Each marker has a date, one neutral line of description and a source link.
+- [ ] Get the wording and sources approved before building.
+- [ ] Build the markers on the Historical Trends chart.
 
 ## 7 · Monthly nationality data
 
@@ -58,7 +63,8 @@ one shared country and F1 defaults (5a).
 
 ## 9 · Polish
 
-- [ ] Country flags where countries are listed (scope to be agreed).
+- [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
+- [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).
 - [ ] Globe improvements: it is colored by F1 issuances for Jan 2024 – Feb 2026; review what it should show and its Rotate/Pause controls (the audit found a blank Rotate button on the live site).
 - [ ] Card tooltips are native browser tooltips (slow to appear, not keyboard or touch accessible); consider an accessible tooltip.
 - [ ] Remove code no longer shown: `growthLabel` / `summaryGrowthLabel`, `yoyGrowth` displays, `opportunityScore` / `marketTier`, the unused `includeOpportunity` methodology note, and `COUNTRY_COORDS` / the summary's `lat`/`lon` (kept so far because they feed shared calculations).
@@ -76,5 +82,16 @@ one shared country and F1 defaults (5a).
 
 ## Later projects
 
-- [ ] News panel (scope to be defined).
-- [ ] Slate integration (scope to be defined).
+After launch.
+
+- [ ] **News panel:** per-country and US visa-policy news from reliable sources (State Department, embassies, major outlets), clearly labelled as context.
+  - [ ] Needs a small secure backend to hold the news-service key.
+- [ ] **Slate integration:** aggregated Quinnipiac counts (applications, admits, deposits by country and term) compared with market visa trends.
+  - [ ] Needs university IT and data-governance approval; start that conversation early.
+  - [ ] Aggregated data only, behind sign-in.
+
+## Later ideas
+
+- [ ] Monthly "what changed" email digest.
+- [ ] One-click country briefing PDF.
+- [ ] Upload new monthly data from the dashboard.

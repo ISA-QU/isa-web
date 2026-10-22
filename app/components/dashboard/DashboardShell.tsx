@@ -13,6 +13,7 @@ import { canonicalTab } from "../../lib/dashboard/url";
 import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
 import ControlBar from "./ControlBar";
+import { TabNavigationContext, type OpenTab } from "./TabNavigation";
 import { DashboardProvider, useDashboard, type InitialSelection } from "./DashboardContext";
 import HeaderKpis from "./HeaderKpis";
 import { MethodologyExpanders } from "./shared";
@@ -20,7 +21,6 @@ import { MethodologyExpanders } from "./shared";
 import CommandCenterTab from "./tabs/CommandCenterTab";
 import ExecutiveTab from "./tabs/ExecutiveTab";
 import Country360Tab from "./tabs/Country360Tab";
-import ConsulatesTab from "./tabs/ConsulatesTab";
 import ConsulatesPage from "./tabs/ConsulatesPage";
 import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
 
@@ -33,7 +33,6 @@ const TABS = [
   { id: "command", label: "Primary: Command", Component: CommandCenterTab },
   { id: "executive", label: "Executive", Component: ExecutiveTab },
   { id: "country-360", label: "Country 360", Component: Country360Tab },
-  { id: "country-intelligence", label: "Country Intelligence", Component: ConsulatesTab },
   { id: "consulates", label: "Consulates", Component: ConsulatesPage },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
 ] as const;
@@ -177,6 +176,19 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
   useUrlSync(focusCountry, visa, periodToParam(period), active);
 
+  // Lets a page open another tab with that tab's own address settings, e.g.
+  // Country 360's "See all consulates" link opens Consulates with scope=country.
+  const openTab: OpenTab = (tab, params) => {
+    if (params) {
+      const search = new URLSearchParams(window.location.search);
+      search.delete("consulate");
+      for (const [key, value] of Object.entries(params)) search.set(key, value);
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}?${search.toString()}`);
+    }
+    setActive(tab);
+    window.scrollTo({ top: 0 });
+  };
+
   // Tabs: arrow keys move between them, Home/End jump to the ends.
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -240,7 +252,9 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
           </div>
 
           <div id="dashboard-tabpanel" role="tabpanel" aria-labelledby={`tab-${active}`}>
-            <ActiveTab />
+            <TabNavigationContext.Provider value={openTab}>
+              <ActiveTab />
+            </TabNavigationContext.Provider>
           </div>
 
           {/* The methodology, once for every tab. */}

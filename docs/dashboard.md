@@ -370,6 +370,28 @@ The Consulates page, top to bottom:
   seasonality statistic, the "recovery from visible range" checkbox, the duplicate country
   seasonality chart and the intro and Active Range panels.
 
+In Feature 8-2a, **Country Intelligence was merged into Country 360**, so each country has one
+page (layout only; every number is unchanged and still consulate-based). Old links with
+`tab=country-intelligence` open Country 360. `tabs/ConsulatesTab.tsx` is no longer used.
+
+Country 360, top to bottom:
+- **Primary KPIs** (each names its period; Recovery says "100 = 2019 level").
+- **Leading consulate:** the leader in the Period and over the full history (one line when the
+  Period is All), computed exactly as on the Consulates page, with a "See all consulates" link
+  that opens Consulates with `scope=country`.
+- **Monthly trend** Mar 2017 onward, Period shaded, real date axis; F1 + J1 shows two lines.
+- **Compare countries** (top 5, region presets, up to 8) and **typical-year seasonality** with
+  the Period as a gold line, both moved unchanged from Country Intelligence.
+- **Long-term country trajectory** (fiscal years, its own slider), kept visible.
+- **What to do:** the recommended action, why, what to watch, timing and caveats, once.
+- **More details:** secondary KPIs (including Active Posts and Seasonality CV), summary, recovery
+  chart, risk table, all-country rankings, CSVs and methodology.
+- Dropped as duplicates: the period-only trend, the top-posts table, the consulate network
+  and compare-consulates charts and Top F1 Consulates (all on the Consulates page), the
+  stacked-by-year trend and F1 vs J1 chart (merged into the monthly trend), the full-history
+  average/median month chart (the typical-year chart is kept; its CSV stays), the F1-only
+  change card, and the separate recommendation cards.
+
 ## Handoff notes for deployment (Koushik)
 
 The branch `dev/dashboard-improvements` changes the **`rebuild-dashboard` Lambda**. Nothing

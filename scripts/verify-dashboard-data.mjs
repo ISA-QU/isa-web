@@ -63,6 +63,7 @@ async function compileLib() {
       "app/lib/dashboard/metrics.ts",
       "app/lib/dashboard/consulates.ts",
       "app/lib/dashboard/periods.ts",
+      "app/lib/dashboard/url.ts",
       "app/lib/dashboard/constants.ts",
       "app/lib/dashboard/types.ts",
       "--outDir", outDir,
@@ -89,6 +90,7 @@ async function main() {
   const metrics = await import(pathToFileURL(path.join(outDir, "metrics.js")).href);
   const consulates = await import(pathToFileURL(path.join(outDir, "consulates.js")).href);
   const periods = await import(pathToFileURL(path.join(outDir, "periods.js")).href);
+  const url = await import(pathToFileURL(path.join(outDir, "url.js")).href);
 
   const VISA = ["F1", "J1"];
   const monthIndex = (year, month) => year * 12 + (month - 1);
@@ -394,6 +396,28 @@ async function main() {
     "context line hidden when nationalityMonthly is missing",
     consulates.consulateContext(postsMonthly, null, "India", last12Range, ["F1"]),
     null,
+  );
+
+  console.log("\n  Country 360  (8-2a: Country Intelligence merged in; old links; leader matches Consulates)");
+  const tabIds = ["command", "executive", "country-360", "consulates", "historical-trends"];
+  check("old country-intelligence links open", url.canonicalTab("country-intelligence", tabIds), "country-360");
+  check(
+    "old consulate-intelligence / historical-consulates links open",
+    `${url.canonicalTab("consulate-intelligence", tabIds)} / ${url.canonicalTab("historical-consulates", tabIds)}`,
+    "consulates / consulates",
+  );
+  const indiaF1History = postsMonthly.filter((r) => r.country === "India" && r.visa === "F1");
+  const indiaHc = metrics.postPeriodMetrics(indiaF1History);
+  check(
+    "Country 360 India F1: last 12 months / change / recovery",
+    `${sum(indiaF1History.filter(inWindow(last12Range.start, last12Range.end)))} / ${indiaHc.latest12Change.toFixed(1)} / ${Math.round(indiaHc.recoveryIndex)}`,
+    "27258 / -62.2 / 64",
+  );
+  const periodLeader = indiaLast12[0];
+  check(
+    "Country 360 Period leader, India F1, last 12 months (same calculation as Consulates)",
+    periodLeader ? `${periodLeader.post} ${periodLeader.share.toFixed(1)}%` : "missing",
+    "Hyderabad 29.9%",
   );
 
   await rm(outDir, { recursive: true, force: true });

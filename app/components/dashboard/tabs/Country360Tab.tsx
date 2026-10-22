@@ -3,11 +3,10 @@
 import { useMemo, useState } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES, MONTH_NAMES_FULL, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
   decimals,
   int,
-  metricDecimal,
   metricNumber,
   metricPct,
   monthDisplay,
@@ -35,12 +34,16 @@ import {
   latestCompleteYear,
   monthlyCountryName,
   regionForCountry,
+  seasonalityCv,
 } from "../../../lib/dashboard/metrics";
+import { buildConsulateTable, recoveryYearOf } from "../../../lib/dashboard/consulates";
+import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
+import { useOpenTab } from "../TabNavigation";
 import {
   Caption,
   DownloadCsvButton,
@@ -63,7 +66,22 @@ import {
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
   // Country, visa and period come from the control bar.
-  const { data, focusCountry: country, visa, periodRange, provisionalYears } = useDashboard();
+  const {
+    data,
+    focusCountry: country,
+    visa,
+    visaLabel,
+    periodRange,
+    provisionalYears,
+    compareCountries,
+    setCompareCountries,
+    f1Filtered,
+    visaFiltered,
+    focusRows,
+    typical,
+    consulateCountries,
+    summary,
+  } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -75,12 +93,6 @@ export default function Country360Tab() {
 
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
-  // Consulate comparisons belong to one country; a country change resets them.
-  const [compareChoice, setCompareChoice] = useState<{ country: string; posts: string[] } | null>(
-    null,
-  );
-  const comparePosts = compareChoice?.country === country ? compareChoice.posts : null;
-  const setComparePosts = (posts: string[]) => setCompareChoice({ country, posts });
 
   const visaClasses = selectedVisaClasses(visa);
   const monthCountry = monthlyCountryName(country);
@@ -133,22 +145,6 @@ export default function Country360Tab() {
   const fullRangeText = monthRangeLabel(data.meta.coverage.postsMonthly);
   const recoveryYear = latestCompleteYear(hcCountry);
 
-  /* ---- Consulate comparison defaults: top five posts by F1 volume ---- */
-  const postOptions = useMemo(
-    () => [...new Set(hcCountryAll.map((r) => r.post))].sort(),
-    [hcCountryAll],
-  );
-  const defaultComparePosts = useMemo(() => {
-    const totals = groupSum(
-      hcCountryAll.filter((r) => r.visa === "F1"),
-      (r) => r.post,
-      (r) => r.issuances,
-    );
-    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([post]) => post);
-    return (ranked.length > 0 ? ranked : postOptions).slice(0, 5);
-  }, [hcCountryAll, postOptions]);
-
-  const selectedPosts = comparePosts ?? defaultComparePosts;
 
   const empty =
     opCountryAll.length === 0 && histCountryAll.length === 0 && hcCountryAll.length === 0;
@@ -271,46 +267,7 @@ export default function Country360Tab() {
     keyRiskParts.length > 0 ? keyRiskParts.join(" and ") : "No high-threshold risk flag triggered";
 
   /* ---- Charts ---- */
-  const opTrend = useMemo(() => {
-    const byMonthVisa = groupSum(
-      opPeriod,
-      (r) => `${r.year * 12 + (r.month - 1)}|${r.visa}`,
-      (r) => r.issuances,
-    );
-    const visas = [...new Set(opPeriod.map((r) => r.visa))].sort();
-    const traces: Trace[] = visas.map((visaClass) => {
-      const points = [...byMonthVisa.entries()]
-        .filter(([key]) => key.endsWith(`|${visaClass}`))
-        .map(([key, value]) => ({ index: Number(key.split("|")[0]), value }))
-        .sort((a, b) => a.index - b.index);
-      return {
-        type: "scatter",
-        mode: "lines+markers",
-        name: visaClass,
-        x: points.map((p) => monthDisplay(p.index)),
-        y: points.map((p) => p.value),
-        line: { color: VISA_COLORS[visaClass] },
-        marker: { color: VISA_COLORS[visaClass] },
-      } as Trace;
-    });
-    const layout: ChartLayout = {
-      height: 410,
-      title: { text: `Monthly Trend - ${country}, ${periodRange.label}` },
-      hovermode: "x unified",
-      xaxis: { title: { text: "Month" } },
-      yaxis: { title: { text: "Issuances" } },
-    };
-    return { data: traces, layout };
-  }, [opPeriod, country, periodRange.label]);
 
-  const currentPosts = useMemo(
-    () =>
-      [...groupSum(opPeriod, (r) => r.post, (r) => r.issuances).entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([post, issuances]) => ({ post, issuances })),
-    [opPeriod],
-  );
 
   const histRange = useMemo(
     () => histCountryAll.filter((r) => r.fiscalYear >= histStart && r.fiscalYear <= histEnd),
@@ -400,58 +357,7 @@ export default function Country360Tab() {
     return { data: traces, layout, hasRows: histRange.length > 0 };
   }, [histRange, histStart, histEnd, histCountry, provisionalYears]);
 
-  const networkChart = useMemo(() => {
-    const byMonthVisa = groupSum(hcCountry, (r) => `${r.monthIndex}|${r.visa}`, (r) => r.issuances);
-    const visas = [...new Set(hcCountry.map((r) => r.visa))].sort();
-    const traces: Trace[] = visas.map((visaClass) => {
-      const points = [...byMonthVisa.entries()]
-        .filter(([key]) => key.endsWith(`|${visaClass}`))
-        .map(([key, value]) => ({ index: Number(key.split("|")[0]), value }))
-        .sort((a, b) => a.index - b.index);
-      return {
-        type: "scatter",
-        mode: "lines",
-        name: visaClass,
-        x: points.map((p) => monthDisplay(p.index)),
-        y: points.map((p) => p.value),
-        line: { color: VISA_COLORS[visaClass] },
-      } as Trace;
-    });
-    const layout: ChartLayout = {
-      height: 440,
-      title: { text: `Monthly Consulate Network Trend - ${monthCountry}` },
-      hovermode: "x unified",
-      xaxis: { title: { text: "Month" } },
-      yaxis: { title: { text: "Issuances" } },
-    };
-    return { data: traces, layout };
-  }, [hcCountry, monthCountry]);
 
-  const compareChart = useMemo(() => {
-    const rows = hcCountry.filter((r) => selectedPosts.includes(r.post));
-    const byMonthPost = groupSum(rows, (r) => `${r.monthIndex}|${r.post}`, (r) => r.issuances);
-    const traces: Trace[] = selectedPosts.map((post) => {
-      const points = [...byMonthPost.entries()]
-        .filter(([key]) => key.slice(key.indexOf("|") + 1) === post)
-        .map(([key, value]) => ({ index: Number(key.split("|")[0]), value }))
-        .sort((a, b) => a.index - b.index);
-      return {
-        type: "scatter",
-        mode: "lines",
-        name: post,
-        x: points.map((p) => monthDisplay(p.index)),
-        y: points.map((p) => p.value),
-      } as Trace;
-    });
-    const layout: ChartLayout = {
-      height: 420,
-      title: { text: "Selected Consulate Comparison" },
-      hovermode: "x unified",
-      xaxis: { title: { text: "Month" } },
-      yaxis: { title: { text: "Issuances" } },
-    };
-    return { data: traces, layout };
-  }, [hcCountry, selectedPosts]);
 
   const recovery = useMemo(() => {
     const rows: Array<{ period: string; index: number }> = [];
@@ -650,58 +556,200 @@ export default function Country360Tab() {
     summaryBullets.push("Comparable evidence is limited for this country in the current filters.");
   }
 
+  /* ---- Moved from Country Intelligence (8-2a) ---- */
+
+  // Leading consulate in the Period and over the full history: the same
+  // calculation as the Consulates page (buildConsulateTable), so they match.
+  const visaRows = useMemo(
+    () => data.postsMonthly.filter((r) => visaClasses.includes(r.visa)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.postsMonthly, visa],
+  );
+  const consulateRecoveryYear = useMemo(() => recoveryYearOf(data.postsMonthly), [data.postsMonthly]);
+  const fullRange = coverage.postsMonthly;
+  const periodLeader = useMemo(
+    () => buildConsulateTable(visaRows, periodRange, null, monthCountry, consulateRecoveryYear)[0] ?? null,
+    [visaRows, periodRange, monthCountry, consulateRecoveryYear],
+  );
+  const historyLeader = useMemo(
+    () => buildConsulateTable(visaRows, fullRange, null, monthCountry, consulateRecoveryYear)[0] ?? null,
+    [visaRows, fullRange, monthCountry, consulateRecoveryYear],
+  );
+  const periodIsFullHistory = periodRange.start === fullRange.start && periodRange.end === fullRange.end;
+  const sentenceStart = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+  // Monthly trend, Mar 2017 onward, Period shaded. F1 + J1 shows both lines.
+  const monthlyTrend = useMemo(() => {
+    const traces: Trace[] = (["F1", "J1"] as const)
+      .filter((v) => visaClasses.includes(v))
+      .map((v) => {
+        const totals = groupSum(hcCountryAll.filter((r) => r.visa === v), (r) => r.monthIndex, (r) => r.issuances);
+        const months = [...totals.keys()].sort((a, b) => a - b);
+        return {
+          type: "scatter",
+          mode: "lines",
+          name: v,
+          x: months.map(monthDate),
+          y: months.map((m) => totals.get(m)!),
+          line: { color: VISA_COLORS[v], width: 2.5 },
+          hovertemplate: `${v}: %{y:,.0f}<extra></extra>`,
+        } as Trace;
+      });
+    const layout: ChartLayout = {
+      height: 420,
+      title: {
+        text: `Monthly ${visaLabelOf(visa)} issuances - ${country}<br><sup>${fullRangeText} · shaded: ${periodRange.label}</sup>`,
+      },
+      hovermode: "x unified",
+      xaxis: {
+        title: { text: "Month" },
+        type: "date",
+        tickformat: "%b %Y",
+        hoverformat: "%b %Y",
+        dtick: "M12",
+        tickangle: -45,
+      },
+      yaxis: { title: { text: "Issuances" } },
+      shapes: [
+        {
+          type: "rect",
+          xref: "x",
+          yref: "paper",
+          x0: monthDate(periodRange.start),
+          x1: monthDate(periodRange.end + 1),
+          y0: 0,
+          y1: 1,
+          fillcolor: "#FFB81C",
+          opacity: 0.12,
+          line: { width: 0 },
+          layer: "below",
+        },
+      ],
+    };
+    return { traces, layout };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hcCountryAll, visa, country, periodRange, fullRangeText]);
+
+  // Compare countries: unchanged from Country Intelligence.
+  const COMPARE_MAX = 8;
+  const f1ByCountry = useMemo(() => {
+    const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  }, [f1Filtered]);
+  const topFive = useMemo(() => f1ByCountry.slice(0, 5), [f1ByCountry]);
+  const compareList = compareCountries ?? topFive;
+  const compareOptions = useMemo(() => [...consulateCountries].sort(), [consulateCountries]);
+  const comparePresets = useMemo(() => {
+    const regions = [...new Set(f1ByCountry.map(regionForCountry))].filter((r) => r !== "Other").sort();
+    return [
+      { label: `Top 5 markets (${periodRange.label})`, values: topFive },
+      ...regions.map((region) => ({
+        label: region,
+        values: f1ByCountry.filter((c) => regionForCountry(c) === region).slice(0, COMPARE_MAX),
+      })),
+    ];
+  }, [f1ByCountry, topFive, periodRange.label]);
+  const comparison = useMemo(() => {
+    const rows = visaFiltered.filter((r) => compareList.includes(r.country));
+    const byMonthCountry = groupSum(
+      rows,
+      (r) => `${r.year * 12 + (r.month - 1)}|${r.country}`,
+      (r) => r.issuances,
+    );
+    const traces: Trace[] = compareList.map((c) => {
+      const points = [...byMonthCountry.entries()]
+        .filter(([key]) => key.slice(key.indexOf("|") + 1) === c)
+        .map(([key, value]) => ({ index: Number(key.split("|")[0]), value }))
+        .sort((a, b) => a.index - b.index);
+      return {
+        type: "scatter",
+        mode: "lines+markers",
+        name: c,
+        x: points.map((p) => monthDisplay(p.index)),
+        y: points.map((p) => p.value),
+        line: {},
+      } as Trace;
+    });
+    const layout: ChartLayout = {
+      height: 420,
+      title: { text: `${visaLabel} Issuance Comparison Over Time, ${periodRange.label}` },
+      hovermode: "x unified",
+    };
+    return { traces, layout };
+  }, [visaFiltered, compareList, visaLabel, periodRange.label]);
+
+  // Typical-year seasonality with the Period as a gold line: unchanged from Country Intelligence.
+  const typicalSeasonality = useMemo(() => {
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const typicalRows = typical.rows.filter((r) => r.country === monthCountry);
+    const typicalTotals = groupSum(typicalRows, (r) => r.month, (r) => r.issuances);
+    const typicalCounts = calendarMonthYearCounts(typical.rows);
+    const typicalAvg = months.map((m) => averagePerMonth(typicalTotals.get(m) ?? 0, m, typicalCounts));
+    const periodCounts = calendarMonthYearCounts(visaFiltered);
+    const periodTotals = groupSum(focusRows, (r) => r.month, (r) => r.issuances);
+    const periodAvg = months.map((m) =>
+      (periodCounts.get(m) ?? 0) > 0 ? averagePerMonth(periodTotals.get(m) ?? 0, m, periodCounts) : null,
+    );
+    const traces: Trace[] = [
+      {
+        type: "bar",
+        name: `Typical year (${typical.label})`,
+        x: months.map((m) => MONTH_NAMES[m]),
+        y: typicalAvg,
+        customdata: months.map((m) => typicalCounts.get(m) ?? 0),
+        marker: { color: "#3D8DDE" },
+        hovertemplate: `<b>%{x}</b><br>Typical year: %{y:,.0f} ${visaLabel} per month<br>Years averaged: %{customdata}<extra></extra>`,
+      } as Trace,
+      {
+        type: "scatter",
+        mode: "lines+markers",
+        name: periodRange.label,
+        x: months.map((m) => MONTH_NAMES[m]),
+        y: periodAvg,
+        line: { color: "#FFB81C", width: 3 },
+        marker: { color: "#FFB81C", size: 7 },
+        hovertemplate: `<b>%{x}</b><br>${periodRange.label}: %{y:,.0f} per month<extra></extra>`,
+      } as Trace,
+    ];
+    const layout: ChartLayout = {
+      height: 380,
+      title: { text: `${visaLabel} Seasonality - ${country}, average per month` },
+      legend: { orientation: "h", y: -0.18 },
+    };
+    return { traces, layout };
+  }, [typical, monthCountry, visaFiltered, focusRows, visaLabel, periodRange.label, country]);
+
+  // Active Posts and Seasonality CV (More details): unchanged from Country Intelligence.
+  const activePosts = new Set(focusRows.map((r) => r.post)).size;
+  const focusCv = seasonalityCv(focusRows);
+
+  // All-country rankings (More details): unchanged from Country Intelligence.
+  const rankingWindow = useMemo(() => {
+    const f1 = rollingTotals(data.postsMonthly, endIndex, (r) => (r.visa === "F1" ? r.country : null));
+    const j1 = rollingTotals(data.postsMonthly, endIndex, (r) => (r.visa === "J1" ? r.country : null));
+    return { f1: f1.groups, j1: j1.groups, current: f1.current };
+  }, [data.postsMonthly, endIndex]);
+  const rankings = useMemo(
+    () =>
+      summary
+        .map((row) => {
+          const f1 = rankingWindow.f1.get(row.country);
+          return {
+            ...row,
+            f1Last12: f1?.current ?? 0,
+            j1Last12: rankingWindow.j1.get(row.country)?.current ?? 0,
+            f1Change: f1?.change ?? null,
+          };
+        })
+        .sort((a, b) => b.f1Last12 - a.f1Last12 || a.country.localeCompare(b.country)),
+    [summary, rankingWindow],
+  );
+
+  const openTab = useOpenTab();
+
   return (
     <div className="space-y-6">
-      <SectionTitle>Country 360</SectionTitle>
-
-      <Panel accent="navy">
-        <h4 className="mb-2 text-base font-bold text-white">
-          Current performance, long-term trajectory, consulate network, timing, and recommended
-          admissions actions.
-        </h4>
-        <p className="text-sm leading-relaxed text-[#DDEBFA]">
-          Country 360 combines the three validated intelligence layers without merging their
-          different grains.
-        </p>
-      </Panel>
-
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label={`Trajectory chart fiscal years: FY${histStart} - FY${histEnd}`}>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={firstFy}
-              max={latestFy}
-              value={histStart}
-              onChange={(e) => setHistStart(Math.min(Number(e.target.value), histEnd))}
-              className="w-full accent-[#FFB81C]"
-              aria-label="Historical range start"
-            />
-            <input
-              type="range"
-              min={firstFy}
-              max={latestFy}
-              value={histEnd}
-              onChange={(e) => setHistEnd(Math.max(Number(e.target.value), histStart))}
-              className="w-full accent-[#FFB81C]"
-              aria-label="Historical range end"
-            />
-          </div>
-        </Field>
-      </div>
-
-      <div className="max-w-3xl">
-        <ComparePicker
-          label="Compare consulates"
-          noun="consulates"
-          options={postOptions}
-          value={selectedPosts}
-          onChange={setComparePosts}
-          presets={[{ label: "Top 5 consulates by F1 (full history)", values: defaultComparePosts }]}
-          max={8}
-        />
-      </div>
+      <SectionTitle>Country 360 · {country}</SectionTitle>
 
       {empty ? (
         <InfoCallout>
@@ -709,36 +757,7 @@ export default function Country360Tab() {
         </InfoCallout>
       ) : (
         <>
-          <section>
-            <SubHeading>
-              Country Recommendation
-              <FixedTag title="Built from fixed periods; ignores the Period control.">Fixed periods</FixedTag>
-            </SubHeading>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-              <KpiCard label="Strategic Status" value={`${metrics.category} Market`} valueClassName="!text-[16px]" />
-              <KpiCard label="Current Momentum" value={momentumLabel} valueClassName="!text-[16px]" />
-              <KpiCard label="Recommended Action" value={metrics.action} valueClassName="!text-[14px]" />
-              <KpiCard label="Recruitment Timing" value={metrics.profile.timing} valueClassName="!text-[13px]" />
-              <KpiCard label="Key Risk" value={keyRisk} valueClassName="!text-[13px]" />
-              <KpiCard label="Confidence" value={metrics.confidence} valueClassName="!text-[16px]" />
-            </div>
-            <Caption>
-              Primary driver: {metrics.profile.primaryDriver}. Counter-signal:{" "}
-              {metrics.profile.counterSignal}. Caveat: {metrics.profile.caveat}
-            </Caption>
-          </section>
-
-          <section>
-            <SubHeading>What You Need to Know</SubHeading>
-            <Panel accent="navy">
-              <ul className="list-disc space-y-1.5 pl-5 leading-relaxed text-[#DDEBFA]">
-                {summaryBullets.slice(0, 5).map((bullet) => (
-                  <li key={bullet}>{bullet}</li>
-                ))}
-              </ul>
-            </Panel>
-          </section>
-
+          {/* 1. Primary KPIs */}
           <section>
             <SubHeading>
               Primary KPIs
@@ -762,68 +781,47 @@ export default function Country360Tab() {
                 value={metricPct(metrics.hcMetrics.latest12Change)}
               />
               <KpiCard
-                label={`Recovery index (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
-                value={metricDecimal(metrics.hcMetrics.recoveryIndex)}
+                label={`Recovery (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
+                value={notNa(metrics.hcMetrics.recoveryIndex) ? metrics.hcMetrics.recoveryIndex.toFixed(0) : "N/A"}
+                delta="100 = 2019 level"
               />
             </KpiRow>
-
-            <Expander title="Secondary KPI Details">
-              <KpiRow>
-                <KpiCard accent="navy" label={`J1, ${periodRange.label}`} value={metricNumber(periodJ1)} />
-                <KpiCard accent="navy" label={`FY${latestFy} Annual J1`} value={metricNumber(metrics.latestFyJ1)} />
-                <KpiCard label="5-Year F1 Growth" value={metricPct(metrics.growth5)} />
-                <KpiCard accent="gold" label="Latest 12-Month F1" value={metricNumber(metrics.latest12F1)} />
-                <KpiCard accent="navy" label="Latest 12-Month J1" value={metricNumber(metrics.latest12J1)} />
-                <KpiCard accent="gold" label="Peak Month" value={metrics.hcMetrics.peakMonthName} valueClassName="!text-[16px]" />
-                <KpiCard label="Top Consulate" value={metrics.topConsulate} valueClassName="!text-[16px]" />
-                <KpiCard label="Top-One Share" value={share(metrics.topOneShare)} />
-                <KpiCard label="Top-Three Share" value={share(metrics.topThreeShare)} />
-                <KpiCard accent="navy" label="Volatility" value={metrics.hcMetrics.volatility} valueClassName="!text-[16px]" />
-                <KpiCard label="Confidence" value={metrics.confidence} valueClassName="!text-[16px]" />
-              </KpiRow>
-            </Expander>
           </section>
 
-          {actionCards.length > 0 && (
-          <section>
-            <SubHeading>Additional Admissions Actions</SubHeading>
-            <div className="grid gap-4 lg:grid-cols-3">
-              {actionCards.slice(0, 6).map(([title, evidence, timing, caveat], index) => (
-                <div
-                  key={`${title}-${index}`}
-                  className="rounded-lg border border-slate-400/20 bg-white/[0.03] p-4"
-                >
-                  <div className="font-bold text-white">{title}</div>
-                  <p className="mt-2 text-xs text-slate-400">Evidence: {evidence}</p>
-                  <p className="mt-1 text-xs text-slate-400">Timing: {timing}</p>
-                  <p className="mt-1 text-xs text-slate-400">Caveat: {caveat}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+          {/* 2. Leading consulate, with a link to the Consulates page */}
+          {(periodLeader || historyLeader) && (
+            <section className="space-y-1 text-sm text-slate-300">
+              {periodLeader && !periodIsFullHistory && (
+                <p>
+                  {sentenceStart(`in ${periodRange.inSentence}`)}, <b className="text-white">{periodLeader.post}</b>{" "}
+                  leads with {periodLeader.share.toFixed(1)}% of {visaLabelOf(visa)}.
+                </p>
+              )}
+              {historyLeader && (
+                <p>
+                  Over the full history ({fullRangeText}), <b className="text-white">{historyLeader.post}</b>{" "}
+                  leads with {historyLeader.share.toFixed(1)}%
+                  {periodIsFullHistory ? ` of ${visaLabelOf(visa)}` : ""}.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => openTab("consulates", { scope: "country" })}
+                className="text-sm font-semibold text-[#FFB81C] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[#FFB81C]"
+              >
+                See all consulates in {country} →
+              </button>
+            </section>
           )}
 
+          {/* 3. Monthly trend */}
           <section>
-            <SubHeading>Current Operational Signal</SubHeading>
-            <MethodologyNote wide>
-              Follows the control bar&apos;s Period: {periodRange.label}.
-            </MethodologyNote>
-            <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-              {opPeriod.length > 0 ? (
-                <Chart data={opTrend.data} layout={opTrend.layout} height={410} />
-              ) : (
-                <InfoCallout>No consulate rows for {country} in {periodRange.label}.</InfoCallout>
-              )}
-              <DataTable
-                rows={currentPosts}
-                height={410}
-                rowKey={(row) => row.post}
-                columns={[
-                  { key: "post", header: "Post", render: (r) => r.post },
-                  { key: "issuances", header: "Issuances", numeric: true, render: (r) => int(r.issuances) },
-                ]}
-              />
-            </div>
+            <SubHeading>Monthly trend</SubHeading>
+            {hcCountryAll.length > 0 ? (
+              <Chart data={monthlyTrend.traces} layout={monthlyTrend.layout} height={420} />
+            ) : (
+              <InfoCallout>No consulate rows for {country}.</InfoCallout>
+            )}
             <Caption>
               <FixedTag title="This line ignores the Period control.">Always last 12 months</FixedTag>{" "}
               Last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
@@ -832,75 +830,144 @@ export default function Country360Tab() {
             </Caption>
           </section>
 
+          {/* 4. Compare countries */}
+          <section>
+            <SubHeading>Compare countries</SubHeading>
+            <div className="mb-3 max-w-3xl">
+              <ComparePicker
+                label="Compare countries"
+                noun="countries"
+                options={compareOptions}
+                value={compareList}
+                onChange={setCompareCountries}
+                presets={comparePresets}
+                max={COMPARE_MAX}
+              />
+              {compareCountries === null && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Showing the default: top 5 markets by F1 in {periodRange.label}.
+                </p>
+              )}
+            </div>
+            {compareList.length > 0 ? (
+              <Chart data={comparison.traces} layout={comparison.layout} height={420} />
+            ) : (
+              <InfoCallout>Add a country or pick a preset to compare.</InfoCallout>
+            )}
+          </section>
+
+          {/* 5. Typical-year seasonality */}
+          <section>
+            <SubHeading>
+              Seasonality
+              <FixedTag title="The bars ignore the Period control.">Typical year: {typical.label}</FixedTag>
+            </SubHeading>
+            <Chart data={typicalSeasonality.traces} layout={typicalSeasonality.layout} height={380} />
+            <p className="mt-2 text-xs text-slate-400">
+              Bars: average per month over complete years except 2020–2021 (COVID). Gold line:{" "}
+              {periodRange.inSentence}.
+            </p>
+          </section>
+
+          {/* Long-term fiscal-year chart (kept visible) */}
           <section>
             <SubHeading>
               Long-Term Country Trajectory
-              <FixedTag title="Uses the fiscal-year range set on this page.">FY{histStart}–FY{histEnd}</FixedTag>
+              <FixedTag title="Uses the fiscal-year range set here.">FY{histStart}–FY{histEnd}</FixedTag>
             </SubHeading>
-            <MethodologyNote wide>
-              {annualSourceNote}
-            </MethodologyNote>
+            <div className="mb-3 max-w-md">
+              <Field label={`Fiscal years: FY${histStart} - FY${histEnd}`}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={firstFy}
+                    max={latestFy}
+                    value={histStart}
+                    onChange={(e) => setHistStart(Math.min(Number(e.target.value), histEnd))}
+                    className="w-full accent-[#FFB81C]"
+                    aria-label="Trajectory chart start year"
+                  />
+                  <input
+                    type="range"
+                    min={firstFy}
+                    max={latestFy}
+                    value={histEnd}
+                    onChange={(e) => setHistEnd(Math.max(Number(e.target.value), histStart))}
+                    className="w-full accent-[#FFB81C]"
+                    aria-label="Trajectory chart end year"
+                  />
+                </div>
+              </Field>
+            </div>
+            <MethodologyNote wide>{annualSourceNote}</MethodologyNote>
             {histChart.hasRows ? (
               <Chart data={histChart.data} layout={histChart.layout} height={460} />
             ) : (
-              <InfoCallout>
-                No annual country history is available for the selected country label.
-              </InfoCallout>
+              <InfoCallout>No annual country history is available for the selected country label.</InfoCallout>
             )}
           </section>
 
+          {/* 6. What to do: once, in plain words */}
           <section>
             <SubHeading>
-              Historical Consulate Network
-              <FixedTag title="Ignores the Period control.">{fullRangeText}</FixedTag>
+              What to do
+              <FixedTag title="Built from fixed periods; ignores the Period control.">Fixed periods</FixedTag>
             </SubHeading>
-            {hcCountry.length > 0 ? (
-              <>
-                <Chart data={networkChart.data} layout={networkChart.layout} height={440} />
-                <Caption>
-                  Method note: State Department publication format changed in October 2022; the
-                  metric definition remains monthly issuance by post and visa class.
-                </Caption>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <DataTable
-                    rows={[...groupSum(hcCountry, (r) => r.post, (r) => r.issuances).entries()]
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 12)
-                      .map(([post, issuances]) => ({ post, issuances }))}
-                    height={360}
-                    rowKey={(row) => row.post}
-                    columns={[
-                      { key: "post", header: "Consulate", render: (r) => r.post },
-                      { key: "value", header: "Full-History Issuances", numeric: true, render: (r) => int(r.issuances) },
-                    ]}
-                  />
-                  <DataTable
-                    rows={[
-                      ...groupSum(metrics.latest12Hc, (r) => r.post, (r) => r.issuances).entries(),
-                    ]
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 12)
-                      .map(([post, issuances]) => ({ post, issuances }))}
-                    height={360}
-                    rowKey={(row) => row.post}
-                    columns={[
-                      { key: "post", header: "Consulate", render: (r) => r.post },
-                      { key: "value", header: "Latest 12-Month Issuances", numeric: true, render: (r) => int(r.issuances) },
-                    ]}
-                  />
-                </div>
-                {selectedPosts.length > 0 && (
-                  <Chart data={compareChart.data} layout={compareChart.layout} height={420} />
-                )}
-              </>
-            ) : (
-              <InfoCallout>
-                No historical consulate network data is available for this country.
-              </InfoCallout>
-            )}
+            <Panel accent="gold">
+              <p className="text-lg font-extrabold text-white">{metrics.action}</p>
+              <p className="mt-1 text-sm text-slate-300">
+                {metrics.category} market · momentum: {momentumLabel} · confidence: {metrics.confidence}
+              </p>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-[#DDEBFA]">
+                <li>
+                  <b>Why:</b> {metrics.profile.primaryDriver}.
+                </li>
+                <li>
+                  <b>Watch:</b> {keyRisk}.
+                </li>
+                <li>
+                  <b>Timing:</b> {metrics.profile.timing}.
+                </li>
+                <li>
+                  <b>But:</b> {metrics.profile.counterSignal}. {metrics.profile.caveat}
+                </li>
+                {actionCards.map(([title, evidence, timing]) => (
+                  <li key={title}>
+                    <b>Also:</b> {title}. {evidence} ({timing})
+                  </li>
+                ))}
+              </ul>
+            </Panel>
           </section>
 
-          <section>
+          {/* 7. More details */}
+          <Expander title="More details">
+            <SubHeading>Secondary KPIs</SubHeading>
+            <KpiRow>
+              <KpiCard accent="navy" label={`J1, ${periodRange.label}`} value={metricNumber(periodJ1)} />
+              <KpiCard accent="navy" label={`FY${latestFy} Annual J1`} value={metricNumber(metrics.latestFyJ1)} />
+              <KpiCard
+                label={`5-year growth, FY${latestFy - 5} → FY${latestFy}${latestFy - 5 === 2020 ? " (from the pandemic low)" : ""}`}
+                value={metricPct(metrics.growth5)}
+              />
+              <KpiCard accent="gold" label={`F1, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12F1)} />
+              <KpiCard accent="navy" label={`J1, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12J1)} />
+              <KpiCard accent="gold" label="Peak Month" value={metrics.hcMetrics.peakMonthName} valueClassName="!text-[16px]" />
+              <KpiCard label="Top Consulate" value={metrics.topConsulate} valueClassName="!text-[16px]" />
+              <KpiCard label="Top-One Share" value={share(metrics.topOneShare)} />
+              <KpiCard label="Top-Three Share" value={share(metrics.topThreeShare)} />
+              <KpiCard accent="navy" label="Volatility" value={metrics.hcMetrics.volatility} valueClassName="!text-[16px]" />
+              <KpiCard label={`Active Posts (${visaLabel}), ${periodRange.label}`} value={activePosts} />
+              <KpiCard label={`Seasonality CV (${visaLabel}), ${periodRange.label}`} value={decimals(focusCv, 2)} />
+            </KpiRow>
+
+            <SubHeading>Summary</SubHeading>
+            <ul className="list-disc space-y-1.5 pl-5 leading-relaxed text-[#DDEBFA]">
+              {summaryBullets.slice(0, 5).map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
+
             <SubHeading>
               Recovery
               <FixedTag title="Latest complete calendar year vs 2019; ignores the Period control.">
@@ -915,25 +982,7 @@ export default function Country360Tab() {
                 selected visa classes.
               </InfoCallout>
             )}
-          </section>
 
-          {hcCountry.length > 0 && (
-            <section>
-              <SubHeading>
-                Seasonality and Recruitment Timing
-                <FixedTag title="Ignores the Period control.">{fullRangeText}</FixedTag>
-              </SubHeading>
-              <Chart data={seasonality.data} layout={seasonality.layout} height={420} />
-              <Caption>
-                Peak month: {metrics.hcMetrics.peakMonthName}; seasonality strength:{" "}
-                {metrics.hcMetrics.seasonalityStrength}; recommended outreach window:{" "}
-                {recommendedOutreachWindow(metrics.hcMetrics.peakMonth)}. Directional planning signal
-                only.
-              </Caption>
-            </section>
-          )}
-
-          <section>
             <SubHeading>
               Momentum, Risk, and Concentration
               <FixedTag title="Ignores the Period control.">{fullRangeText} · momentum: last 12 months</FixedTag>
@@ -942,31 +991,13 @@ export default function Country360Tab() {
               height={260}
               rowKey={(row) => row.metric}
               rows={[
-                {
-                  metric: "Top-one post share",
-                  value: share(metrics.topOneShare),
-                  interpretation: concentrationLabel(metrics.topOneShare),
-                },
-                {
-                  metric: "Top-three post share",
-                  value: share(metrics.topThreeShare),
-                  interpretation: concentrationLabel(metrics.topThreeShare),
-                },
-                {
-                  metric: "Monthly volatility CV",
-                  value: decimals(metrics.hcMetrics.volatilityCv, 2),
-                  interpretation: metrics.hcMetrics.volatility,
-                },
-                {
-                  metric: "Latest 12-month momentum",
-                  value: metricPct(metrics.hcMetrics.latest12Change),
-                  interpretation: "Comparable 12-month change",
-                },
+                { metric: "Top-one post share", value: share(metrics.topOneShare), interpretation: concentrationLabel(metrics.topOneShare) },
+                { metric: "Top-three post share", value: share(metrics.topThreeShare), interpretation: concentrationLabel(metrics.topThreeShare) },
+                { metric: "Monthly volatility CV", value: decimals(metrics.hcMetrics.volatilityCv, 2), interpretation: metrics.hcMetrics.volatility },
+                { metric: "Latest 12-month momentum", value: metricPct(metrics.hcMetrics.latest12Change), interpretation: "Comparable 12-month change" },
                 {
                   metric: "Seasonality ratio",
-                  value: notNa(metrics.hcMetrics.seasonalityRatio)
-                    ? `${metrics.hcMetrics.seasonalityRatio.toFixed(1)}x`
-                    : "N/A",
+                  value: notNa(metrics.hcMetrics.seasonalityRatio) ? `${metrics.hcMetrics.seasonalityRatio.toFixed(1)}x` : "N/A",
                   interpretation: metrics.hcMetrics.seasonalityStrength,
                 },
               ]}
@@ -987,9 +1018,29 @@ export default function Country360Tab() {
                 </li>
               </ul>
             </Expander>
-          </section>
 
-          <section>
+            <SubHeading>
+              All-country rankings
+              <FixedTag title="The rankings ignore the Period and Visa controls.">Always last 12 months</FixedTag>
+            </SubHeading>
+            <p className="mb-3 text-xs text-slate-400">
+              Sorted by F1 issuances in the last 12 months ({monthRangeLabel(rankingWindow.current)}). Top
+              Post and Peak Month use {monthRangeLabel(operationalRange)}.
+            </p>
+            <DataTable
+              rows={rankings}
+              height={420}
+              rowKey={(row) => row.country}
+              columns={[
+                { key: "country", header: "Country", render: (r) => r.country },
+                { key: "f1", header: "F1, last 12 months", numeric: true, render: (r) => int(r.f1Last12) },
+                { key: "j1", header: "J1, last 12 months", numeric: true, render: (r) => int(r.j1Last12) },
+                { key: "growth", header: "F1 vs previous 12 months", numeric: true, render: (r) => arrowPct(r.f1Change) },
+                { key: "post", header: "Top Post", render: (r) => r.topPost },
+                { key: "peak", header: "Peak Month", render: (r) => MONTH_NAMES_FULL[r.peakMonth] ?? "N/A" },
+              ]}
+            />
+
             <SubHeading>Downloads</SubHeading>
             <div className="flex flex-wrap gap-2">
               <DownloadCsvButton
@@ -1021,9 +1072,7 @@ export default function Country360Tab() {
                 label="Annual Country History CSV"
                 filename={`qu_country360_annual_${slug}.csv`}
                 headers={["fiscal_year", "country", "visa_class", "issuances"]}
-                rows={histRange.map((r) => [
-                  String(r.fiscalYear), r.country, r.visa, String(r.issuances),
-                ])}
+                rows={histRange.map((r) => [String(r.fiscalYear), r.country, r.visa, String(r.issuances)])}
               />
               <DownloadCsvButton
                 label="Historical Consulate Network CSV"
@@ -1039,9 +1088,7 @@ export default function Country360Tab() {
                 headers={["Month", "calendar_month", "Average", "Median"]}
                 rows={
                   hcCountry.length > 0
-                    ? seasonality.rows.map((r) => [
-                        r.month, String(r.calendarMonth), String(r.average), String(r.median),
-                      ])
+                    ? seasonality.rows.map((r) => [r.month, String(r.calendarMonth), String(r.average), String(r.median)])
                     : []
                 }
               />
@@ -1049,22 +1096,12 @@ export default function Country360Tab() {
                 label="Current Operational Country CSV"
                 filename={`qu_country360_operational_${slug}_${visa.toLowerCase()}_${periodRange.slug}.csv`}
                 headers={["post", "visa_class", "issuances", "year", "month"]}
-                rows={opPeriod.map((r) => [
-                  r.post, r.visa, String(r.issuances), String(r.year), String(r.month),
-                ])}
+                rows={opPeriod.map((r) => [r.post, r.visa, String(r.issuances), String(r.year), String(r.month)])}
               />
             </div>
-          </section>
 
-          <section>
-            <SubHeading>Data Scope and Trust</SubHeading>
             <Expander title="Methodology Details">
               <ul className="list-disc space-y-1.5 pl-5">
-                <li>
-                  Operational layer: <code className="font-mono">{monthCountry}</code> monthly
-                  country/post data from {monthLongDisplay(operationalRange.start)}-
-                  {monthLongDisplay(operationalRange.end)}.
-                </li>
                 <li>
                   Historical country layer: <code className="font-mono">{histCountry}</code> annual
                   country/nationality data from FY{firstFy}-FY{latestFy}.
@@ -1091,9 +1128,14 @@ export default function Country360Tab() {
                 </li>
               </ul>
             </Expander>
-          </section>
+          </Expander>
         </>
       )}
     </div>
   );
+}
+
+/** First day of a `year * 12 + (month - 1)` month, for a Plotly date axis. */
+function monthDate(index: number): string {
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
 }

@@ -1,10 +1,12 @@
 /**
  * Tab names in the web address. Pages that were merged keep working in old
- * links: Consulate Intelligence and Historical Consulates became Consulates (8-1).
+ * links: Consulate Intelligence and Historical Consulates became Consulates (8-1);
+ * Country Intelligence became part of Country 360 (8-2a).
  */
 export const TAB_ALIASES: Readonly<Record<string, string>> = {
   "consulate-intelligence": "consulates",
   "historical-consulates": "consulates",
+  "country-intelligence": "country-360",
 };
 
 /** The tab to open for a `tab=` value, or undefined when it names no tab. */

@@ -78,6 +78,9 @@ Sourced event markers on the Historical Trends chart.
 - [ ] Draft and approve the page blueprint.
 - [x] 8-1: merge Consulate Intelligence and Historical Consulates into one Consulates page.
 - [ ] Remove the two unused tab files (`ResearchCountryTab.tsx`, `HistoricalConsulatesTab.tsx`) once 8-1 is accepted.
+- [x] 8-2a: merge Country Intelligence into Country 360 (layout only, numbers unchanged).
+- [ ] Remove the unused `ConsulatesTab.tsx` (Country Intelligence) once 8-2a is accepted.
+- [ ] 8-2b: switch Country 360 to the monthly nationality data.
 - [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
 - [ ] Carry over what works: Historical Consulates (best page), the Country 360 narrative, the Historical Trends 30-year chart, the Command Center action queue.
 - [ ] Use the shared control bar (5b) on every page.

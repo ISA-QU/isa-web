@@ -32,6 +32,7 @@ import { arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { PostMonthlyRow, PostPeriodMetrics } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
+import ComparePicker from "../ComparePicker";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import {
@@ -40,7 +41,6 @@ import {
   KpiCard,
   KpiRow,
   MethodologyNote,
-  MultiSelect,
   FixedTag,
   Panel,
   RadioGroup,
@@ -72,10 +72,8 @@ export default function HistoricalConsulatesTab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
   const {
     data,
-    allCountries: countries,
     consulateCountries,
     focusCountry: country,
-    setFocusCountry: setCountry,
     visa,
     periodRange,
   } = useDashboard();
@@ -206,7 +204,6 @@ export default function HistoricalConsulatesTab() {
       </Panel>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Select label="Country" value={country} options={countries} onChange={setCountry} />
         <Select label="Consulate" value={post} options={postOptions} onChange={setPostSelection} />
       </div>
 
@@ -222,12 +219,17 @@ export default function HistoricalConsulatesTab() {
         </div>
       </Panel>
 
-      <MultiSelect
-        label="Compare Posts"
-        options={postOptions}
-        values={selectedComparePosts}
-        onChange={(values) => setComparePosts(values.slice(0, 5))}
-      />
+      <div className="max-w-3xl">
+        <ComparePicker
+          label="Compare posts"
+          noun="posts"
+          options={postOptions}
+          value={selectedComparePosts}
+          onChange={setComparePosts}
+          presets={[{ label: "Top 5 posts by F1 (full history)", values: defaultComparePosts }]}
+          max={8}
+        />
+      </div>
     </>
   );
 

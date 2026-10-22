@@ -42,7 +42,8 @@ const PRIORITY_ACTIONS = [
   "Consider Travel",
 ];
 
-const VIEWS = ["Latest Comparable Period", "Long-Term Strategy", "Current Momentum"] as const;
+/** How the action queue is sorted (formerly "Analysis View"); the order is unchanged. */
+const VIEWS = ["Last-12-month volume", "Long-term growth", "Momentum"] as const;
 type View = (typeof VIEWS)[number];
 
 const recoveryText = (value: number | null) => (notNa(value) ? value.toFixed(0) : "N/A");
@@ -89,10 +90,10 @@ export default function CommandCenterTab() {
     if (region !== "All") rows = rows.filter((row) => row.region === region);
     if (category !== "All") rows = rows.filter((row) => row.marketCategory === category);
 
-    if (view === "Long-Term Strategy") {
+    if (view === "Long-term growth") {
       return sortBy(rows, [(r) => r.growth10yr, (r) => r.currentVolume]);
     }
-    if (view === "Current Momentum") {
+    if (view === "Momentum") {
       return sortBy(rows, [(r) => r.latest12Momentum, (r) => r.latest12Total]);
     }
     return sortBy(rows, [(r) => r.latest12Total, (r) => r.currentVolume]);
@@ -360,7 +361,7 @@ export default function CommandCenterTab() {
           onChange={setCategory}
         />
         <Select
-          label="Analysis View"
+          label="Sort by"
           value={view}
           options={VIEWS}
           onChange={(value) => setView(value as View)}

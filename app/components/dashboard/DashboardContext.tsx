@@ -57,8 +57,12 @@ interface DashboardState {
   setVisa: (visa: VisaSelection) => void;
   /** "F1", "J1" or "F1 + J1", for chart titles. */
   visaLabel: string;
-  compareCountries: string[];
-  setCompareCountries: (countries: string[]) => void;
+  /**
+   * Country Intelligence's comparison. `null` means the default: the top five
+   * markets by F1 in the selected Period.
+   */
+  compareCountries: string[] | null;
+  setCompareCountries: (countries: string[] | null) => void;
   topN: number;
   setTopN: (topN: number) => void;
 
@@ -186,9 +190,7 @@ export function DashboardProvider({
     () => provisionalFiscalYears(data.meta.fiscalYears),
     [data.meta.fiscalYears],
   );
-  const [compareCountries, setCompareCountries] = useState<string[]>(() =>
-    ["India", "China", "Vietnam", "Nepal", "Nigeria"].filter((c) => countries.includes(c)),
-  );
+  const [compareCountries, setCompareCountries] = useState<string[] | null>(null);
   const [topN, setTopN] = useState(25);
 
   // Resolved during render rather than corrected in an effect, so a dataset swap

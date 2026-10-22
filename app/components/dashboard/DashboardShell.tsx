@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { AccountMenu } from "../AccountMenu";
 import { asset } from "../../lib/basePath";
@@ -13,7 +13,6 @@ import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
 import ControlBar from "./ControlBar";
 import { DashboardProvider, useDashboard, type InitialSelection } from "./DashboardContext";
-import Sidebar from "./Sidebar";
 import HeaderKpis from "./HeaderKpis";
 import { MethodologyNote } from "./ui";
 
@@ -173,60 +172,85 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
   useUrlSync(focusCountry, visa, periodToParam(period), active);
 
+  // Tabs: arrow keys move between them, Home/End jump to the ends.
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = TABS.length - 1;
+    const next =
+      event.key === "ArrowRight"
+        ? (index + 1) % TABS.length
+        : event.key === "ArrowLeft"
+          ? (index - 1 + TABS.length) % TABS.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    setActive(TABS[next].id);
+    tabRefs.current[next]?.focus();
+  };
+
   return (
     <div className="min-h-screen bg-[#050F22] text-slate-200">
       <Header />
 
-      <div className="mx-auto max-w-[1600px] px-6 py-6">
+      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6">
         <ControlBar fiscalYearMode={active === "historical-trends"} />
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <Sidebar />
+        <main className="min-w-0">
+          <Hero />
+          <HeaderKpis />
 
-          <main className="min-w-0 flex-1">
-            <Hero />
-            <HeaderKpis />
-
-            <div className="mb-5 overflow-x-auto">
-              <div
-                role="tablist"
-                aria-label="Dashboard sections"
-                className="flex min-w-max gap-1 border-b border-slate-400/20"
-              >
-                {TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    role="tab"
-                    type="button"
-                    aria-selected={active === tab.id}
-                    onClick={() => setActive(tab.id)}
-                    className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
-                      active === tab.id
-                        ? "border-[#FFB81C] text-white"
-                        : "border-transparent text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+          <div className="mb-5 overflow-x-auto">
+            <div
+              role="tablist"
+              aria-label="Dashboard sections"
+              className="flex min-w-max gap-1 border-b border-slate-400/20"
+            >
+              {TABS.map((tab, index) => (
+                <button
+                  key={tab.id}
+                  id={`tab-${tab.id}`}
+                  ref={(element) => {
+                    tabRefs.current[index] = element;
+                  }}
+                  role="tab"
+                  type="button"
+                  aria-selected={active === tab.id}
+                  aria-controls="dashboard-tabpanel"
+                  tabIndex={active === tab.id ? 0 : -1}
+                  onClick={() => setActive(tab.id)}
+                  onKeyDown={(event) => onTabKeyDown(event, index)}
+                  className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB81C] ${
+                    active === tab.id
+                      ? "border-[#FFB81C] text-white"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+          </div>
 
+          <div id="dashboard-tabpanel" role="tabpanel" aria-labelledby={`tab-${active}`}>
             <ActiveTab />
+          </div>
 
-            <footer className="mt-10 border-t border-slate-400/15 pt-6 text-center text-xs text-slate-500">
-              <MethodologyNote>
-                Visa issuance volume reflects historical student mobility, not individual visa
-                approval probability. Monthly records run through{" "}
-                {monthLongDisplay(data.meta.coverage.postsMonthly.end)}.
-              </MethodologyNote>
-              <div>
-                QU Bobcat Global Recruitment Intelligence &nbsp;·&nbsp; Data: U.S. Department of
-                State Visa Issuance Statistics &nbsp;·&nbsp; Built for Quinnipiac University
-                International Admissions
-              </div>
-            </footer>
-          </main>
-        </div>
+          <footer className="mt-10 border-t border-slate-400/15 pt-6 text-center text-xs text-slate-500">
+            <MethodologyNote>
+              Visa issuance volume reflects historical student mobility, not individual visa
+              approval probability. Monthly records run through{" "}
+              {monthLongDisplay(data.meta.coverage.postsMonthly.end)}.
+            </MethodologyNote>
+            <div>
+              QU Bobcat Global Recruitment Intelligence &nbsp;·&nbsp; Data: U.S. Department of
+              State Visa Issuance Statistics &nbsp;·&nbsp; Built for Quinnipiac University
+              International Admissions
+            </div>
+          </footer>
+        </main>
       </div>
     </div>
   );

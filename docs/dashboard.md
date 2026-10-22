@@ -192,9 +192,11 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
 app/
   page.tsx, dashboard/page.tsx     -> DashboardShell
   components/dashboard/
-    DashboardShell.tsx             tab bar, header, nav buttons
-    DashboardContext.tsx           shared filter state + derived rollups
-    Sidebar.tsx, HeaderKpis.tsx
+    DashboardShell.tsx             tab bar, header, nav buttons, web-address sync
+    DashboardContext.tsx           shared selection (country, visa, period) + derived rollups
+    ControlBar.tsx                 the control bar: country, visa, period / fiscal years
+    ComparePicker.tsx              type-to-search picker with chips and presets
+    HeaderKpis.tsx
     Chart.tsx                      lazy Plotly wrapper
     ui.tsx, shared.tsx             QU-styled primitives
     tabs/                          one file per tab
@@ -217,7 +219,7 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
 - **The header cards use a rolling 12 months.** The five cards above the tabs compare the
   latest 12 months of consulate data with the 12 months before (e.g. Mar 2025 – Feb 2026
   vs Mar 2024 – Feb 2025), from `rollingTwelveMonths()` in `lib/dashboard/rolling.ts`.
-  They ignore the sidebar Years filter. The heading above them names the period, and
+  They ignore the Period control. The heading above them names the period, and
   each card's hover tooltip gives both date ranges, both totals and the exact change. "Country" there
   is where the visa was issued (the consulate's country), not the student's nationality,
   because the snapshot has no monthly nationality data. A change shows only when both
@@ -262,13 +264,18 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   Consulates' 12-month, change and recovery columns, trend chart, annual and recovery charts
   always use the full history, with the Period shaded on the trend chart. CSV file names
   include the period.
-- **One country for the whole dashboard.** The sidebar's Focus Country, Country 360's
-  Country, Historical Trends' country and Historical Consulates' country are one shared
-  selection (in `DashboardContext`), over every country in either data source. A tab whose
+- **No sidebar.** Compare Countries now lives in Country Intelligence's comparison chart (a
+  type-to-search picker with chips, a "Top 5 markets" preset, one preset per region, up to 8
+  countries; default: the top 5 markets by F1 in the Period), and Top-N in Consulate
+  Intelligence. Country 360's Compare Consulates and Historical Consulates' Compare Posts
+  use the same picker. Command Center's
+  "Analysis View" is now "Sort by" (last-12-month volume / long-term growth / momentum).
+- **One country for the whole dashboard.** The control bar's Country is the only country
+  control; every tab reads the same shared selection (in `DashboardContext`), over every
+  country in either data source. A tab whose
   source has no rows for the country says "No consulate data for …" or "No nationality data
   for …" instead of going blank or showing another country. Consulate comparisons reset when
-  the country changes. Country 360 and Historical Consulates open on F1. The sidebar's Visa
-  Class control, which no tab read, is removed.
+  the country changes. Country 360 and Historical Consulates open on F1.
 - **Risers and fallers need volume in both periods.** Command Center's movers and Consulate
   Intelligence's risers/fallers include only rows with at least 100 issuances in both
   12-month periods (`MOVER_MIN_ISSUANCES`), so tiny markets can't top the lists.

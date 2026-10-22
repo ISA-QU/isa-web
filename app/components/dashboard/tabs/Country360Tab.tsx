@@ -39,6 +39,7 @@ import {
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CommandCenterRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
+import ComparePicker from "../ComparePicker";
 import { useDashboard } from "../DashboardContext";
 import {
   Caption,
@@ -55,24 +56,16 @@ import {
   KpiCard,
   KpiRow,
   MethodologyNote,
-  MultiSelect,
   FixedTag,
   Panel,
-  Select,
   SectionTitle,
 } from "../ui";
 
 
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
-  const {
-    data,
-    allCountries,
-    focusCountry: country,
-    setFocusCountry: setCountry,
-    visa,
-    periodRange,
-  } = useDashboard();
+  // Country, visa and period come from the control bar.
+  const { data, focusCountry: country, visa, periodRange } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -81,9 +74,6 @@ export default function Country360Tab() {
   const endIndex = coverage.postsMonthly.end;
   const endYear = Math.floor(endIndex / 12);
   const throughMonth = (endIndex % 12) + 1;
-
-  // Every country in either source, the same list as the sidebar's.
-  const countryOptions = allCountries;
 
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
@@ -645,7 +635,6 @@ export default function Country360Tab() {
       <MethodologyExpanders includeMarket />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Select label="Country" value={country} options={countryOptions} onChange={setCountry} />
         <Field label={`Trajectory chart fiscal years: FY${histStart} - FY${histEnd}`}>
           <div className="flex items-center gap-2">
             <input
@@ -670,12 +659,17 @@ export default function Country360Tab() {
         </Field>
       </div>
 
-      <MultiSelect
-        label="Compare Consulates"
-        options={postOptions}
-        values={selectedPosts}
-        onChange={(values) => setComparePosts(values.slice(0, 5))}
-      />
+      <div className="max-w-3xl">
+        <ComparePicker
+          label="Compare consulates"
+          noun="consulates"
+          options={postOptions}
+          value={selectedPosts}
+          onChange={setComparePosts}
+          presets={[{ label: "Top 5 consulates by F1 (full history)", values: defaultComparePosts }]}
+          max={8}
+        />
+      </div>
 
       {empty ? (
         <InfoCallout>

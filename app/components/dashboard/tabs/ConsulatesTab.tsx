@@ -5,7 +5,7 @@ import type { ChartLayout, Trace } from "../Chart";
 
 import { MONTH_NAMES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { decimals, int, metricPct, monthDisplay } from "../../../lib/dashboard/format";
-import { groupSum, seasonalityCv } from "../../../lib/dashboard/metrics";
+import { groupSum, regionForCountry, seasonalityCv } from "../../../lib/dashboard/metrics";
 import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { CountrySummaryRow } from "../../../lib/dashboard/types";
@@ -17,6 +17,7 @@ interface RankingRow extends CountrySummaryRow {
   f1Change: number | null;
 }
 import Chart from "../Chart";
+import ComparePicker from "../ComparePicker";
 import { useDashboard } from "../DashboardContext";
 import { InfoCallout, SubHeading } from "../shared";
 import { DataTable, Divider, FixedTag, KpiCard, KpiRow, ScopeNote, SectionTitle } from "../ui";
@@ -36,7 +37,9 @@ export default function ConsulatesTab() {
     focusCountry,
     summary,
     dfFiltered,
+    f1Filtered,
     compareCountries,
+    setCompareCountries,
     data,
     periodRange,
     consulateCountries,
@@ -203,14 +206,37 @@ export default function ConsulatesTab() {
   }, [dfFiltered, focusCountry, periodRange.label]);
 
   /* ---- Multi-country comparison ---- */
+  // Default: the top five markets by F1 in the selected Period. Presets: the same
+  // top five, and one per region (top markets by F1 in the Period, up to 8).
+  const COMPARE_MAX = 8;
+  const f1ByCountry = useMemo(() => {
+    const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([country]) => country);
+  }, [f1Filtered]);
+  const topFive = f1ByCountry.slice(0, 5);
+  const compareList = compareCountries ?? topFive;
+  const compareOptions = useMemo(() => [...consulateCountries].sort(), [consulateCountries]);
+  const comparePresets = useMemo(() => {
+    const regions = [...new Set(f1ByCountry.map(regionForCountry))]
+      .filter((region) => region !== "Other")
+      .sort();
+    return [
+      { label: `Top 5 markets (${periodRange.label})`, values: topFive },
+      ...regions.map((region) => ({
+        label: region,
+        values: f1ByCountry.filter((c) => regionForCountry(c) === region).slice(0, COMPARE_MAX),
+      })),
+    ];
+  }, [f1ByCountry, topFive, periodRange.label]);
+
   const comparison = useMemo(() => {
-    const rows = visaFiltered.filter((r) => compareCountries.includes(r.country));
+    const rows = visaFiltered.filter((r) => compareList.includes(r.country));
     const byMonthCountry = groupSum(
       rows,
       (r) => `${r.year * 12 + (r.month - 1)}|${r.country}`,
       (r) => r.issuances,
     );
-    const data: Trace[] = compareCountries.map((country) => {
+    const data: Trace[] = compareList.map((country) => {
       const points = [...byMonthCountry.entries()]
         .filter(([key]) => key.slice(key.indexOf("|") + 1) === country)
         .map(([key, value]) => ({ index: Number(key.split("|")[0]), value }))
@@ -230,12 +256,13 @@ export default function ConsulatesTab() {
       hovermode: "x unified",
     };
     return { data, layout };
-  }, [visaFiltered, compareCountries, visaLabel, periodRange.label]);
+  }, [visaFiltered, compareList, visaLabel, periodRange.label]);
 
   return (
     <div className="space-y-6">
       <ScopeNote label="Legacy Operational View">
-        This page preserves the original recent country analysis and sidebar-driven filters.
+        This page preserves the original recent country analysis. Country, Visa and Period come
+        from the control bar.
       </ScopeNote>
 
       <SectionTitle>
@@ -303,12 +330,30 @@ export default function ConsulatesTab() {
         </>
       )}
 
-      {compareCountries.length > 0 && (
-        <section>
-          <SubHeading>Multi-Country Comparison</SubHeading>
+      <section>
+        <SubHeading>Multi-Country Comparison</SubHeading>
+        <div className="mb-3 max-w-3xl">
+          <ComparePicker
+            label="Compare countries"
+            noun="countries"
+            options={compareOptions}
+            value={compareList}
+            onChange={setCompareCountries}
+            presets={comparePresets}
+            max={COMPARE_MAX}
+          />
+          {compareCountries === null && (
+            <p className="mt-1 text-xs text-slate-400">
+              Showing the default: top 5 markets by F1 in {periodRange.label}.
+            </p>
+          )}
+        </div>
+        {compareList.length > 0 ? (
           <Chart data={comparison.data} layout={comparison.layout} height={420} />
-        </section>
-      )}
+        ) : (
+          <InfoCallout>Add a country or pick a preset to compare.</InfoCallout>
+        )}
+      </section>
 
       <section>
         <SubHeading>

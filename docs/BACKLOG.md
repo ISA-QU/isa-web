@@ -10,22 +10,23 @@ one shared country and F1 defaults (5a).
 
 ## 5b · Shared control bar
 
-- [ ] One control bar shared by every tab: Country (already shared), Visa (F1 / J1 / F1 + J1, default F1) and Period.
-- [ ] Keep the bar's state, and the active tab, in the URL.
-- [ ] Period presets for monthly consulate data: last 12 months vs previous 12 (default), last 24 months, a calendar year (partial years labelled), custom months anywhere in Mar 2017 – Feb 2026.
-- [ ] Fiscal-year range for nationality data: FY1997 – latest complete, FY2025 marked provisional.
-- [ ] Replace the sidebar Years filter with the Period control. Years currently offers only 2024–2026 because it is built from the operational layer (`coverage.operational`, last 3 calendar years); build it from the full monthly data instead, labelling 2017 (Mar–Dec) as partial.
-- [ ] Replace Country 360's "Recent Timeframe" and Historical Consulates' "Quick Range" with the shared Period (keep a "Pre-pandemic 2019–2022" preset).
-- [ ] Replace the per-tab Visa controls (Command Center F1, Country 360 F1, Historical Consulates F1) with the shared Visa.
-- [ ] Move Compare Countries into Country Intelligence and Top-N into Consulate Intelligence (each affects only that tab).
-- [ ] Unticking every year in the sidebar Years filter is treated as "all years"; decide the intended behaviour.
+- [x] One control bar shared by every tab: Country, Visa (F1 / J1 / F1 + J1, default F1) and Period.
+- [x] Keep the bar's state, and the active tab, in the URL.
+- [x] Period presets for monthly consulate data: last 12 months vs previous 12 (default), last 24 months, a calendar year (partial years labelled), custom months anywhere in Mar 2017 – Feb 2026.
+- [x] Fiscal-year range for nationality data: FY1997 – latest complete, FY2025 marked provisional.
+- [x] Replace the sidebar Years filter with the Period control, built from the full monthly data.
+- [x] Replace Country 360's "Recent Timeframe" and Historical Consulates' "Quick Range" with the shared Period (with a "Pre-pandemic 2019–2022" preset).
+- [x] Replace the per-tab Visa controls with the shared Visa.
+- [x] Move Compare Countries into Country Intelligence and Top-N into Consulate Intelligence; remove the sidebar.
+- [ ] Decide whether to keep the fiscal-year range in the web address too (currently country, visa, period and tab only).
 - [ ] State the period of every remaining number (from the checkpoint audit):
-  - [ ] Executive: Top 20 F1 Markets treemap and monthly trend follow the Years filter without saying so; focus card's Top Consulate and Peak Visa Month cover Jan 2024 – Feb 2026.
-  - [ ] Country Intelligence: Top F1 Consulates chart and monthly trend follow the Years filter without saying so.
-  - [ ] Consulate Intelligence: Top-N chart, all-consulates table and its CSV follow the Years filter without saying so.
+  - [x] Executive: treemap and monthly trend name the Period.
+  - [ ] Executive: the focus card's Top Consulate and Peak Visa Month cover Jan 2024 – Feb 2026 without saying so on the card.
+  - [x] Country Intelligence: Top F1 Consulates chart and monthly trend name the Period.
+  - [x] Consulate Intelligence: Top-N chart, all-consulates table and its CSV name the Period.
   - [ ] Country 360: Operational F1/J1 (Jan 2024 – Feb 2026), 10-Year and 5-Year F1 Growth (FY years), Recovery Index (2025 vs 2019), Latest 12-Month figures (months), Full-History Issuances and risk/concentration metrics (Mar 2017 – Feb 2026), average/median-month chart, Key Risk and driver text, top-posts "Issuances" column.
-  - [ ] Historical Consulates: Insights bullets and the Market Momentum / Recovery Status cards (periods and recovery year).
-- [ ] Remove or rename the remaining "Legacy" wording: "Legacy Operational View" on Country Intelligence and Consulate Intelligence, and the sidebar note "…remain for legacy operational pages".
+  - [ ] Historical Consulates: Insights bullets and the Market Momentum / Recovery Status cards now use the full history, but don't name the months or recovery year.
+- [ ] Remove or rename the remaining "Legacy" wording: "Legacy Operational View" on Country Intelligence and Consulate Intelligence (the sidebar note went with the sidebar).
 
 ## 6 · Command Center
 
@@ -63,6 +64,7 @@ Sourced event markers on the Historical Trends chart.
 
 ## 9 · Polish
 
+- [ ] Complete the region mapping for all 205 countries so region presets include every country.
 - [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
 - [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).
 - [ ] Globe improvements: it is colored by F1 issuances for Jan 2024 – Feb 2026; review what it should show and its Rotate/Pause controls (the audit found a blank Rotate button on the live site).

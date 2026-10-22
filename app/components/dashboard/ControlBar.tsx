@@ -38,6 +38,11 @@ export default function ControlBar({ fiscalYearMode }: { fiscalYearMode: boolean
     fyRange.start === fyBounds.first &&
     fyRange.end === fyBounds.latest;
 
+  // On narrow screens the controls fold away behind a "Change" button; the
+  // summary line always stays visible.
+  const [expanded, setExpanded] = useState(false);
+  const controlsId = useId();
+
   const provisionalInRange = [...provisionalYears]
     .filter((year) => year >= fyRange.start && year <= fyRange.end)
     .sort((a, b) => a - b);
@@ -52,7 +57,27 @@ export default function ControlBar({ fiscalYearMode }: { fiscalYearMode: boolean
       aria-label="Dashboard controls"
       className="mb-6 rounded-lg border border-slate-400/20 bg-[#07152E] px-4 py-3"
     >
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex items-center justify-between gap-3 md:hidden">
+        <p className="text-xs text-slate-300">
+          <span className="font-bold text-slate-100">Showing:</span> {focusCountry} ·{" "}
+          {fiscalYearMode
+            ? `F1 and J1 by nationality · ${fyText}`
+            : `${visaLabelOf(visa)} · ${periodRange.label}`}
+        </p>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={controlsId}
+          onClick={() => setExpanded((open) => !open)}
+          className="shrink-0 rounded-md border border-slate-400/30 px-3 py-1.5 text-xs font-semibold text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#FFB81C]"
+        >
+          {expanded ? "Done" : "Change"}
+        </button>
+      </div>
+      <div
+        id={controlsId}
+        className={`${expanded ? "mt-3 flex" : "hidden"} flex-wrap items-end gap-4 md:mt-0 md:flex`}
+      >
         <CountryCombobox value={focusCountry} options={allCountries} onChange={setFocusCountry} />
         {fiscalYearMode ? (
           <FiscalYearRange
@@ -81,7 +106,7 @@ export default function ControlBar({ fiscalYearMode }: { fiscalYearMode: boolean
           Reset to defaults
         </button>
       </div>
-      <p className="mt-2 text-xs text-slate-300" aria-live="polite">
+      <p className="mt-2 hidden text-xs text-slate-300 md:block" aria-live="polite">
         <span className="font-bold text-slate-100">Showing:</span> {focusCountry} ·{" "}
         {fiscalYearMode
           ? `F1 and J1 by nationality · ${fyText}`

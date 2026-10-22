@@ -17,7 +17,7 @@ import {
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
-import { DataTable, FixedTag, ScopeNote, SectionTitle } from "../ui";
+import { DataTable, FixedTag, ScopeNote, SectionTitle, Slider } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -41,6 +41,7 @@ export default function ResearchCountryTab() {
     data,
     focusCountry,
     topN,
+    setTopN,
     consulateCountries,
     visaFiltered,
     focusRows,
@@ -210,10 +211,22 @@ export default function ResearchCountryTab() {
   return (
     <div className="space-y-6">
       <ScopeNote label="Legacy Operational View">
-        This page preserves the original recent consulate analysis and sidebar-driven filters.
+        This page preserves the original recent consulate analysis. Country, Visa and Period come
+        from the control bar.
       </ScopeNote>
 
       <SectionTitle>Consulate Intelligence</SectionTitle>
+
+      <div className="max-w-xs">
+        <Slider
+          label="Top-N consulates"
+          value={topN}
+          min={10}
+          max={50}
+          step={5}
+          onChange={setTopN}
+        />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         <Chart data={topPostsChart.data} layout={topPostsChart.layout} height={680} />

@@ -33,7 +33,6 @@ import {
   Panel,
   ScopeNote,
   SectionTitle,
-  Select,
 } from "../ui";
 
 /** The pre-pandemic comparison year. FY2020 (the COVID low) would flatter any recovery. */
@@ -49,10 +48,8 @@ export default function HistoricalTrendsTab() {
   const {
     data,
     historicalMetrics,
-    allCountries,
     nationalityCountries,
     focusCountry: country,
-    setFocusCountry: setCountry,
     fyRange,
   } = useDashboard();
   // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
@@ -296,17 +293,9 @@ export default function HistoricalTrendsTab() {
         .
       </Caption>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Select
-          label="Historical Country"
-          value={country}
-          options={allCountries}
-          onChange={setCountry}
-        />
-        <p className="self-end text-xs text-slate-400">
-          Fiscal years FY{startYear} – FY{endYear}, set in the control bar above.
-        </p>
-      </div>
+      <p className="text-xs text-slate-400">
+        {country} · fiscal years FY{startYear} – FY{endYear}, both set in the control bar above.
+      </p>
 
       {!hasData && (
         <InfoCallout>

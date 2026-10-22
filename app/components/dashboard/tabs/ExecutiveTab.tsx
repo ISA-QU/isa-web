@@ -73,7 +73,7 @@ function CountryCard({
 }
 
 export default function ExecutiveTab() {
-  const { data, summary, focusCountry, f1Filtered, j1Filtered } = useDashboard();
+  const { data, summary, focusCountry, consulateCountries, f1Filtered, j1Filtered } = useDashboard();
 
   /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
   const end = data.meta.coverage.postsMonthly.end;
@@ -84,8 +84,11 @@ export default function ExecutiveTab() {
   }, [data.postsMonthly, end]);
   const operationalPeriod = monthRangeLabel(data.meta.coverage.operational);
 
-  const focusRow =
-    summary.find((row) => row.country === focusCountry) ?? summary[0] ?? null;
+  // No fallback to another country: a country without rows gets a message instead.
+  const focusRow = summary.find((row) => row.country === focusCountry) ?? null;
+  const focusMissingText = consulateCountries.has(focusCountry)
+    ? `No consulate data for ${focusCountry} in ${operationalPeriod}.`
+    : `No consulate data for ${focusCountry} in this view.`;
 
   /* ---- Globe: choropleth by country name, with orthographic rotation ---- */
   const globe = useMemo(() => {
@@ -293,7 +296,7 @@ export default function ExecutiveTab() {
     return { data, layout };
   }, [f1Filtered]);
 
-  if (!focusRow) return null;
+  if (summary.length === 0) return null;
 
   return (
     <div className="space-y-6">
@@ -321,12 +324,22 @@ export default function ExecutiveTab() {
           height={540}
           ariaLabel="Interactive global recruitment globe"
         />
-        <CountryCard
-          row={focusRow}
-          f1={last12.f1.get(focusRow.country)}
-          j1={last12.j1.get(focusRow.country)}
-          period={last12.period}
-        />
+        {focusRow ? (
+          <CountryCard
+            row={focusRow}
+            f1={last12.f1.get(focusRow.country)}
+            j1={last12.j1.get(focusRow.country)}
+            period={last12.period}
+          />
+        ) : (
+          <Panel accent="gold" className="h-full">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#FFB81C]">
+              Focus Market
+            </div>
+            <div className="mt-1 text-2xl font-extrabold text-white">{focusCountry}</div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">{focusMissingText}</p>
+          </Panel>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

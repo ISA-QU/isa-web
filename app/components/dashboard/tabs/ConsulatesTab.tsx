@@ -18,7 +18,7 @@ interface RankingRow extends CountrySummaryRow {
 }
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { SubHeading } from "../shared";
+import { InfoCallout, SubHeading } from "../shared";
 import { DataTable, Divider, KpiCard, KpiRow, ScopeNote, SectionTitle } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
@@ -42,6 +42,7 @@ export default function ConsulatesTab() {
     data,
     selectedYears,
     allYears,
+    consulateCountries,
   } = useDashboard();
 
   /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
@@ -244,49 +245,63 @@ export default function ConsulatesTab() {
         Country Intelligence - <b>{focusCountry}</b>
       </SectionTitle>
 
-      <KpiRow>
-        <KpiCard
-          label="F1 issuances, last 12 months"
-          value={int(focusF1?.current ?? 0)}
-          title={`F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`}
-        />
-        <KpiCard
-          label="J1 issuances, last 12 months"
-          value={int(focusJ1?.current ?? 0)}
-          title={`J1 issued in ${focusCountry}, ${period}: ${int(focusJ1?.current ?? 0)}`}
-        />
-        <KpiCard label="Active Posts" value={focus.posts} />
-        <KpiCard
-          label="F1 vs previous 12 months"
-          value={arrowPct(focusChange)}
-          valueClassName={
-            focusChange === null ? "" : focusChange > 0 ? "!text-[#4ade80]" : focusChange < 0 ? "!text-[#f87171]" : ""
-          }
-          title={[
-            `F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`,
-            `F1 issued in ${focusCountry}, ${priorPeriod}: ${int(focusF1?.prior ?? 0)}`,
-            `Change: ${metricPct(focusChange)}`,
-          ].join("\n")}
-        />
-        <KpiCard label="Seasonality CV" value={decimals(focus.cv, 2)} />
-      </KpiRow>
-      <p className="-mt-4 text-xs text-slate-400">
-        F1 and J1 issuances and the F1 change cover the last 12 months ({period}, compared with{" "}
-        {priorPeriod}), by the country where the visa was issued, and ignore the sidebar Years
-        filter. Active Posts and Seasonality CV follow the Years filter: {filterYearsText}.
-      </p>
+      {!consulateCountries.has(focusCountry) ? (
+        <InfoCallout>No consulate data for {focusCountry} in this view.</InfoCallout>
+      ) : (
+        <>
+          <KpiRow>
+            <KpiCard
+              label="F1 issuances, last 12 months"
+              value={int(focusF1?.current ?? 0)}
+              title={`F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`}
+            />
+            <KpiCard
+              label="J1 issuances, last 12 months"
+              value={int(focusJ1?.current ?? 0)}
+              title={`J1 issued in ${focusCountry}, ${period}: ${int(focusJ1?.current ?? 0)}`}
+            />
+            <KpiCard label="Active Posts" value={focus.posts} />
+            <KpiCard
+              label="F1 vs previous 12 months"
+              value={arrowPct(focusChange)}
+              valueClassName={
+                focusChange === null ? "" : focusChange > 0 ? "!text-[#4ade80]" : focusChange < 0 ? "!text-[#f87171]" : ""
+              }
+              title={[
+                `F1 issued in ${focusCountry}, ${period}: ${int(focusF1?.current ?? 0)}`,
+                `F1 issued in ${focusCountry}, ${priorPeriod}: ${int(focusF1?.prior ?? 0)}`,
+                `Change: ${metricPct(focusChange)}`,
+              ].join("\n")}
+            />
+            <KpiCard label="Seasonality CV" value={decimals(focus.cv, 2)} />
+          </KpiRow>
+          <p className="-mt-4 text-xs text-slate-400">
+            F1 and J1 issuances and the F1 change cover the last 12 months ({period}, compared with{" "}
+            {priorPeriod}), by the country where the visa was issued, and ignore the sidebar Years
+            filter. Active Posts and Seasonality CV follow the Years filter: {filterYearsText}.
+          </p>
 
-      <Divider />
+          <Divider />
 
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-        <Chart data={trend.data} layout={trend.layout} height={420} />
-        <Chart data={topPosts.data} layout={topPosts.layout} height={420} />
-      </div>
+          {focus.f1.length + focus.j1.length === 0 ? (
+            <InfoCallout>
+              No consulate data for {focusCountry} in {filterYearsText}.
+            </InfoCallout>
+          ) : (
+            <>
+              <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+                <Chart data={trend.data} layout={trend.layout} height={420} />
+                <Chart data={topPosts.data} layout={topPosts.layout} height={420} />
+              </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Chart data={seasonality.data} layout={seasonality.layout} height={380} />
-        <Chart data={bothVisas.data} layout={bothVisas.layout} height={380} />
-      </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Chart data={seasonality.data} layout={seasonality.layout} height={380} />
+                <Chart data={bothVisas.data} layout={bothVisas.layout} height={380} />
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {compareCountries.length > 0 && (
         <section>

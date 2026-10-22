@@ -1,18 +1,19 @@
 "use client";
 
 import { useDashboard } from "./DashboardContext";
-import { MultiSelect, RadioGroup, Select, Slider } from "./ui";
-import type { VisaSelection } from "../../lib/dashboard/types";
+import { MultiSelect, Select, Slider } from "./ui";
 
-/** The Streamlit sidebar: year, visa class, focus country, comparisons, top-N. */
+/**
+ * The sidebar: years, the shared country (also set from Country 360, Historical
+ * Trends and Historical Consulates), comparisons, top-N.
+ */
 export default function Sidebar() {
   const {
     allYears,
     selectedYears,
     setSelectedYears,
-    visaClass,
-    setVisaClass,
     countries,
+    allCountries,
     focusCountry,
     setFocusCountry,
     compareCountries,
@@ -47,17 +48,10 @@ export default function Sidebar() {
             maxHeight={120}
           />
 
-          <RadioGroup<VisaSelection>
-            label="Visa Class"
-            value={visaClass}
-            options={["F1", "J1", "Both"]}
-            onChange={setVisaClass}
-          />
-
           <Select
             label="Focus Country"
             value={focusCountry}
-            options={countries}
+            options={allCountries}
             onChange={setFocusCountry}
           />
 

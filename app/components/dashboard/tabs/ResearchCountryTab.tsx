@@ -16,7 +16,7 @@ import {
 } from "../../../lib/dashboard/rolling";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { DownloadCsvButton, SubHeading } from "../shared";
+import { DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import { DataTable, ScopeNote, SectionTitle } from "../ui";
 
 const BLUE_GOLD: Array<[number, string]> = [
@@ -37,7 +37,7 @@ const HEAT_SCALE: Array<[number, string]> = [
  * label; the label now matches the content.)
  */
 export default function ResearchCountryTab() {
-  const { data, f1Filtered, focus, focusCountry, topN } = useDashboard();
+  const { data, f1Filtered, focus, focusCountry, topN, consulateCountries } = useDashboard();
 
   const topPosts = useMemo(() => {
     const totals = groupSum(f1Filtered, (r) => r.post, (r) => r.issuances);
@@ -233,7 +233,16 @@ export default function ResearchCountryTab() {
 
       <section>
         <SubHeading>Consulate Detail - {focusCountry}</SubHeading>
-        <Chart data={focusSeasonality.data} layout={focusSeasonality.layout} height={380} />
+        {!consulateCountries.has(focusCountry) ? (
+          <InfoCallout>No consulate data for {focusCountry} in this view.</InfoCallout>
+        ) : focus.f1.length === 0 ? (
+          <InfoCallout>
+            No F1 consulate data for {focusCountry} in{" "}
+            {yearSpanLabel([...new Set(f1Filtered.map((r) => r.year))])}.
+          </InfoCallout>
+        ) : (
+          <Chart data={focusSeasonality.data} layout={focusSeasonality.layout} height={380} />
+        )}
       </section>
 
       <section>

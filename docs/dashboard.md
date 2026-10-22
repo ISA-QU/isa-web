@@ -246,6 +246,13 @@ page loads it until a chart mounts. `/transcript` and `/calculator` never pay fo
   month's total by the number of selected years that include it.
 - **The partial calendar year is labelled.** Executive's annual chart shows the latest year
   as e.g. "2026 (Jan–Feb only)", lighter and hatched.
+- **One country for the whole dashboard.** The sidebar's Focus Country, Country 360's
+  Country, Historical Trends' country and Historical Consulates' country are one shared
+  selection (in `DashboardContext`), over every country in either data source. A tab whose
+  source has no rows for the country says "No consulate data for …" or "No nationality data
+  for …" instead of going blank or showing another country. Consulate comparisons reset when
+  the country changes. Country 360 and Historical Consulates open on F1. The sidebar's Visa
+  Class control, which no tab read, is removed.
 - **Risers and fallers need volume in both periods.** Command Center's movers and Consulate
   Intelligence's risers/fallers include only rows with at least 100 issuances in both
   12-month periods (`MOVER_MIN_ISSUANCES`), so tiny markets can't top the lists.

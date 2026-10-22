@@ -71,7 +71,8 @@ const RECENT_MODES = [
 type RecentMode = (typeof RECENT_MODES)[number];
 
 export default function Country360Tab() {
-  const { data, countries } = useDashboard();
+  // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
+  const { data, allCountries, focusCountry: country, setFocusCountry: setCountry } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   const operationalRange = coverage.operational;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -81,28 +82,21 @@ export default function Country360Tab() {
   const endYear = Math.floor(endIndex / 12);
   const throughMonth = (endIndex % 12) + 1;
 
-  const countryOptions = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...countries,
-          ...data.annualCountry.map((r) => r.country),
-          ...data.postsMonthly.map((r) => r.country),
-        ]),
-      ].sort(),
-    [countries, data.annualCountry, data.postsMonthly],
-  );
+  // Every country in either source, the same list as the sidebar's.
+  const countryOptions = allCountries;
 
-  const [country, setCountry] = useState(() =>
-    countryOptions.includes("India") ? "India" : (countryOptions[0] ?? ""),
-  );
-  const [visa, setVisa] = useState<VisaSelection>("Both");
+  const [visa, setVisa] = useState<VisaSelection>("F1");
   const [recentMode, setRecentMode] = useState<RecentMode>("Full Operational Window");
   const [histStart, setHistStart] = useState(firstFy);
   const [histEnd, setHistEnd] = useState(latestFy);
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
-  const [comparePosts, setComparePosts] = useState<string[] | null>(null);
+  // Consulate comparisons belong to one country; a country change resets them.
+  const [compareChoice, setCompareChoice] = useState<{ country: string; posts: string[] } | null>(
+    null,
+  );
+  const comparePosts = compareChoice?.country === country ? compareChoice.posts : null;
+  const setComparePosts = (posts: string[]) => setCompareChoice({ country, posts });
 
   const visaClasses = selectedVisaClasses(visa);
   const monthCountry = monthlyCountryName(country);

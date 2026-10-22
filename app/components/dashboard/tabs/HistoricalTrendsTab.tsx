@@ -21,7 +21,7 @@ import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { Caption, DownloadCsvButton, SubHeading } from "../shared";
+import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import {
   Column,
   DataTable,
@@ -45,7 +45,15 @@ interface RankingRow extends HistoricalMetricRow {
 }
 
 export default function HistoricalTrendsTab() {
-  const { data, historicalMetrics, focusCountry } = useDashboard();
+  // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
+  const {
+    data,
+    historicalMetrics,
+    allCountries,
+    nationalityCountries,
+    focusCountry: country,
+    setFocusCountry: setCountry,
+  } = useDashboard();
   // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
   const firstFy = data.meta.coverage.annual.first ?? 1997;
   const latestFy = data.meta.coverage.annual.latestComplete ?? firstFy;
@@ -56,18 +64,7 @@ export default function HistoricalTrendsTab() {
   );
   const provisionalList = [...provisional].sort((a, b) => a - b);
 
-  const histCountries = useMemo(
-    () => [...new Set(data.annualCountry.map((r) => r.country))].sort(),
-    [data.annualCountry],
-  );
-
-  const [country, setCountry] = useState(() =>
-    histCountries.includes(focusCountry)
-      ? focusCountry
-      : histCountries.includes("India")
-        ? "India"
-        : (histCountries[0] ?? ""),
-  );
+  const hasData = nationalityCountries.has(country);
   const [startYear, setStartYear] = useState(firstFy);
   const [endYear, setEndYear] = useState(latestFy);
 
@@ -301,7 +298,7 @@ export default function HistoricalTrendsTab() {
         <Select
           label="Historical Country"
           value={country}
-          options={histCountries}
+          options={allCountries}
           onChange={setCountry}
         />
         <Field label={`Historical Year Range: FY${startYear} - FY${endYear}`}>
@@ -328,71 +325,81 @@ export default function HistoricalTrendsTab() {
         </Field>
       </div>
 
-      <KpiRow>
-        <KpiCard
-          accent="gold"
-          label={`F1 by nationality, ${shownLabel}`}
-          value={metricNumber(metrics.latestF1)}
-        />
-        <KpiCard
-          accent="navy"
-          label={`J1 by nationality, ${shownLabel}`}
-          value={metricNumber(metrics.latestJ1)}
-        />
-        <KpiCard
-          label={
-            shownYear !== null
-              ? `F1 by nationality, FY${shownYear} vs FY${shownYear - 1}`
-              : "F1 by nationality, year on year"
-          }
-          value={arrowPct(vsPriorYear)}
-          title={
-            shownYear !== null
-              ? `FY${shownYear - 1}: ${metricNumber(countryF1.get(shownYear - 1) ?? null)}`
-              : undefined
-          }
-        />
-        <KpiCard
-          label={`F1 by nationality vs peak (${metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"})`}
-          value={metrics.peakF1Year === shownYear && shownYear !== null ? "At peak" : arrowPct(vsPeak)}
-        />
-        <KpiCard
-          label={`F1 by nationality vs FY${PRE_PANDEMIC_FY} (pre-pandemic)`}
-          value={arrowPct(vsPrePandemic)}
-          title={`FY${PRE_PANDEMIC_FY}: ${metricNumber(countryF1.get(PRE_PANDEMIC_FY) ?? null)}`}
-        />
-        <KpiCard
-          label={
-            shownYear !== null
-              ? `10-Year CAGR by nationality, FY${shownYear - 10}–FY${shownYear}`
-              : "10-Year CAGR by nationality"
-          }
-          value={metricPct(metrics.cagr10yrPct)}
-        />
-        <KpiCard accent="navy" label="Peak F1 by nationality" value={metricNumber(metrics.peakF1)} />
-        <KpiCard
-          label="Peak F1 year"
-          value={metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"}
-        />
-      </KpiRow>
-      {shownYear !== null && provisional.has(shownYear) && (
-        <p className="-mt-4 text-xs text-slate-400">
-          FY{shownYear}
-          {" is provisional: it is summed from the monthly nationality reports because our annual "}
-          source doesn&apos;t include FY{shownYear} yet.
-        </p>
+      {!hasData && (
+        <InfoCallout>
+          No nationality data for {country} in this view. The annual tables have no rows for it.
+        </InfoCallout>
       )}
 
-      <Chart data={chart.data} layout={chart.layout} height={520} />
+      {hasData && (
+        <>
+          <KpiRow>
+            <KpiCard
+              accent="gold"
+              label={`F1 by nationality, ${shownLabel}`}
+              value={metricNumber(metrics.latestF1)}
+            />
+            <KpiCard
+              accent="navy"
+              label={`J1 by nationality, ${shownLabel}`}
+              value={metricNumber(metrics.latestJ1)}
+            />
+            <KpiCard
+              label={
+                shownYear !== null
+                  ? `F1 by nationality, FY${shownYear} vs FY${shownYear - 1}`
+                  : "F1 by nationality, year on year"
+              }
+              value={arrowPct(vsPriorYear)}
+              title={
+                shownYear !== null
+                  ? `FY${shownYear - 1}: ${metricNumber(countryF1.get(shownYear - 1) ?? null)}`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`F1 by nationality vs peak (${metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"})`}
+              value={metrics.peakF1Year === shownYear && shownYear !== null ? "At peak" : arrowPct(vsPeak)}
+            />
+            <KpiCard
+              label={`F1 by nationality vs FY${PRE_PANDEMIC_FY} (pre-pandemic)`}
+              value={arrowPct(vsPrePandemic)}
+              title={`FY${PRE_PANDEMIC_FY}: ${metricNumber(countryF1.get(PRE_PANDEMIC_FY) ?? null)}`}
+            />
+            <KpiCard
+              label={
+                shownYear !== null
+                  ? `10-Year CAGR by nationality, FY${shownYear - 10}–FY${shownYear}`
+                  : "10-Year CAGR by nationality"
+              }
+              value={metricPct(metrics.cagr10yrPct)}
+            />
+            <KpiCard accent="navy" label="Peak F1 by nationality" value={metricNumber(metrics.peakF1)} />
+            <KpiCard
+              label="Peak F1 year"
+              value={metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"}
+            />
+          </KpiRow>
+          {shownYear !== null && provisional.has(shownYear) && (
+            <p className="-mt-4 text-xs text-slate-400">
+              FY{shownYear}
+              {" is provisional: it is summed from the monthly nationality reports because our annual "}
+              source doesn&apos;t include FY{shownYear} yet.
+            </p>
+      )}
 
-      <DownloadCsvButton
-        label="Download Selected Historical Country CSV"
-        filename={`qu_historical_${slug}_${startYear}_${endYear}.csv`}
-        headers={["fiscal_year", "country", "visa_class", "issuances"]}
-        rows={[...selectedRange]
-          .sort((a, b) => a.fiscalYear - b.fiscalYear || (a.visa < b.visa ? -1 : 1))
-          .map((r) => [String(r.fiscalYear), r.country, r.visa, String(r.issuances)])}
-      />
+          <Chart data={chart.data} layout={chart.layout} height={520} />
+
+          <DownloadCsvButton
+            label="Download Selected Historical Country CSV"
+            filename={`qu_historical_${slug}_${startYear}_${endYear}.csv`}
+            headers={["fiscal_year", "country", "visa_class", "issuances"]}
+            rows={[...selectedRange]
+              .sort((a, b) => a.fiscalYear - b.fiscalYear || (a.visa < b.visa ? -1 : 1))
+              .map((r) => [String(r.fiscalYear), r.country, r.visa, String(r.issuances)])}
+          />
+        </>
+      )}
 
       <Divider />
 

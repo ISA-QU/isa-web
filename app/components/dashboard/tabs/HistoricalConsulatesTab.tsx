@@ -78,23 +78,27 @@ interface ComparisonRow extends PostPeriodMetrics {
 }
 
 export default function HistoricalConsulatesTab() {
-  const { data } = useDashboard();
+  // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
+  const {
+    data,
+    allCountries: countries,
+    consulateCountries,
+    focusCountry: country,
+    setFocusCountry: setCountry,
+  } = useDashboard();
   const consulate = data.postsMonthly;
 
-  const countries = useMemo(
-    () => [...new Set(consulate.map((r) => r.country))].sort(),
-    [consulate],
-  );
-
-  const [country, setCountry] = useState(() =>
-    countries.includes("India") ? "India" : (countries[0] ?? ""),
-  );
   const [postSelection, setPostSelection] = useState<string | null>(null);
-  const [visa, setVisa] = useState<VisaSelection>("Both");
+  const [visa, setVisa] = useState<VisaSelection>("F1");
   const [quickRange, setQuickRange] = useState<QuickRange>("Complete History");
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
-  const [comparePosts, setComparePosts] = useState<string[] | null>(null);
+  // Post comparisons belong to one country; a country change resets them.
+  const [compareChoice, setCompareChoice] = useState<{ country: string; posts: string[] } | null>(
+    null,
+  );
+  const comparePosts = compareChoice?.country === country ? compareChoice.posts : null;
+  const setComparePosts = (posts: string[]) => setCompareChoice({ country, posts });
   const [annualMode, setAnnualMode] = useState<string | null>(null);
   const [seasonalityStat, setSeasonalityStat] = useState<SeasonalityStat>("Average");
   const [sortOption, setSortOption] = useState<SortOption>("Latest 12 Months");
@@ -303,6 +307,18 @@ export default function HistoricalConsulatesTab() {
       />
     </>
   );
+
+  if (!consulateCountries.has(country)) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <InfoCallout>
+          No consulate data for {country} in this view. The monthly consulate data has no posts in
+          this country.
+        </InfoCallout>
+      </div>
+    );
+  }
 
   if (startIndex > endIndex || selected.length === 0) {
     return (

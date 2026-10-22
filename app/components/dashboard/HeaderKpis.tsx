@@ -23,7 +23,7 @@ const toneOf = (change: number | null) =>
  * card's hover tooltip.
  */
 export default function HeaderKpis() {
-  const { data, focusCountry } = useDashboard();
+  const { data, focusCountry, consulateCountries } = useDashboard();
   const end = data.meta.coverage.postsMonthly.end;
   const firstMonth = data.meta.coverage.postsMonthly.start;
 
@@ -100,8 +100,12 @@ export default function HeaderKpis() {
         <KpiCard
           accent="gold"
           label={`Focus: ${focusCountry}`}
-          value={int(focusF1)}
-          delta={`F1 issued in ${focusCountry} · ${changeLine(focusChange)}`}
+          value={consulateCountries.has(focusCountry) ? int(focusF1) : "—"}
+          delta={
+            consulateCountries.has(focusCountry)
+              ? `F1 issued in ${focusCountry} · ${changeLine(focusChange)}`
+              : `No consulate data for ${focusCountry}`
+          }
           deltaTone={toneOf(focusChange)}
           title={detail(`F1 issued in ${focusCountry}`, focusF1, focusPrior, focusChange)}
         />

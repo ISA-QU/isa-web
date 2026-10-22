@@ -21,7 +21,6 @@ import type {
   DashboardData,
   HistoricalMetricRow,
   OperationalRow,
-  VisaSelection,
 } from "../../lib/dashboard/types";
 
 /**
@@ -35,8 +34,6 @@ interface DashboardState {
   /** Sidebar filters. */
   selectedYears: number[];
   setSelectedYears: (years: number[]) => void;
-  visaClass: VisaSelection;
-  setVisaClass: (visa: VisaSelection) => void;
   focusCountry: string;
   setFocusCountry: (country: string) => void;
   compareCountries: string[];
@@ -47,6 +44,15 @@ interface DashboardState {
   /** Options derived from the data. */
   allYears: number[];
   countries: string[];
+  /**
+   * Every country in either data source (consulate and nationality), for the
+   * one shared country picker used by the sidebar and every tab.
+   */
+  allCountries: string[];
+  /** Countries present in the monthly consulate data. */
+  consulateCountries: ReadonlySet<string>;
+  /** Countries present in the annual nationality data. */
+  nationalityCountries: ReadonlySet<string>;
 
   /** Unfiltered operational splits, and the year-filtered views the tabs use. */
   f1: OperationalRow[];
@@ -54,8 +60,6 @@ interface DashboardState {
   f1Filtered: OperationalRow[];
   j1Filtered: OperationalRow[];
   dfFiltered: OperationalRow[];
-  /** `working` in app.py — the filtered frame for the selected visa class. */
-  working: OperationalRow[];
 
   summary: CountrySummaryRow[];
   historicalMetrics: HistoricalMetricRow[];
@@ -107,10 +111,23 @@ export function DashboardProvider({
     [f1],
   );
 
+  const consulateCountries = useMemo(
+    () => new Set(data.postsMonthly.map((r) => r.country)),
+    [data.postsMonthly],
+  );
+  const nationalityCountries = useMemo(
+    () => new Set(data.annualCountry.map((r) => r.country)),
+    [data.annualCountry],
+  );
+  // Names already match across the two sources (the rebuild Lambda unifies them).
+  const allCountries = useMemo(
+    () => [...new Set([...consulateCountries, ...nationalityCountries])].sort(),
+    [consulateCountries, nationalityCountries],
+  );
+
   const [selectedYears, setSelectedYears] = useState<number[]>(allYears);
-  const [visaClass, setVisaClass] = useState<VisaSelection>("F1");
   const [selectedFocus, setFocusCountry] = useState<string>(() =>
-    countries.includes("India") ? "India" : (countries[0] ?? ""),
+    allCountries.includes("India") ? "India" : (allCountries[0] ?? ""),
   );
   const [compareCountries, setCompareCountries] = useState<string[]>(() =>
     ["India", "China", "Vietnam", "Nepal", "Nigeria"].filter((c) => countries.includes(c)),
@@ -120,9 +137,9 @@ export function DashboardProvider({
   // Resolved during render rather than corrected in an effect, so a dataset swap
   // never leaves a stale country selected for a frame.
   const focusCountry =
-    countries.length === 0 || countries.includes(selectedFocus)
+    allCountries.length === 0 || allCountries.includes(selectedFocus)
       ? selectedFocus
-      : (countries.includes("India") ? "India" : countries[0]);
+      : (allCountries.includes("India") ? "India" : allCountries[0]);
 
   const yearSet = useMemo(() => new Set(selectedYears), [selectedYears]);
   const hasYearFilter = selectedYears.length > 0;
@@ -142,12 +159,6 @@ export function DashboardProvider({
         : data.operational,
     [data.operational, yearSet, hasYearFilter],
   );
-
-  const working = useMemo(() => {
-    if (visaClass === "F1") return f1Filtered;
-    if (visaClass === "J1") return j1Filtered;
-    return dfFiltered;
-  }, [visaClass, f1Filtered, j1Filtered, dfFiltered]);
 
   // Built from the unfiltered splits, exactly as app.py does.
   const summary = useMemo(
@@ -192,8 +203,6 @@ export function DashboardProvider({
     data,
     selectedYears,
     setSelectedYears,
-    visaClass,
-    setVisaClass,
     focusCountry,
     setFocusCountry,
     compareCountries,
@@ -202,12 +211,14 @@ export function DashboardProvider({
     setTopN,
     allYears,
     countries,
+    allCountries,
+    consulateCountries,
+    nationalityCountries,
     f1,
     j1,
     f1Filtered,
     j1Filtered,
     dfFiltered,
-    working,
     summary,
     historicalMetrics,
     growthLabel,

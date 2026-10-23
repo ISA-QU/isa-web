@@ -279,9 +279,8 @@ export default function HistoricalTrendsTab() {
       <Panel accent="navy">
         <p className="leading-relaxed text-[#CBD5E1]">
           Historical Trends uses annual country/nationality-level State Department data from
-          FY{firstFy}-FY{latestFy}. It does not include consulate/post-level detail. Recent
-          operational post intelligence remains in Consulate Intelligence using the latest monthly
-          data; longer monthly post history appears separately in Historical Consulate Intelligence.
+          FY{firstFy}-FY{latestFy}. It does not include consulate/post-level detail: monthly figures
+          by consulate, recent and since Mar 2017, are on the Consulates page.
         </p>
       </Panel>
 
@@ -344,7 +343,7 @@ export default function HistoricalTrendsTab() {
                   ? `10-Year CAGR by nationality, FY${shownYear - 10}–FY${shownYear}`
                   : "10-Year CAGR by nationality"
               }
-              value={metricPct(metrics.cagr10yrPct)}
+              value={arrowPct(metrics.cagr10yrPct)}
             />
             <KpiCard accent="navy" label="Peak F1 by nationality" value={metricNumber(metrics.peakF1)} />
             <KpiCard

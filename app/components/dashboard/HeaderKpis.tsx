@@ -100,11 +100,11 @@ export default function HeaderKpis() {
         />
         <KpiCard
           accent="gold"
-          label={`Focus: ${focusCountry}`}
+          label={`Issued in ${focusCountry}`}
           value={consulateCountries.has(focusCountry) ? int(focusF1) : "—"}
           delta={
             consulateCountries.has(focusCountry)
-              ? `F1 issued in ${focusCountry} · ${changeLine(focusChange)}`
+              ? `F1 · ${changeLine(focusChange)}`
               : `No consulate data for ${focusCountry}`
           }
           deltaTone={toneOf(focusChange)}
@@ -124,7 +124,7 @@ export default function HeaderKpis() {
         />
       </KpiRow>
       <p className="-mt-4 mb-7 text-xs text-slate-400">
-        Country = where the visa was issued, not student nationality.
+        Header country card = where the visa was issued (not the visa holder&apos;s nationality).
       </p>
     </>
   );

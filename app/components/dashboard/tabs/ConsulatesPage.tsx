@@ -559,7 +559,7 @@ export default function ConsulatesPage() {
       {context && (
         <p className="text-sm text-slate-300">
           Consulates in {focusCountry} issued <b className="text-white">{int(context.issuedIn)}</b>{" "}
-          {visaLabel} visas in {periodRange.inSentence}; citizens of {focusCountry} received{" "}
+          {visaLabel} visas in {periodRange.inSentence}; nationals of {focusCountry} received{" "}
           <b className="text-white">{int(context.receivedBy)}</b> {visaLabel} visas worldwide.{" "}
           <span className="text-xs text-slate-400">
             These measure different things: where visas were issued vs who received them.

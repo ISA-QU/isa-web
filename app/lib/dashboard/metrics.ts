@@ -20,6 +20,7 @@ import {
 } from "./constants";
 import {
   LOW_VOLUME,
+  MIN_BASE,
   NO_LOCAL_VISAS,
   changeVsBase,
   lastTwelve,
@@ -37,6 +38,7 @@ import type {
   Coord,
   HistoricalMetricRow,
   MonthRange,
+  NationalityMonthlyRow,
   OperationalRow,
   PostMonthlyRow,
   PostPeriodMetrics,
@@ -984,4 +986,137 @@ export function buildCommandCenterFrame(
   return rows.sort(
     (a, b) => b.currentVolume - a.currentVolume || b.latest12Total - a.latest12Total,
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Country 360 by nationality (8-2b)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Which small- or collapsing-market rule decided the advice: "fell" = under 100
+ * nationals in the last 12 months after 100+ in the 12 before; "small" = under
+ * 100 in both. null = the shared rules decided.
+ */
+export type NationalityRule = "fell" | "small" | null;
+
+export interface NationalitySignals extends CommandCenterRow {
+  rule: NationalityRule;
+  /** Timing and timing-based advice don't apply: either rule above, or a fall of 75% or more. */
+  hideTiming: boolean;
+}
+
+/** A fall this large (or larger) hides timing advice. */
+const STEEP_FALL_PCT = -75;
+
+/**
+ * Country 360's "What to do" inputs from the monthly nationality data: the same
+ * classifier and shared rules as the Command Center (data end, minimum base,
+ * typical-year peak, missing months as 0), but counting the country's
+ * nationals wherever their visas were issued, and without consulate
+ * concentration. Two rules come first for small or collapsing markets (see
+ * NationalityRule). Null when the table is missing or has no rows for the
+ * country, so the page falls back to the issued-in row.
+ *
+ * The Command Center keeps its issued-in rules until the Markets page.
+ */
+export function nationalitySignals(
+  nationality: readonly NationalityMonthlyRow[] | null,
+  annualCountry: readonly AnnualCountryRow[],
+  country: string,
+  visaSelection: VisaSelection,
+  latestCompleteFiscalYear: number | null,
+  /** The monthly data's coverage: the last 12 months and the recovery year come from it. */
+  coverage: MonthRange,
+  /** The window "Current Volume" covers, the same as the Command Center's (Jan 2024 – Feb 2026 today). */
+  volumeWindow: MonthRange,
+): NationalitySignals | null {
+  if (!nationality) return null;
+  const all = nationality.filter((r) => r.isCountry && r.country === country);
+  if (all.length === 0) return null;
+
+  const visaClasses = selectedVisaClasses(visaSelection);
+  const visaLabel = visaSelection === "Both" ? "F1 + J1" : visaSelection;
+  const rows = all.filter((r) => visaClasses.includes(r.visa));
+  const annualRows = annualCountry.filter((r) => r.country === historicalCountryName(country));
+  const latestHistYear = latestCompleteFiscalYear;
+
+  const twelve = lastTwelve(rows, coverage.end);
+  const recovery = recoveryVs2019(rows, latestCompleteYearOf(coverage));
+  const typical = typicalYear(rows, typicalYearsOf(coverage));
+  const growth = (years: number) =>
+    annualRows.length > 0 && latestHistYear !== null
+      ? fiscalYearGrowth(annualRows, visaClasses, latestHistYear, latestHistYear - years)
+      : null;
+  let cagr10yr: number | null = null;
+  if (annualRows.length > 0 && latestHistYear !== null) {
+    const scoped = annualRows.filter((r) => visaClasses.includes(r.visa));
+    cagr10yr = calcCagr(
+      sumBy(scoped.filter((r) => r.fiscalYear === latestHistYear), (r) => r.issuances),
+      sumBy(scoped.filter((r) => r.fiscalYear === latestHistYear - 10), (r) => r.issuances),
+      10,
+    );
+  }
+
+  const base: ClassificationInput = {
+    country,
+    region: regionForCountry(country),
+    currentVolume: sumBy(
+      rows.filter((r) => r.monthIndex >= volumeWindow.start && r.monthIndex <= volumeWindow.end),
+      (r) => r.issuances,
+    ),
+    growth5yr: growth(5),
+    growth10yr: growth(10),
+    cagr10yr,
+    latest12Total: twelve.current,
+    prior12Total: twelve.prior,
+    latest12Momentum: twelve.change,
+    recoveryIndex: recovery.index,
+    baseline2019: recovery.base2019,
+    // Here: whether the country has any nationality rows for the selected visas.
+    hasConsulateData: rows.length > 0,
+    peakMonth: typical.peakMonth,
+    peakMonthName: peakMonthLabel(typical),
+    seasonalityRatio: typical.seasonalityRatio,
+    volatilityCv: volatilityIn(rows, coverage),
+    // Consulate concentration stays out of the nationality-based advice.
+    topOneShare: null,
+    topThreeShare: null,
+    concentrationRisk: "N/A",
+  };
+
+  // Small or collapsing markets first, before any seasonality or timing rule.
+  const rule: NationalityRule =
+    twelve.current < MIN_BASE ? (twelve.prior >= MIN_BASE ? "fell" : "small") : null;
+  const category = rule === "fell" ? "Declining" : marketCategory(base);
+  const flags = secondaryFlags({ ...base, marketCategory: category });
+  const confidence = dataConfidenceLabel({ ...base, secondaryFlags: flags });
+  const action =
+    rule === "fell"
+      ? "Review Structural Decline"
+      : rule === "small"
+        ? "Insufficient Evidence"
+        : recommendedAction({ ...base, marketCategory: category, secondaryFlags: flags });
+  const profile = recommendationProfile({ ...base, recommendedAction: action, confidence });
+  const count = (value: number) => value.toLocaleString("en-US");
+  if (rule === "fell") {
+    profile.primaryDriver = `Fell from ${count(twelve.prior)} to ${count(twelve.current)} visas to nationals of ${country} (${visaLabel}, last 12 months)`;
+  } else if (rule === "small") {
+    profile.primaryDriver = `Fewer than ${MIN_BASE} visas to nationals of ${country} in the last 12 months`;
+  }
+  const hideTiming =
+    rule !== null || (twelve.change !== null && twelve.change <= STEEP_FALL_PCT);
+  if (hideTiming) profile.timing = "";
+
+  return {
+    ...base,
+    marketCategory: category,
+    secondaryFlags: flags,
+    secondaryFlagsText: flags.join(", "),
+    confidence,
+    recommendedAction: action,
+    ...profile,
+    evidence: evidenceText(base),
+    rule,
+    hideTiming,
+  };
 }

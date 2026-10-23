@@ -420,7 +420,7 @@ async function main() {
   const indiaF1History = postsMonthly.filter((r) => r.country === "India" && r.visa === "F1");
   const indiaHc = metrics.postPeriodMetrics(indiaF1History, { dataEnd: coverage.end, recoveryYear });
   check(
-    "Country 360 India F1: last 12 months / change / recovery",
+    "Country 360 issued-in line, India F1: last 12 months / change / recovery",
     `${sum(indiaF1History.filter(inWindow(last12Range.start, last12Range.end)))} / ${indiaHc.latest12Change.toFixed(1)} / ${Math.round(indiaHc.recoveryIndex)}`,
     "27258 / -62.2 / 64",
   );
@@ -443,24 +443,24 @@ async function main() {
     const r = rowFor(country);
     return `${r.latest12Total} / ${r.prior12Total} / ${lowOr(r.latest12Momentum)} / ${lowOr(r.recoveryIndex)}`;
   };
-  check("Venezuela F1 (Caracas last reported Jan 2019): last 12 / previous 12 / change / recovery", signals("Venezuela"), "0 / 0 / low volume / low volume");
+  check("Command Center (issued in), Venezuela F1 (Caracas last reported Jan 2019): last 12 / previous 12 / change / recovery", signals("Venezuela"), "0 / 0 / low volume / low volume");
   const venezuela = rowFor("Venezuela");
   check(
-    "Venezuela What to do: action / why",
+    "Command Center (issued in), Venezuela What to do: action / why",
     `${venezuela.recommendedAction} / ${venezuela.primaryDriver}`,
     "Insufficient Evidence / No visas issued locally in the last 12 months",
   );
-  check("Russia F1: last 12 / previous 12 / change / recovery", signals("Russia"), "5 / 21 / low volume / 0.1");
-  check("Myanmar F1: last 12 / previous 12 / change / recovery", signals("Myanmar"), "130 / 1705 / -92.4 / 25.2");
-  check("Ukraine F1: last 12 / previous 12 / change / recovery", signals("Ukraine"), "8 / 5 / low volume / 1.1");
-  check("Afghanistan F1 recovery (2025 vs 2019, not 2019 vs 2019)", lowOr(rowFor("Afghanistan").recoveryIndex), "0.0");
+  check("Command Center (issued in), Russia F1: last 12 / previous 12 / change / recovery", signals("Russia"), "5 / 21 / low volume / 0.1");
+  check("Command Center (issued in), Myanmar F1: last 12 / previous 12 / change / recovery", signals("Myanmar"), "130 / 1705 / -92.4 / 25.2");
+  check("Command Center (issued in), Ukraine F1: last 12 / previous 12 / change / recovery", signals("Ukraine"), "8 / 5 / low volume / 1.1");
+  check("Command Center (issued in), Afghanistan F1 recovery (2025 vs 2019, not 2019 vs 2019)", lowOr(rowFor("Afghanistan").recoveryIndex), "0.0");
   check(
-    "Ukraine and Myanmar not flagged Recovery Leader",
+    "Command Center (issued in): Ukraine and Myanmar not flagged Recovery Leader",
     ["Ukraine", "Myanmar"].filter((c) => rowFor(c).secondaryFlags.includes("Recovery Leader")).length,
     0,
   );
   check(
-    "Country 360 (one country) and Command Center (all) give the same action for every country, F1",
+    "Command Center one-country row matches the full frame (same action for every country), F1",
     frame.filter((r) => rowFor(r.country).recommendedAction !== r.recommendedAction).length,
     0,
   );
@@ -553,7 +553,7 @@ async function main() {
   );
   const frameA2 = new Map(frame.map((r) => [r.country, r]));
   check(
-    "peak month (typical year): India / China / Ukraine / Egypt / Pakistan",
+    "Command Center (issued in) peak month (typical year): India / China / Ukraine / Egypt / Pakistan",
     ["India", "China", "Ukraine", "Egypt", "Pakistan"].map((c) => frameA2.get(c).peakMonthName).join(" / "),
     "June / June / July / July / July",
   );
@@ -574,7 +574,7 @@ async function main() {
     f1ByCountry.get(r.country).push(r);
   }
   check(
-    "every page's peak month agrees with Command Center for every country (F1)",
+    "Executive and Command Center peaks agree for every country (issued in, F1)",
     [...f1ByCountry].filter(([c, rows]) => metrics.peakMonthLabel(measures.typicalYear(rows, typicalYrs)) !== frameA2.get(c).peakMonthName).length,
     0,
   );
@@ -612,16 +612,18 @@ async function main() {
       .join(", "),
     "100, 8, 3, 0, 0, 0, 0",
   );
+  // Fingerprints hash each country's name with its category/action. Re-recorded in 8-2b
+  // after "Korea, North" became "North Korea"; the advice itself was unchanged.
   const fingerprint = (rows) =>
     createHash("sha1")
       .update(rows.map((r) => `${r.country}=${r.marketCategory}/${r.recommendedAction}`).sort().join("\n"))
       .digest("hex")
       .slice(0, 12);
-  check("no F1 category or action changes vs A1 (every country)", fingerprint(frame), "2667c03ff99f");
+  check("no F1 category or action changes vs A1 (every country)", fingerprint(frame), "7d7c2115780a");
   check(
     "no F1 + J1 category or action changes vs A1 (every country)",
     fingerprint(metrics.buildCommandCenterFrame(operational, annualCountry, postsMonthly, "Both", latestComplete, coverage)),
-    "8a6ec0744bb9",
+    "6cd7a8ce8352",
   );
   check("Canada J1 action (accepted change)", rowFor("Canada", "J1").recommendedAction, "Begin Outreach Earlier");
   check(
@@ -630,9 +632,100 @@ async function main() {
     "144 / 135",
   );
   check(
-    "Timing hidden with 0 local visas: Venezuela / Afghanistan (India keeps it)",
+    "Command Center (issued in): Timing hidden with 0 local visas: Venezuela / Afghanistan (India keeps it)",
     `"${rowFor("Venezuela").timing}" / "${rowFor("Afghanistan").timing}" / ${frameA2.get("India").timing !== ""}`,
     '"" / "" / true',
+  );
+
+  console.log("\n  Country 360 by nationality  (8-2b; expected values recounted with pandas from the raw monthly nationality workbook)");
+  const opWindow = snapshot.coverage.operational;
+  const natRow = (country, visa = "F1") =>
+    metrics.nationalitySignals(nationality, annualCountry, country, visa, latestComplete, coverage, opWindow);
+  const natFigures = (country, visa = "F1") => {
+    const r = natRow(country, visa);
+    return `${r.latest12Total} / ${r.prior12Total} / ${lowOr(r.latest12Momentum)} / ${r.recoveryIndex === null ? "low volume" : Math.round(r.recoveryIndex)}`;
+  };
+  check("India F1 nationals: last 12 / previous 12 / change / recovery", natFigures("India"), "30292 / 75060 / -59.6 / 67");
+  check("India F1 + J1 nationals: last 12 / previous 12 / change / recovery", natFigures("India", "Both"), "37255 / 86456 / -56.9 / 69");
+  check("Iran F1 nationals: last 12 / previous 12 / change / recovery", natFigures("Iran"), "191 / 2331 / -91.8 / 13");
+  check(
+    "Venezuela F1 nationals (last 12 / previous 12 / change / recovery) | issued in, last 12",
+    `${natFigures("Venezuela")} | ${measures.lastTwelve(f1Posts.filter((r) => r.country === "Venezuela"), coverage.end).current}`,
+    "87 / 734 / -88.1 / 16 | 0",
+  );
+  check(
+    "nationals, F1 (last 12 / previous 12 / recovery): Nigeria; Russia; Ukraine; UAE; UK; China; Ghana",
+    ["Nigeria", "Russia", "Ukraine", "United Arab Emirates", "United Kingdom", "China", "Ghana"]
+      .map((c) => {
+        const r = natRow(c);
+        return `${r.latest12Total}/${r.prior12Total}/${Math.round(r.recoveryIndex)}`;
+      })
+      .join("; "),
+    "2808/5947/70; 1769/2590/38; 845/831/110; 548/817/73; 4432/4559/110; 55295/79118/53; 2053/5049/139",
+  );
+  check("peak month (typical year) by nationality: India / China / Iran", ["India", "China", "Iran"].map((c) => natRow(c).peakMonthName).join(" / "), "June / June / August");
+  const controlCountries = new Set(countryNames);
+  const natInControl = nationality.filter((r) => r.isCountry && controlCountries.has(r.country));
+  const natL12 = new Map();
+  for (const r of natInControl) {
+    if (r.visa === "F1" && r.monthIndex >= last12Range.start && r.monthIndex <= last12Range.end) {
+      natL12.set(r.country, (natL12.get(r.country) ?? 0) + r.issuances);
+    }
+  }
+  check(
+    "compare default: top 5 F1 nationals, last 12 months",
+    [...natL12].sort((x, y) => y[1] - x[1]).slice(0, 5).map(([c]) => c).join(", "),
+    "China, India, Vietnam, South Korea, France",
+  );
+  const advice = (country) => {
+    const r = natRow(country);
+    return `${r.marketCategory} / ${r.recommendedAction}${r.timing ? "" : " / no timing"}`;
+  };
+  check("What to do by nationality: India (keeps timing)", advice("India"), "Declining / Review Structural Decline");
+  check(
+    "What to do by nationality: Iran (fell 91.8%) / Venezuela / Afghanistan / Syria",
+    ["Iran", "Venezuela", "Afghanistan", "Syria"].map(advice).join(" | "),
+    "Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing",
+  );
+  check(
+    "reasons: Venezuela / Afghanistan / Syria / North Korea",
+    ["Venezuela", "Afghanistan", "Syria", "North Korea"].map((c) => natRow(c).primaryDriver).join(" | "),
+    "Fell from 734 to 87 visas to nationals of Venezuela (F1, last 12 months) | Fell from 370 to 38 visas to nationals of Afghanistan (F1, last 12 months) | Fell from 222 to 84 visas to nationals of Syria (F1, last 12 months) | Fewer than 100 visas to nationals of North Korea in the last 12 months",
+  );
+  check("What to do by nationality: UK / Nigeria", `${advice("United Kingdom")} | ${advice("Nigeria")}`, "Watch / Begin Outreach Earlier | Watch / Begin Outreach Earlier");
+  const natCountries = [...new Set(natInControl.map((r) => r.country))].sort();
+  const ruleCounts = (visa) => {
+    const rows = natCountries.map((c) => natRow(c, visa));
+    return `${rows.length} countries: a ${rows.filter((r) => r.rule === "fell").length} / b ${rows.filter((r) => r.rule === "small").length} / c ${rows.filter((r) => r.hideTiming).length}`;
+  };
+  check("small and collapsing markets, F1: (a) fell below 100 / (b) under 100 both periods / (c) timing hidden", ruleCounts("F1"), "203 countries: a 25 / b 57 / c 85");
+  check("small and collapsing markets, F1 + J1", ruleCounts("Both"), "203 countries: a 19 / b 46 / c 68");
+  const natRowsF1 = natCountries.map((c) => natRow(c));
+  check(
+    "nationality advice: no consulate concentration / no Begin Outreach Earlier with timing hidden",
+    `${natRowsF1.filter((r) => r.secondaryFlags.includes("High Concentration")).length} / ${natRowsF1.filter((r) => r.hideTiming && r.recommendedAction === "Begin Outreach Earlier").length}`,
+    "0 / 0",
+  );
+  check("nationality advice fingerprint, F1 (every country)", fingerprint(natRowsF1), "cd98bc116375");
+  check("nationality advice fingerprint, F1 + J1 (every country)", fingerprint(natCountries.map((c) => natRow(c, "Both"))), "518a0bf7050a");
+  const issuedL12 = new Map();
+  for (const r of f1Posts) {
+    if (r.monthIndex >= last12Range.start && r.monthIndex <= last12Range.end) issuedL12.set(r.country, (issuedL12.get(r.country) ?? 0) + r.issuances);
+  }
+  check(
+    '"mostly receive visas elsewhere" note (issued in < half of nationals, F1, last 12 months)',
+    [...natL12].filter(([c, v]) => v > 0 && (issuedL12.get(c) ?? 0) < v / 2).length,
+    44,
+  );
+  check(
+    "fallback: no nationality table / no rows for the country (Curacao) → issued-in row",
+    `${metrics.nationalitySignals(null, annualCountry, "India", "F1", latestComplete, coverage, opWindow)} / ${natRow("Curacao")}`,
+    "null / null",
+  );
+  check(
+    "Montserrat and Western Sahara are not in the Country control or compare options",
+    ["Montserrat", "Western Sahara"].filter((c) => controlCountries.has(c)).length,
+    0,
   );
 
   await rm(outDir, { recursive: true, force: true });

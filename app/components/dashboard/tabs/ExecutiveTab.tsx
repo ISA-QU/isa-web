@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
 import { calendarYearLabel, yearListLabel } from "../../../lib/dashboard/periods";
-import { int } from "../../../lib/dashboard/format";
+import { int, monthDisplay } from "../../../lib/dashboard/format";
 import { changeText, changeVsBase, typicalYear, typicalYearsOf } from "../../../lib/dashboard/measures";
 import { groupSum, idxMaxString, peakMonthLabel } from "../../../lib/dashboard/metrics";
 import {
@@ -387,7 +387,7 @@ export default function ExecutiveTab() {
         type: "scatter",
         mode: "lines+markers",
         name: visaLabel,
-        x: months.map((index) => monthRangeLabel({ start: index, end: index })),
+        x: months.map((index) => monthDisplay(index)),
         y: months.map((index) => byMonth.get(index)!),
         line: { color: "#FFB81C", width: 3 },
         marker: { color: "#FFB81C", size: 6 },

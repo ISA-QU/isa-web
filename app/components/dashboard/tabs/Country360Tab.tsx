@@ -39,14 +39,14 @@ import {
   sumBy,
   historicalCountryName,
   monthlyCountryName,
+  nationalitySignals,
   peakMonthLabel,
   regionForCountry,
   volatilityLabel,
 } from "../../../lib/dashboard/metrics";
-import { buildConsulateTable } from "../../../lib/dashboard/consulates";
-import { averagePerMonth, calendarMonthYearCounts } from "../../../lib/dashboard/periods";
+import { buildConsulateTable, previousPeriod } from "../../../lib/dashboard/consulates";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
-import type { PostMonthlyRow } from "../../../lib/dashboard/types";
+import type { MonthRange, Visa } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
@@ -70,6 +70,13 @@ import {
 } from "../ui";
 
 
+/** A monthly row from either source: nationality (who received the visa) or consulate (where it was issued). */
+type MonthRow = { year: number; month: number; monthIndex: number; visa: Visa; issuances: number };
+
+const inRange = (range: MonthRange) => (r: { monthIndex: number }) =>
+  r.monthIndex >= range.start && r.monthIndex <= range.end;
+const total = (rows: readonly { issuances: number }[]) => sumBy(rows, (r) => r.issuances);
+
 export default function Country360Tab() {
   // The country is the dashboard-wide selection, shared with the sidebar and other tabs.
   // Country, visa and period come from the control bar.
@@ -87,6 +94,7 @@ export default function Country360Tab() {
     focusRows,
     typical,
     consulateCountries,
+    allCountries,
     summary,
   } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
@@ -121,51 +129,67 @@ export default function Country360Tab() {
     [hcCountryAll, visaClasses],
   );
 
+  // By nationality (8-2b): the country's nationals, wherever their visas were
+  // issued. Falls back to visas issued in the country, with a banner, when the
+  // snapshot has no nationality table or no rows for this country.
+  const nationalityTable = data.nationalityMonthly;
+  const nationalityAll = useMemo(
+    () => nationalityTable?.filter((r) => r.isCountry && r.country === country) ?? [],
+    [nationalityTable, country],
+  );
+  const byNationality = nationalityAll.length > 0;
+  const leadAll: readonly MonthRow[] = byNationality ? nationalityAll : hcCountryAll;
+  const lead = useMemo(() => leadAll.filter((r) => visaClasses.includes(r.visa)), [leadAll, visaClasses]);
+  /** "nationals of India", or "issued in India" in the fallback. */
+  const leadName = byNationality ? `nationals of ${country}` : `issued in ${country}`;
+  /** The same at the start of a sentence. */
+  const LeadName = leadName.charAt(0).toUpperCase() + leadName.slice(1);
+  const hasLeadRows = lead.length > 0;
+
   // "Current Operational Signal" follows the control bar's Period. It reads the
   // full monthly consulate data, so any period since Mar 2017 works.
-  const opPeriod = useMemo(
-    () =>
-      hcCountry.filter(
-        (r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
-      ),
-    [hcCountry, periodRange],
-  );
+  const opPeriod = useMemo(() => hcCountry.filter(inRange(periodRange)), [hcCountry, periodRange]);
 
-  // F1 and J1 for the control bar's Period (whatever the Visa), shown where the
-  // old "Operational" (Jan 2024 – Feb 2026) figures were. The recommendation's
-  // inputs are unchanged (they still use the operational window).
-  const periodF1 = sumBy(
-    hcCountryAll.filter(
-      (r) => r.visa === "F1" && r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
-    ),
-    (r) => r.issuances,
-  );
-  const periodJ1 = sumBy(
-    hcCountryAll.filter(
-      (r) => r.visa === "J1" && r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
-    ),
-    (r) => r.issuances,
-  );
+  // F1 and J1 for the Period (whatever the Visa).
+  const periodF1 = total(leadAll.filter((r) => r.visa === "F1" && inRange(periodRange)(r)));
+  const periodJ1 = total(leadAll.filter((r) => r.visa === "J1" && inRange(periodRange)(r)));
+
+  // The change card follows the Period, against the previous period of equal length (as on Consulates).
+  const priorRange = previousPeriod(periodRange, coverage.postsMonthly);
+  const periodChange = (rows: readonly MonthRow[]) => {
+    const now = total(rows.filter(inRange(periodRange)));
+    const before = priorRange ? total(rows.filter(inRange(priorRange))) : null;
+    return { now, before, change: before === null ? null : changeVsBase(now, before) };
+  };
+  const leadPeriod = periodChange(lead);
+  // "last 12 months (Mar 2025 – Feb 2026)" and "previous 12 months (Mar 2024 – Feb 2025)" for sentences.
+  const periodLabelLower = periodRange.label.charAt(0).toLowerCase() + periodRange.label.slice(1);
+  const previousLabel = priorRange
+    ? `previous ${priorRange.end - priorRange.start + 1 === 1 ? "month" : `${priorRange.end - priorRange.start + 1} months`} (${monthRangeLabel(priorRange)})`
+    : "";
+  const issuedPeriod = periodChange(hcCountry);
+  /** "▼ 59.6%", "— (low volume)", "—" with no previous period, "N/A" with no rows. */
+  const periodChangeText = (
+    figures: { before: number | null; change: number | null },
+    hasRows: boolean,
+    format: (value: number) => string,
+  ) => (!hasRows ? "N/A" : figures.before === null ? "—" : changeText(figures.change, figures.before, format));
 
   // Periods for the sections that don't follow the Period control.
   const fullRangeText = monthRangeLabel(data.meta.coverage.postsMonthly);
   // The data's latest complete year, the same for every country (never this country's own last row).
   const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
 
-
   const empty =
-    opCountryAll.length === 0 && histCountryAll.length === 0 && hcCountryAll.length === 0;
+    opCountryAll.length === 0 &&
+    histCountryAll.length === 0 &&
+    hcCountryAll.length === 0 &&
+    nationalityAll.length === 0;
 
   /* ---- Headline metrics ---- */
   const metrics = useMemo(() => {
-    const latestFyF1 = sumBy(
-      histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "F1"),
-      (r) => r.issuances,
-    );
-    const latestFyJ1 = sumBy(
-      histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "J1"),
-      (r) => r.issuances,
-    );
+    const latestFyF1 = total(histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "F1"));
+    const latestFyJ1 = total(histCountryAll.filter((r) => r.fiscalYear === latestFy && r.visa === "J1"));
     const growth5 =
       histCountryAll.length > 0
         ? fiscalYearGrowth(histCountryAll, ["F1"], latestFy, latestFy - 5)
@@ -176,27 +200,35 @@ export default function Country360Tab() {
         : null;
 
     // Last 12 months end at the data's last month for every country.
-    const twelve = lastTwelve(hcCountry, endIndex);
-    const inLast12 = (r: { monthIndex: number }) =>
-      r.monthIndex >= twelve.currentRange.start && r.monthIndex <= twelve.currentRange.end;
-    const latest12F1 = visaClasses.includes("F1")
-      ? sumBy(hcCountry.filter((r) => r.visa === "F1" && inLast12(r)), (r) => r.issuances)
-      : null;
-    const latest12J1 = visaClasses.includes("J1")
-      ? sumBy(hcCountry.filter((r) => r.visa === "J1" && inLast12(r)), (r) => r.issuances)
-      : null;
+    const twelve = lastTwelve(lead, endIndex);
+    const last12 = inRange(twelve.currentRange);
+    const latest12F1 = visaClasses.includes("F1") ? total(lead.filter((r) => r.visa === "F1" && last12(r))) : null;
+    const latest12J1 = visaClasses.includes("J1") ? total(lead.filter((r) => r.visa === "J1" && last12(r))) : null;
 
+    // Consulate concentration: always where visas were issued.
     const postTotals = [...groupSum(hcCountry, (r) => r.post, (r) => r.issuances).entries()].sort(
       (a, b) => b[1] - a[1],
     );
+    const hcTotal = postTotals.reduce((t, [, v]) => t + v, 0);
     const topConsulate = postTotals.length > 0 ? postTotals[0][0] : "N/A";
+    const topOneShare = hcTotal ? postTotals.slice(0, 1).reduce((t, [, v]) => t + v, 0) / hcTotal : null;
+    const topThreeShare = hcTotal ? postTotals.slice(0, 3).reduce((t, [, v]) => t + v, 0) / hcTotal : null;
     const dataConfidence =
-      hcCountryAll.length > 0 && histCountryAll.length > 0 && opCountryAll.length > 0
-        ? "High"
-        : "Partial";
+      leadAll.length > 0 && histCountryAll.length > 0 ? "High" : "Partial";
 
-    // "What to do" uses the same row as the Command Center, so the two pages always agree.
+    // "What to do": by nationality when possible (no consulate concentration, plus
+    // the small- and collapsing-market rules); otherwise the Command Center's row.
+    const nationalityRow = nationalitySignals(
+      nationalityTable,
+      data.annualCountry,
+      country,
+      visa,
+      coverage.annual.latestComplete,
+      coverage.postsMonthly,
+      coverage.operational,
+    );
     const row =
+      nationalityRow ??
       buildCommandCenterFrame(
         data.operational,
         data.annualCountry,
@@ -205,8 +237,9 @@ export default function Country360Tab() {
         coverage.annual.latestComplete,
         coverage.postsMonthly,
         [monthCountry],
-      )[0] ?? null;
-    const hcMetrics = {
+      )[0] ??
+      null;
+    const leadMetrics = {
       latest12Change: row?.latest12Momentum ?? null,
       recoveryIndex: row?.recoveryIndex ?? null,
       peakMonth: row?.peakMonth ?? null,
@@ -217,17 +250,15 @@ export default function Country360Tab() {
       volatility: volatilityLabel(row?.volatilityCv ?? null),
     };
     const flags = row?.secondaryFlags ?? [];
-    // No visas issued in the country in the last 12 months: timing advice doesn't apply.
-    const noLocalVisas = (row?.latest12Total ?? 0) === 0;
+    // Timing advice doesn't apply to a small or collapsing market, or with no visas in the last 12 months.
+    const hideTiming = nationalityRow ? nationalityRow.hideTiming : (row?.latest12Total ?? 0) === 0;
     const confidence =
       dataConfidence === "High" && !flags.includes("Low Confidence") ? "High" : dataConfidence;
 
     return {
       latestFyF1, latestFyJ1, growth5, growth10,
-      twelve, latest12F1, latest12J1, hcMetrics,
-      topOneShare: row?.topOneShare ?? null,
-      topThreeShare: row?.topThreeShare ?? null,
-      topConsulate, dataConfidence, noLocalVisas,
+      twelve, latest12F1, latest12J1, leadMetrics,
+      topOneShare, topThreeShare, topConsulate, dataConfidence, hideTiming,
       category: row?.marketCategory ?? "Watch",
       flags,
       confidence,
@@ -235,19 +266,18 @@ export default function Country360Tab() {
       profile: {
         primaryDriver: row?.primaryDriver ?? NO_LOCAL_VISAS,
         counterSignal: row?.counterSignal ?? "No material counter-signal",
-        timing: row?.timing ?? "Review during the next recruitment-cycle planning window",
+        timing: row?.timing ?? "",
         caveat: row?.caveat ?? "",
       },
     };
   }, [
-    opCountryAll, histCountryAll, hcCountry, hcCountryAll, visaClasses, latestFy, endIndex,
-    data.operational, data.annualCountry, data.postsMonthly, visa, coverage, monthCountry,
+    histCountryAll, hcCountry, lead, leadAll, visaClasses, latestFy, endIndex, nationalityTable,
+    data.operational, data.annualCountry, data.postsMonthly, visa, coverage, monthCountry, country,
   ]);
 
-  const momentum = metrics.hcMetrics.latest12Change;
-  const hasConsulateRows = hcCountry.length > 0;
+  const momentum = metrics.leadMetrics.latest12Change;
   const momentumLabel = !notNa(momentum)
-    ? hasConsulateRows && isLowVolume(metrics.twelve.prior)
+    ? hasLeadRows && isLowVolume(metrics.twelve.prior)
       ? "low volume"
       : "N/A"
     : momentum <= -20
@@ -260,8 +290,8 @@ export default function Country360Tab() {
   if (metrics.flags.includes("High Concentration") && metrics.topThreeShare !== null) {
     keyRiskParts.push(`top-three post concentration ${share(metrics.topThreeShare)}`);
   }
-  if (metrics.flags.includes("Volatile") && metrics.hcMetrics.volatilityCv !== null) {
-    keyRiskParts.push(`volatility CV ${metrics.hcMetrics.volatilityCv.toFixed(2)}`);
+  if (metrics.flags.includes("Volatile") && metrics.leadMetrics.volatilityCv !== null) {
+    keyRiskParts.push(`volatility CV ${metrics.leadMetrics.volatilityCv.toFixed(2)}`);
   }
   if (metrics.flags.includes("Weak Recent Momentum") && momentum !== null) {
     keyRiskParts.push(`recent momentum ${metricPct(momentum)}`);
@@ -364,23 +394,17 @@ export default function Country360Tab() {
 
   const recovery = useMemo(() => {
     const rows: Array<{ period: string; index: number }> = [];
-    if (hcCountry.length > 0) {
+    if (lead.length > 0) {
       // Full calendar years against 2019, then a partial latest year against 2019's same months.
       const lastFullYear = throughMonth === 12 ? endYear : endYear - 1;
-      const baseline = sumBy(hcCountry.filter((r) => r.year === 2019), (r) => r.issuances);
+      const baseline = total(lead.filter((r) => r.year === 2019));
       for (let year = 2019; year <= lastFullYear; year += 1) {
-        const value = sumBy(hcCountry.filter((r) => r.year === year), (r) => r.issuances);
+        const value = total(lead.filter((r) => r.year === year));
         if (baseline >= MIN_BASE) rows.push({ period: String(year), index: (value / baseline) * 100 });
       }
       if (throughMonth < 12) {
-        const baselineYtd = sumBy(
-          hcCountry.filter((r) => r.year === 2019 && r.month <= throughMonth),
-          (r) => r.issuances,
-        );
-        const valueYtd = sumBy(
-          hcCountry.filter((r) => r.year === endYear && r.month <= throughMonth),
-          (r) => r.issuances,
-        );
+        const baselineYtd = total(lead.filter((r) => r.year === 2019 && r.month <= throughMonth));
+        const valueYtd = total(lead.filter((r) => r.year === endYear && r.month <= throughMonth));
         if (baseline >= MIN_BASE && baselineYtd > 0) {
           rows.push({
             period: `${endYear} ${yearToDateLabel(throughMonth)}`,
@@ -403,7 +427,7 @@ export default function Country360Tab() {
     ];
     const layout: ChartLayout = {
       height: 390,
-      title: { text: "Country Recovery Index: 2019 = 100" },
+      title: { text: `Recovery Index, ${leadName}: 2019 = 100` },
       yaxis: { title: { text: "Recovery Index" } },
       shapes: [
         {
@@ -429,12 +453,12 @@ export default function Country360Tab() {
     } as ChartLayout;
 
     return { data, layout, rows };
-  }, [hcCountry, endYear, throughMonth]);
+  }, [lead, endYear, throughMonth, leadName]);
 
   const seasonality = useMemo(() => {
     // Typical year: each calendar month's country total in each typical year
     // (missing months as 0), then the average and median across those years.
-    const byYearMonth = groupSum(hcCountry, (r) => r.year * 12 + (r.month - 1), (r) => r.issuances);
+    const byYearMonth = groupSum(lead, (r) => r.year * 12 + (r.month - 1), (r) => r.issuances);
     const median = (values: number[]) => {
       const sorted = [...values].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
@@ -470,33 +494,39 @@ export default function Country360Tab() {
     const layout: ChartLayout = {
       height: 420,
       barmode: "group",
-      title: { text: `Average and Median Calendar-Month Issuance - ${country}` },
+      title: { text: `Average and Median Calendar-Month Issuance - ${leadName}` },
       xaxis: { title: { text: "Calendar Month" }, categoryorder: "array", categoryarray: rows.map((r) => r.month) },
     };
     return { data, layout, rows };
-  }, [hcCountry, country, typical.years]);
+  }, [lead, leadName, typical.years]);
 
-  // Latest 12 months vs the 12 before for this country and visa selection, the
-  // same comparison the dashboard header uses.
-  // The change is "— (low volume)" when the previous 12 months are below 100.
+  // Latest 12 months vs the 12 before, for the lead measure and for visas issued
+  // in the country. The change is "— (low volume)" when the previous 12 months are below 100.
   const last12 = useMemo(() => {
-    const twelve = lastTwelve(hcCountry, endIndex);
+    const twelve = lastTwelve(lead, endIndex);
+    const issued = lastTwelve(hcCountry, endIndex);
     return {
       current: twelve.current,
       prior: twelve.prior,
       change: twelve.change,
+      issued,
       period: monthRangeLabel(twelve.currentRange),
       priorPeriod: monthRangeLabel(twelve.priorRange),
     };
-  }, [hcCountry, endIndex]);
-  /** A change for this country's consulates: "N/A" with no consulate rows, "— (low volume)" below 100. */
-  const consulateChangeText = (format: (value: number) => string) =>
-    !hasConsulateRows ? "N/A" : changeText(last12.change, last12.prior, format);
-  const recoveryValueText = notNa(metrics.hcMetrics.recoveryIndex)
-    ? metrics.hcMetrics.recoveryIndex.toFixed(0)
-    : hasConsulateRows
+  }, [lead, hcCountry, endIndex]);
+  /** The lead measure's 12-month change: "N/A" with no rows, "— (low volume)" below 100. */
+  const leadChangeText = (format: (value: number) => string) =>
+    !hasLeadRows ? "N/A" : changeText(last12.change, last12.prior, format);
+  const issuedChangeText = (format: (value: number) => string) =>
+    hcCountry.length === 0 ? "N/A" : changeText(last12.issued.change, last12.issued.prior, format);
+  const recoveryValueText = notNa(metrics.leadMetrics.recoveryIndex)
+    ? metrics.leadMetrics.recoveryIndex.toFixed(0)
+    : hasLeadRows
       ? LOW_VOLUME
       : "N/A";
+  // Most of the country's nationals got their visas elsewhere: fewer than half were issued in the country.
+  const mostlyElsewhere =
+    byNationality && last12.current > 0 && last12.issued.current < last12.current / 2;
 
   const officialFys = fiscalYears.filter((f) => f.source === "annual").map((f) => f.fiscalYear);
   const lastOfficialFy = officialFys.length > 0 ? Math.max(...officialFys) : null;
@@ -521,11 +551,11 @@ export default function Country360Tab() {
   // section lists only the additional actions.
   const actionCards: Array<[string, string, string, string]> = [];
   // Timing-based cards don't apply with no visas issued locally in the last 12 months.
-  if (metrics.flags.includes("Highly Seasonal") && !metrics.noLocalVisas) {
+  if (metrics.flags.includes("Highly Seasonal") && !metrics.hideTiming) {
     actionCards.push([
       "Begin Outreach Earlier",
-      `Peak issuance month is ${metrics.hcMetrics.peakMonthName} with ${decimals(metrics.hcMetrics.seasonalityRatio, 1)}x average-month strength.`,
-      recommendedOutreachWindow(metrics.hcMetrics.peakMonth),
+      `Peak issuance month is ${metrics.leadMetrics.peakMonthName} with ${decimals(metrics.leadMetrics.seasonalityRatio, 1)}x average-month strength.`,
+      recommendedOutreachWindow(metrics.leadMetrics.peakMonth),
       "Issuance timing is a mobility signal, not demand proof.",
     ]);
   }
@@ -537,37 +567,41 @@ export default function Country360Tab() {
       "Concentration can create operational exposure.",
     ]);
   }
-  if (metrics.flags.includes("Volatile") && !metrics.noLocalVisas) {
+  if (metrics.flags.includes("Volatile") && !metrics.hideTiming) {
     actionCards.push([
       "Prepare for Peak Support Workload",
-      `Monthly volatility CV is ${decimals(metrics.hcMetrics.volatilityCv, 2)}.`,
-      metrics.hcMetrics.peakMonth !== null ? `Before ${metrics.hcMetrics.peakMonthName} peak` : "Monthly monitoring",
+      `Monthly volatility CV is ${decimals(metrics.leadMetrics.volatilityCv, 2)}.`,
+      metrics.leadMetrics.peakMonth !== null ? `Before ${metrics.leadMetrics.peakMonthName} peak` : "Monthly monitoring",
       "Use as workload planning, not individual approval prediction.",
     ]);
   }
 
   const summaryBullets: string[] = [];
   if (periodF1 > 0) {
-    summaryBullets.push(`${country}'s F1 total is ${int(periodF1)} in ${periodRange.inSentence}.`);
+    summaryBullets.push(
+      byNationality
+        ? `Nationals of ${country} received ${int(periodF1)} F1 visas in ${periodRange.inSentence}.`
+        : `${int(periodF1)} F1 visas were issued in ${country} in ${periodRange.inSentence}.`,
+    );
   }
   if (metrics.growth10 !== null) {
     summaryBullets.push(
-      `FY${latestFy} F1 issuance is ${metricPct(metrics.growth10)} versus FY${latestFy - 10}.`,
+      `FY${latestFy} F1 visas to nationals of ${country} are ${metricPct(metrics.growth10)} versus FY${latestFy - 10}.`,
     );
   }
-  if (metrics.hcMetrics.latest12Change !== null) {
+  if (metrics.leadMetrics.latest12Change !== null) {
     summaryBullets.push(
-      `Latest 12-month consulate momentum is ${metricPct(metrics.hcMetrics.latest12Change)} versus the prior 12 months.`,
+      `${LeadName} (${visaLabelOf(visa)}): ${metricPct(metrics.leadMetrics.latest12Change)} in the last 12 months versus the 12 before.`,
     );
   }
   if (metrics.topConsulate !== "N/A" && metrics.topOneShare !== null) {
     summaryBullets.push(
-      `${metrics.topConsulate} is the leading consulate over the full history (${fullRangeText}) with ${share(metrics.topOneShare)} of ${visaLabelOf(visa)} issuance.`,
+      `Issued in ${country}: ${metrics.topConsulate} is the leading consulate over the full history (${fullRangeText}) with ${share(metrics.topOneShare)} of ${visaLabelOf(visa)}.`,
     );
   }
-  if (metrics.hcMetrics.peakMonth !== null) {
+  if (metrics.leadMetrics.peakMonth !== null) {
     summaryBullets.push(
-      `Peak recruitment-planning month is ${metrics.hcMetrics.peakMonthName} in a typical year (${typical.label}).`,
+      `Peak recruitment-planning month is ${metrics.leadMetrics.peakMonthName} in a typical year (${typical.label}).`,
     );
   }
   if (summaryBullets.length === 0) {
@@ -594,29 +628,43 @@ export default function Country360Tab() {
     [visaRows, fullRange, monthCountry, consulateRecoveryYear],
   );
   const periodIsFullHistory = periodRange.start === fullRange.start && periodRange.end === fullRange.end;
-  const sentenceStart = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
   // Monthly trend, Mar 2017 onward, Period shaded. F1 + J1 shows both lines.
   const monthlyTrend = useMemo(() => {
-    const traces: Trace[] = (["F1", "J1"] as const)
-      .filter((v) => visaClasses.includes(v))
-      .map((v) => {
-        // Every month of the coverage: the line drops to 0 where there were no visas.
-        const values = monthlySeries(hcCountryAll.filter((r) => r.visa === v), coverage.postsMonthly);
-        return {
+    const visas = (["F1", "J1"] as const).filter((v) => visaClasses.includes(v));
+    const x = monthlySeries([], coverage.postsMonthly).map((_, i) => monthDate(coverage.postsMonthly.start + i));
+    // Every month of the coverage: lines drop to 0 where there were no visas.
+    const traces: Trace[] = visas.map(
+      (v) =>
+        ({
           type: "scatter",
           mode: "lines",
-          name: v,
-          x: values.map((_, i) => monthDate(coverage.postsMonthly.start + i)),
-          y: values,
+          name: byNationality ? `${v}, nationals of ${country}` : `${v}, issued in ${country}`,
+          x,
+          y: monthlySeries(leadAll.filter((r) => r.visa === v), coverage.postsMonthly),
           line: { color: VISA_COLORS[v], width: 2.5 },
           hovertemplate: `${v}: %{y:,.0f}<extra></extra>`,
-        } as Trace;
-      });
+        }) as Trace,
+    );
+    // Alongside the nationals: visas issued in the country, dotted and lighter (click the legend to hide).
+    if (byNationality && hcCountryAll.length > 0) {
+      for (const v of visas) {
+        traces.push({
+          type: "scatter",
+          mode: "lines",
+          name: `${v}, issued in ${country}`,
+          x,
+          y: monthlySeries(hcCountryAll.filter((r) => r.visa === v), coverage.postsMonthly),
+          line: { color: VISA_COLORS[v], width: 1.5, dash: "dot" },
+          opacity: 0.55,
+          hovertemplate: `${v} issued in ${country}: %{y:,.0f}<extra></extra>`,
+        } as Trace);
+      }
+    }
     const layout: ChartLayout = {
       height: 420,
       title: {
-        text: `Monthly ${visaLabelOf(visa)} issuances - ${country}<br><sup>${fullRangeText} · shaded: ${periodRange.label}</sup>`,
+        text: `Monthly ${visaLabelOf(visa)} visas - ${leadName}<br><sup>${fullRangeText} · shaded: ${periodRange.label}</sup>`,
       },
       hovermode: "x unified",
       xaxis: {
@@ -646,17 +694,36 @@ export default function Country360Tab() {
     };
     return { traces, layout };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hcCountryAll, visa, country, periodRange, fullRangeText]);
+  }, [leadAll, hcCountryAll, byNationality, leadName, visa, country, periodRange, fullRangeText]);
 
-  // Compare countries: unchanged from Country Intelligence.
+  // Compare countries: by nationality (countries in the Country control only, so
+  // Montserrat and Western Sahara are left out), or by where issued without the table.
   const COMPARE_MAX = 8;
+  const controlCountries = useMemo(() => new Set(allCountries), [allCountries]);
+  const comparePeriodRows = useMemo(
+    () =>
+      nationalityTable
+        ? nationalityTable.filter(
+            (r) => r.isCountry && controlCountries.has(r.country) && inRange(periodRange)(r),
+          )
+        : null,
+    [nationalityTable, controlCountries, periodRange],
+  );
   const f1ByCountry = useMemo(() => {
-    const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
+    const totals = comparePeriodRows
+      ? groupSum(comparePeriodRows.filter((r) => r.visa === "F1"), (r) => r.country, (r) => r.issuances)
+      : groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
     return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
-  }, [f1Filtered]);
+  }, [comparePeriodRows, f1Filtered]);
   const topFive = useMemo(() => f1ByCountry.slice(0, 5), [f1ByCountry]);
   const compareList = compareCountries ?? topFive;
-  const compareOptions = useMemo(() => [...consulateCountries].sort(), [consulateCountries]);
+  const compareOptions = useMemo(
+    () =>
+      nationalityTable
+        ? [...new Set(nationalityTable.filter((r) => r.isCountry && controlCountries.has(r.country)).map((r) => r.country))].sort()
+        : [...consulateCountries].sort(),
+    [nationalityTable, controlCountries, consulateCountries],
+  );
   const comparePresets = useMemo(() => {
     const regions = [...new Set(f1ByCountry.map(regionForCountry))].filter((r) => r !== "Other").sort();
     return [
@@ -668,7 +735,9 @@ export default function Country360Tab() {
     ];
   }, [f1ByCountry, topFive, periodRange.label]);
   const comparison = useMemo(() => {
-    const rows = visaFiltered.filter((r) => compareList.includes(r.country));
+    const source: readonly { country: string; visa: Visa; year: number; month: number; issuances: number }[] =
+      comparePeriodRows ? comparePeriodRows.filter((r) => visaClasses.includes(r.visa)) : visaFiltered;
+    const rows = source.filter((r) => compareList.includes(r.country));
     const byMonthCountry = groupSum(
       rows,
       (r) => `${r.year * 12 + (r.month - 1)}|${r.country}`,
@@ -691,31 +760,32 @@ export default function Country360Tab() {
     });
     const layout: ChartLayout = {
       height: 420,
-      title: { text: `${visaLabel} Issuance Comparison Over Time, ${periodRange.label}` },
+      title: {
+        text: `${visaLabel} visas ${comparePeriodRows ? "by nationality" : "by country where issued"}, ${periodRange.label}`,
+      },
       hovermode: "x unified",
     };
     return { traces, layout };
-  }, [visaFiltered, compareList, visaLabel, periodRange]);
+  }, [comparePeriodRows, visaFiltered, visaClasses, compareList, visaLabel, periodRange]);
 
   // Typical-year seasonality with the Period as a gold line: unchanged from Country Intelligence.
   const typicalSeasonality = useMemo(() => {
     const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    const typicalRows = typical.rows.filter((r) => r.country === monthCountry);
-    const typicalTotals = groupSum(typicalRows, (r) => r.month, (r) => r.issuances);
-    const typicalCounts = calendarMonthYearCounts(typical.rows);
-    const typicalAvg = months.map((m) => averagePerMonth(typicalTotals.get(m) ?? 0, m, typicalCounts));
-    const periodCounts = calendarMonthYearCounts(visaFiltered);
-    const periodTotals = groupSum(focusRows, (r) => r.month, (r) => r.issuances);
-    const periodAvg = months.map((m) =>
-      (periodCounts.get(m) ?? 0) > 0 ? averagePerMonth(periodTotals.get(m) ?? 0, m, periodCounts) : null,
-    );
+    // The shared typical year (missing months as 0), for the lead measure.
+    const typicalAvg = typicalYear(lead, typical.years).averages;
+    // The Period's average per calendar month: each month's total ÷ how often it occurs in the Period.
+    const periodTotals = new Array<number>(13).fill(0);
+    const periodCounts = new Array<number>(13).fill(0);
+    for (let i = periodRange.start; i <= periodRange.end; i += 1) periodCounts[(i % 12) + 1] += 1;
+    for (const r of lead) if (inRange(periodRange)(r)) periodTotals[r.month] += r.issuances;
+    const periodAvg = months.map((m) => (periodCounts[m] > 0 ? periodTotals[m] / periodCounts[m] : null));
     const traces: Trace[] = [
       {
         type: "bar",
         name: `Typical year (${typical.label})`,
         x: months.map((m) => MONTH_NAMES[m]),
         y: typicalAvg,
-        customdata: months.map((m) => typicalCounts.get(m) ?? 0),
+        customdata: months.map(() => typical.years.length),
         marker: { color: "#3D8DDE" },
         hovertemplate: `<b>%{x}</b><br>Typical year: %{y:,.0f} ${visaLabel} per month<br>Years averaged: %{customdata}<extra></extra>`,
       } as Trace,
@@ -732,18 +802,15 @@ export default function Country360Tab() {
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: `${visaLabel} Seasonality - ${country}, average per month` },
+      title: { text: `${visaLabel} Seasonality - ${leadName}, average per month` },
       legend: { orientation: "h", y: -0.18 },
     };
     return { traces, layout };
-  }, [typical, monthCountry, visaFiltered, focusRows, visaLabel, periodRange.label, country]);
+  }, [typical, lead, leadName, visaLabel, periodRange]);
 
   // Active Posts and Seasonality CV (More details): unchanged from Country Intelligence.
   const activePosts = new Set(focusRows.map((r) => r.post)).size;
-  const focusCv = seasonalityCvIn(
-    hcCountry.filter((r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end),
-    periodRange,
-  );
+  const focusCv = seasonalityCvIn(lead.filter(inRange(periodRange)), periodRange);
 
   // All-country rankings (More details): unchanged from Country Intelligence.
   const rankingWindow = useMemo(() => {
@@ -762,35 +829,55 @@ export default function Country360Tab() {
     }
     return { f1: f1.groups, j1: j1.groups, current: f1.current, topPost };
   }, [data.postsMonthly, endIndex]);
+  // The rankings' rows: F1 by nationality when the table is there (countries in
+  // the Country control), otherwise by where issued.
+  const rankingRows = useMemo(
+    () =>
+      nationalityTable
+        ? nationalityTable.filter((r) => r.isCountry && controlCountries.has(r.country))
+        : (data.postsMonthly as readonly (MonthRow & { country: string })[]),
+    [nationalityTable, controlCountries, data.postsMonthly],
+  );
   // Peak month (typical year, F1) for every country: the shared calculation.
   const f1PeakByCountry = useMemo(() => {
-    const byCountry = new Map<string, PostMonthlyRow[]>();
-    for (const row of data.postsMonthly) {
+    const byCountry = new Map<string, MonthRow[]>();
+    for (const row of rankingRows) {
       if (row.visa !== "F1") continue;
       const list = byCountry.get(row.country);
       if (list) list.push(row);
       else byCountry.set(row.country, [row]);
     }
     return new Map([...byCountry].map(([c, rows]) => [c, peakMonthLabel(typicalYear(rows, typical.years))]));
-  }, [data.postsMonthly, typical.years]);
-  const rankings = useMemo(
-    () =>
-      summary
-        .map((row) => {
-          const f1 = rankingWindow.f1.get(row.country);
-          return {
-            ...row,
-            f1Last12: f1?.current ?? 0,
-            j1Last12: rankingWindow.j1.get(row.country)?.current ?? 0,
-            f1Change: f1 ? changeVsBase(f1.current, f1.prior) : null,
-            f1Prior: f1?.prior ?? 0,
-            topPost: rankingWindow.topPost.get(row.country)?.post ?? "N/A",
-            peakName: f1PeakByCountry.get(row.country) ?? "N/A",
-          };
-        })
-        .sort((a, b) => b.f1Last12 - a.f1Last12 || a.country.localeCompare(b.country)),
-    [summary, rankingWindow, f1PeakByCountry],
-  );
+  }, [rankingRows, typical.years]);
+  const rankings = useMemo(() => {
+    const twelve = (visaClass: Visa) => {
+      const out = new Map<string, MonthRow[]>();
+      for (const row of rankingRows) {
+        if (row.visa !== visaClass) continue;
+        const list = out.get(row.country);
+        if (list) list.push(row);
+        else out.set(row.country, [row]);
+      }
+      return new Map([...out].map(([c, rows]) => [c, lastTwelve(rows, endIndex)]));
+    };
+    const f1 = twelve("F1");
+    const j1 = twelve("J1");
+    const countries = nationalityTable ? [...new Set([...f1.keys(), ...j1.keys()])] : summary.map((r) => r.country);
+    return countries
+      .map((c) => {
+        const f = f1.get(c);
+        return {
+          country: c,
+          f1Last12: f?.current ?? 0,
+          j1Last12: j1.get(c)?.current ?? 0,
+          f1Change: f?.change ?? null,
+          f1Prior: f?.prior ?? 0,
+          topPost: rankingWindow.topPost.get(c)?.post ?? "N/A",
+          peakName: f1PeakByCountry.get(c) ?? "N/A",
+        };
+      })
+      .sort((a, b) => b.f1Last12 - a.f1Last12 || a.country.localeCompare(b.country));
+  }, [rankingRows, nationalityTable, summary, rankingWindow, f1PeakByCountry, endIndex]);
 
   const openTab = useOpenTab();
 
@@ -804,16 +891,40 @@ export default function Country360Tab() {
         </InfoCallout>
       ) : (
         <>
+          {/* 0. What the page measures */}
+          {byNationality ? (
+            <div className="space-y-1 text-xs leading-relaxed text-slate-400">
+              <p>
+                Nationality = the passport the visa was issued to, not where the person lives. Issued
+                in = the U.S. consulates in that country, which also serve other nationalities.
+              </p>
+              <p>Command Center still ranks by where visas are issued until the Markets page.</p>
+            </div>
+          ) : (
+            <InfoCallout>
+              {nationalityTable === null
+                ? `Monthly nationality data isn't in this data snapshot, so Country 360 shows visas issued in ${country} (the U.S. consulates there) instead.`
+                : `No monthly nationality data for ${country}, so Country 360 shows visas issued in ${country} (the U.S. consulates there) instead.`}
+            </InfoCallout>
+          )}
+          {mostlyElsewhere && (
+            <InfoCallout>
+              Most visas to nationals of {country} are issued outside {country}: in the last 12 months,{" "}
+              {int(last12.issued.current)} were issued in {country} against {int(last12.current)} to
+              nationals of {country} ({visaLabelOf(visa)}).
+            </InfoCallout>
+          )}
+
           {/* 1. Primary KPIs */}
           <section>
             <SubHeading>
               Primary KPIs
-              <FixedTag title="The first card follows the Period; each other card names its own fixed period.">
-                First card follows the Period; others fixed
+              <FixedTag title="The first and change cards follow the Period; the others name their own fixed period.">
+                First and change cards follow the Period; others fixed
               </FixedTag>
             </SubHeading>
             <KpiRow>
-              <KpiCard accent="gold" label={`F1, ${periodRange.label}`} value={metricNumber(periodF1)} />
+              <KpiCard accent="gold" label={`F1, ${leadName}, ${periodRange.label}`} value={metricNumber(periodF1)} />
               <KpiCard
                 accent="gold"
                 label={`F1 by nationality, FY${latestFy}${provisionalYears.has(latestFy) ? " (provisional)" : ""}`}
@@ -821,18 +932,27 @@ export default function Country360Tab() {
               />
               <KpiCard
                 label={`F1 growth by nationality, FY${latestFy - 10} → FY${latestFy}`}
-                value={metricPct(metrics.growth10)}
+                value={arrowPct(metrics.growth10)}
               />
               <KpiCard
-                label={`Change vs previous 12 months (${last12.period})`}
-                value={consulateChangeText(metricPct)}
+                label={`${visaLabelOf(visa)} change vs ${priorRange ? monthRangeLabel(priorRange) : "previous period"}`}
+                value={periodChangeText(leadPeriod, hasLeadRows, arrowPct)}
+                delta={priorRange ? undefined : "No previous period of the same length"}
               />
               <KpiCard
-                label={`Recovery (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
+                label={`Recovery, ${leadName} (${recoveryYear !== null ? `${recoveryYear} vs 2019` : "vs 2019"})`}
                 value={recoveryValueText}
                 delta="100 = 2019 level"
               />
             </KpiRow>
+            {byNationality && (
+              <p className="mt-2 text-sm text-slate-300">
+                <b className="text-white">Issued in {country}</b>, {visaLabelOf(visa)}, {periodLabelLower}:{" "}
+                {hcCountry.length > 0
+                  ? `${int(issuedPeriod.now)}. ${priorRange ? `Change vs ${previousLabel}` : "Change"}: ${periodChangeText(issuedPeriod, true, arrowPct)}.`
+                  : "no U.S. consulate data."}
+              </p>
+            )}
           </section>
 
           {/* 2. Leading consulate, with a link to the Consulates page */}
@@ -840,13 +960,13 @@ export default function Country360Tab() {
             <section className="space-y-1 text-sm text-slate-300">
               {periodLeader && !periodIsFullHistory && (
                 <p>
-                  {sentenceStart(`in ${periodRange.inSentence}`)}, <b className="text-white">{periodLeader.post}</b>{" "}
+                  Issued in {country}, in {periodRange.inSentence}, <b className="text-white">{periodLeader.post}</b>{" "}
                   leads with {periodLeader.share.toFixed(1)}% of {visaLabelOf(visa)}.
                 </p>
               )}
               {historyLeader && (
                 <p>
-                  Over the full history ({fullRangeText}), <b className="text-white">{historyLeader.post}</b>{" "}
+                  Issued in {country}, over the full history ({fullRangeText}), <b className="text-white">{historyLeader.post}</b>{" "}
                   leads with {historyLeader.share.toFixed(1)}%
                   {periodIsFullHistory ? ` of ${visaLabelOf(visa)}` : ""}.
                 </p>
@@ -864,16 +984,18 @@ export default function Country360Tab() {
           {/* 3. Monthly trend */}
           <section>
             <SubHeading>Monthly trend</SubHeading>
-            {hcCountryAll.length > 0 ? (
+            {leadAll.length > 0 ? (
               <Chart data={monthlyTrend.traces} layout={monthlyTrend.layout} height={420} />
             ) : (
-              <InfoCallout>No consulate rows for {country}.</InfoCallout>
+              <InfoCallout>No monthly rows for {leadName}.</InfoCallout>
             )}
             <Caption>
               <FixedTag title="This line ignores the Period control.">Always last 12 months</FixedTag>{" "}
-              Last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
-              {last12.priorPeriod}): {int(last12.prior)}; {consulateChangeText(arrowPct)} vs previous 12
+              {LeadName}, last 12 months ({last12.period}): {int(last12.current)}; previous 12 months (
+              {last12.priorPeriod}): {int(last12.prior)}; {leadChangeText(arrowPct)} vs previous 12
               months.
+              {byNationality &&
+                ` Issued in ${country}: ${hcCountry.length > 0 ? `${int(last12.issued.current)}; change vs previous 12 months: ${issuedChangeText(arrowPct)}` : "no U.S. consulate data"}.`}
             </Caption>
           </section>
 
@@ -892,7 +1014,7 @@ export default function Country360Tab() {
               />
               {compareCountries === null && (
                 <p className="mt-1 text-xs text-slate-400">
-                  Showing the default: top 5 markets by F1 in {periodRange.label}.
+                  Showing the default: top 5 markets by F1 {comparePeriodRows ? "nationals" : "issued"} in {periodRange.label}.
                 </p>
               )}
             </div>
@@ -958,7 +1080,9 @@ export default function Country360Tab() {
           <section>
             <SubHeading>
               What to do
-              <FixedTag title="Built from fixed periods; ignores the Period control.">Fixed periods</FixedTag>
+              <FixedTag title="Built from fixed periods; ignores the Period control.">
+                {byNationality ? "Fixed periods · by nationality" : "Fixed periods · issued in"}
+              </FixedTag>
             </SubHeading>
             <Panel accent="gold">
               <p className="text-lg font-extrabold text-white">{metrics.action}</p>
@@ -993,21 +1117,21 @@ export default function Country360Tab() {
           <Expander title="More details">
             <SubHeading>Secondary KPIs</SubHeading>
             <KpiRow>
-              <KpiCard accent="navy" label={`J1, ${periodRange.label}`} value={metricNumber(periodJ1)} />
-              <KpiCard accent="navy" label={`FY${latestFy} Annual J1`} value={metricNumber(metrics.latestFyJ1)} />
+              <KpiCard accent="navy" label={`J1, ${leadName}, ${periodRange.label}`} value={metricNumber(periodJ1)} />
+              <KpiCard accent="navy" label={`J1 by nationality, FY${latestFy}`} value={metricNumber(metrics.latestFyJ1)} />
               <KpiCard
-                label={`5-year growth, FY${latestFy - 5} → FY${latestFy}${latestFy - 5 === 2020 ? " (from the pandemic low)" : ""}`}
-                value={metricPct(metrics.growth5)}
+                label={`F1 growth by nationality, FY${latestFy - 5} → FY${latestFy}${latestFy - 5 === 2020 ? " (from the pandemic low)" : ""}`}
+                value={arrowPct(metrics.growth5)}
               />
-              <KpiCard accent="gold" label={`F1, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12F1)} />
-              <KpiCard accent="navy" label={`J1, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12J1)} />
-              <KpiCard accent="gold" label="Peak month (typical year)" value={metrics.hcMetrics.peakMonthName} valueClassName="!text-[16px]" />
-              <KpiCard label="Top Consulate" value={metrics.topConsulate} valueClassName="!text-[16px]" />
-              <KpiCard label="Top-One Share" value={share(metrics.topOneShare)} />
-              <KpiCard label="Top-Three Share" value={share(metrics.topThreeShare)} />
-              <KpiCard accent="navy" label="Volatility" value={metrics.hcMetrics.volatility} valueClassName="!text-[16px]" />
-              <KpiCard label={`Active Posts (${visaLabel}), ${periodRange.label}`} value={activePosts} />
-              <KpiCard label={`Seasonality CV (${visaLabel}), ${periodRange.label}`} value={decimals(focusCv, 2)} />
+              <KpiCard accent="gold" label={`F1, ${leadName}, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12F1)} />
+              <KpiCard accent="navy" label={`J1, ${leadName}, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12J1)} />
+              <KpiCard accent="gold" label={`Peak month (typical year), ${leadName}`} value={metrics.leadMetrics.peakMonthName} valueClassName="!text-[16px]" />
+              <KpiCard label={`Top consulate (issued in ${country})`} value={metrics.topConsulate} valueClassName="!text-[16px]" />
+              <KpiCard label={`Top-one share (issued in ${country})`} value={share(metrics.topOneShare)} />
+              <KpiCard label={`Top-three share (issued in ${country})`} value={share(metrics.topThreeShare)} />
+              <KpiCard accent="navy" label={`Volatility, ${leadName}`} value={metrics.leadMetrics.volatility} valueClassName="!text-[16px]" />
+              <KpiCard label={`Active posts (issued in ${country}, ${visaLabel}), ${periodRange.label}`} value={activePosts} />
+              <KpiCard label={`Seasonality CV (${visaLabel}, ${leadName}), ${periodRange.label}`} value={decimals(focusCv, 2)} />
             </KpiRow>
 
             <SubHeading>Summary</SubHeading>
@@ -1027,7 +1151,7 @@ export default function Country360Tab() {
               <Chart data={recovery.data} layout={recovery.layout} height={390} />
             ) : (
               <InfoCallout>
-                Recovery index {hasConsulateRows ? LOW_VOLUME : "N/A"}: needs at least {MIN_BASE} issuances
+                Recovery index {hasLeadRows ? LOW_VOLUME : "N/A"}: needs at least {MIN_BASE} issuances
                 in 2019 in the selected visa classes.
               </InfoCallout>
             )}
@@ -1040,18 +1164,18 @@ export default function Country360Tab() {
               height={260}
               rowKey={(row) => row.metric}
               rows={[
-                { metric: "Top-one post share", value: share(metrics.topOneShare), interpretation: concentrationLabel(metrics.topOneShare) },
-                { metric: "Top-three post share", value: share(metrics.topThreeShare), interpretation: concentrationLabel(metrics.topThreeShare) },
-                { metric: "Monthly volatility CV", value: decimals(metrics.hcMetrics.volatilityCv, 2), interpretation: metrics.hcMetrics.volatility },
-                { metric: "Latest 12-month momentum", value: consulateChangeText(metricPct), interpretation: "Comparable 12-month change" },
+                { metric: `Top-one post share (issued in ${country})`, value: share(metrics.topOneShare), interpretation: concentrationLabel(metrics.topOneShare) },
+                { metric: `Top-three post share (issued in ${country})`, value: share(metrics.topThreeShare), interpretation: concentrationLabel(metrics.topThreeShare) },
+                { metric: `Monthly volatility CV, ${leadName}`, value: decimals(metrics.leadMetrics.volatilityCv, 2), interpretation: metrics.leadMetrics.volatility },
+                { metric: `Latest 12-month momentum, ${leadName}`, value: leadChangeText(metricPct), interpretation: "Comparable 12-month change" },
                 {
-                  metric: "Seasonality ratio",
-                  value: notNa(metrics.hcMetrics.seasonalityRatio)
-                    ? `${metrics.hcMetrics.seasonalityRatio.toFixed(1)}x`
-                    : metrics.hcMetrics.peakMonthName === LOW_VOLUME
+                  metric: `Seasonality ratio, ${leadName}`,
+                  value: notNa(metrics.leadMetrics.seasonalityRatio)
+                    ? `${metrics.leadMetrics.seasonalityRatio.toFixed(1)}x`
+                    : metrics.leadMetrics.peakMonthName === LOW_VOLUME
                       ? LOW_VOLUME
                       : "N/A",
-                  interpretation: metrics.hcMetrics.seasonalityStrength,
+                  interpretation: metrics.leadMetrics.seasonalityStrength,
                 },
               ]}
               columns={[
@@ -1066,8 +1190,8 @@ export default function Country360Tab() {
                 <li>High volatility: monthly coefficient of variation &gt;= 0.85; moderate: &gt;= 0.45.</li>
                 <li>High seasonality: peak-month average &gt;= 2.0x monthly mean; moderate: &gt;= 1.4x.</li>
                 <li>
-                  Momentum uses the latest 12 months versus the preceding 12 months in the validated
-                  historical consulate layer.
+                  Momentum uses the latest 12 months versus the preceding 12 months
+                  {byNationality ? " of visas to the country's nationals (monthly nationality data)" : " of visas issued in the country"}.
                 </li>
               </ul>
             </Expander>
@@ -1077,8 +1201,10 @@ export default function Country360Tab() {
               <FixedTag title="The rankings ignore the Period and Visa controls.">Always last 12 months</FixedTag>
             </SubHeading>
             <p className="mb-3 text-xs text-slate-400">
-              Sorted by F1 issuances in the last 12 months ({monthRangeLabel(rankingWindow.current)}). Top
-              Post: most F1 in the same 12 months. Peak month: F1 in a typical year ({typical.label}).
+              {nationalityTable ? "By nationality: sorted by F1 visas to each country's nationals" : "Sorted by F1 issuances"}{" "}
+              in the last 12 months ({monthRangeLabel(rankingWindow.current)}). Top post (issued in): the
+              consulate in that country with the most F1 in the same 12 months. Peak month: F1 in a
+              typical year ({typical.label}).
             </p>
             <DataTable
               rows={rankings}
@@ -1086,10 +1212,10 @@ export default function Country360Tab() {
               rowKey={(row) => row.country}
               columns={[
                 { key: "country", header: "Country", render: (r) => r.country },
-                { key: "f1", header: "F1, last 12 months", numeric: true, render: (r) => int(r.f1Last12) },
-                { key: "j1", header: "J1, last 12 months", numeric: true, render: (r) => int(r.j1Last12) },
+                { key: "f1", header: nationalityTable ? "F1 nationals, last 12 months" : "F1, last 12 months", numeric: true, render: (r) => int(r.f1Last12) },
+                { key: "j1", header: nationalityTable ? "J1 nationals, last 12 months" : "J1, last 12 months", numeric: true, render: (r) => int(r.j1Last12) },
                 { key: "growth", header: "F1 vs previous 12 months", numeric: true, render: (r) => changeText(r.f1Change, r.f1Prior, arrowPct) },
-                { key: "post", header: "Top Post", render: (r) => r.topPost },
+                { key: "post", header: "Top post (issued in)", render: (r) => r.topPost },
                 { key: "peak", header: "Peak month (typical year)", render: (r) => r.peakName },
               ]}
             />
@@ -1100,12 +1226,13 @@ export default function Country360Tab() {
                 label="Country 360 Summary CSV"
                 filename={`qu_country360_summary_${slug}_${periodRange.slug}.csv`}
                 headers={[
-                  "country", `f1_total_${periodRange.slug}`, `j1_total_${periodRange.slug}`, `fy${latestFy}_f1`, `fy${latestFy}_j1`,
+                  "country", "measure", `f1_total_${periodRange.slug}`, `j1_total_${periodRange.slug}`, `fy${latestFy}_f1`, `fy${latestFy}_j1`,
                   "f1_growth_5yr_pct", "f1_growth_10yr_pct", "top_consulate", "peak_month",
                   "recovery_index", "top_one_share", "top_three_share", "volatility", "data_confidence",
                 ]}
                 rows={[[
                   country,
+                  byNationality ? "nationality" : "issued_in",
                   String(periodF1),
                   String(periodJ1),
                   String(metrics.latestFyF1),
@@ -1113,11 +1240,11 @@ export default function Country360Tab() {
                   metrics.growth5 === null ? "" : String(metrics.growth5),
                   metrics.growth10 === null ? "" : String(metrics.growth10),
                   metrics.topConsulate,
-                  metrics.hcMetrics.peakMonthName,
-                  metrics.hcMetrics.recoveryIndex === null ? "" : String(metrics.hcMetrics.recoveryIndex),
+                  metrics.leadMetrics.peakMonthName,
+                  metrics.leadMetrics.recoveryIndex === null ? "" : String(metrics.leadMetrics.recoveryIndex),
                   metrics.topOneShare === null ? "" : String(metrics.topOneShare),
                   metrics.topThreeShare === null ? "" : String(metrics.topThreeShare),
-                  metrics.hcMetrics.volatility,
+                  metrics.leadMetrics.volatility,
                   metrics.dataConfidence,
                 ]]}
               />
@@ -1140,7 +1267,7 @@ export default function Country360Tab() {
                 filename={`qu_country360_timing_${slug}.csv`}
                 headers={["Month", "calendar_month", "Average", "Median"]}
                 rows={
-                  hcCountry.length > 0
+                  lead.length > 0
                     ? seasonality.rows.map((r) => [r.month, String(r.calendarMonth), String(r.average), String(r.median)])
                     : []
                 }
@@ -1160,7 +1287,13 @@ export default function Country360Tab() {
                   country/nationality data from FY{firstFy}-FY{latestFy}.
                 </li>
                 <li>
-                  Historical consulate layer: <code className="font-mono">{monthCountry}</code>{" "}
+                  Monthly nationality layer:{" "}
+                  {byNationality
+                    ? `Nationals of ${country}, wherever their visas were issued, ${monthLongDisplay(coverage.postsMonthly.start)}-${monthLongDisplay(endIndex)}; months with no rows count as 0.`
+                    : "not available for this country, so the page uses visas issued in it."}
+                </li>
+                <li>
+                  Historical consulate layer (issued in): <code className="font-mono">{monthCountry}</code>{" "}
                   monthly post data from {monthLongDisplay(coverage.postsMonthly.start)}-
                   {monthLongDisplay(endIndex)}.
                 </li>

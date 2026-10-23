@@ -30,7 +30,7 @@ import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
  * labels now match their content.
  */
 const TABS = [
-  { id: "command", label: "Primary: Command", Component: CommandCenterTab },
+  { id: "command", label: "Command", Component: CommandCenterTab },
   { id: "executive", label: "Executive", Component: ExecutiveTab },
   { id: "country-360", label: "Country 360", Component: Country360Tab },
   { id: "consulates", label: "Consulates", Component: ConsulatesPage },
@@ -93,7 +93,7 @@ function partialFiscalYearNote(annual: DashboardData["meta"]["coverage"]["annual
 
 function Hero() {
   const { data } = useDashboard();
-  const { postsMonthly: postRange, annual } = data.meta.coverage;
+  const { postsMonthly: postRange, annual, nationalityMonthly: nationalityRange } = data.meta.coverage;
   const { postCount, countryCount } = useMemo(
     () => ({
       postCount: new Set(data.postsMonthly.map((r) => r.post)).size,
@@ -116,8 +116,9 @@ function Hero() {
         {annual.first !== null && annual.latest !== null && (
           <>
             {" "}
-            · <b className="text-slate-100">By nationality:</b> annual, FY{annual.first} – FY
-            {annual.latest}
+            · <b className="text-slate-100">By nationality:</b>{" "}
+            {nationalityRange && data.nationalityMonthly ? `monthly, ${monthRangeLabel(nationalityRange)}; ` : ""}
+            annual, FY{annual.first} – FY{annual.latest}
             {partialFiscalYearNote(annual)}
           </>
         )}

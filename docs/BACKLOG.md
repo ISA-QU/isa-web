@@ -84,7 +84,9 @@ Sourced event markers on the Historical Trends chart.
 - [x] Fix Pack A1: shared number rules (data end, minimum base of 100, link checks, one "What to do"); see "Shared number rules" in docs/dashboard.md.
 - [x] Fix Pack A2: missing months count as 0 everywhere (totals, averages, volatility, seasonality, trend lines) and one typical-year peak-month calculation.
   - [x] When a country had 0 visas issued locally in the last 12 months, hide the "Timing" line in "What to do" (e.g. Venezuela's "March–May outreach before July peak"), since timing advice doesn't apply.
-- [ ] 8-2b: switch Country 360 to the monthly nationality data.
+- [x] 8-2b: switch Country 360 to the monthly nationality data ("Issued in [country]" alongside; small and collapsing market rules in `nationalitySignals()`).
+- [ ] Montserrat and Western Sahara have nationality rows but no consulate or annual rows, so they're left out of the Country control and Country 360's compare options; decide whether to add them.
+- [ ] Markets page: rank by nationality there, so Command Center and Country 360 agree again.
 - [ ] 8-3: Command Center's "Current Volume" covers the 26-month operational window (Jan 2024 – Feb 2026), which the Core ≥ 50,000 threshold was set against; decide its window and thresholds.
 - [ ] Historical Trends measures each country from its own last fiscal-year row, so a country with no recent rows shows an old year as "latest" (North Korea FY2022, Marshall Islands and Nauru FY2024); use the latest complete fiscal year for every country.
 - [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
@@ -92,6 +94,8 @@ Sourced event markers on the Historical Trends chart.
 - [ ] Use the shared control bar (5b) on every page.
 
 ## 9 · Polish
+
+- [ ] Mobile (~640px wide): on Historical Trends and Country 360's long-term chart the fiscal-year labels overlap and the axis range stretches; fix the tick spacing and range at narrow widths.
 
 - [ ] Complete the region mapping for all 205 countries so region presets include every country.
 - [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
@@ -103,7 +107,7 @@ Sourced event markers on the Historical Trends chart.
 
 ## Data follow-ups
 
-- [ ] Deploy `POST_ALIASES` (the 7 post renames) to the `rebuild-dashboard` Lambda. Source only so far; deploying needs approval and AWS access.
+- [ ] Deploy `POST_ALIASES` (the 7 post renames) and the `"Korea, North": "North Korea"` nationality alias (8-2b) to the `rebuild-dashboard` Lambda. Source only so far; deploying needs approval and AWS access. Until then the live snapshot still says "Korea, North".
 - [ ] Pending label decisions: St Lucia, Palau, Micronesia, Congo, Kuwait posts (Kuwait → Kuwait City), Astana / Nur-Sultan.
 - [ ] Keep Serbia & Montenegro and Sudan as splits; never merge them.
 - [ ] Keep special categories (including Palestinian Authority Travel Document) out of country rankings.

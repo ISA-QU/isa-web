@@ -230,6 +230,13 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
   agrees with Command Center; Rangoon 10.8, Caracas 29.7, Mumbai 1,503 per month; Moscow
   1.54 and Kyiv 1.12 (High); Russia 2.02; Moscow's trend has 108 points; Kabul's recovery
   runs to 2025 at 0; no F1 or F1 + J1 category or action changes (Canada J1 accepted).
+- 8-2b, against pandas recounts of the raw monthly nationality workbook: India nationals
+  30,292 vs 75,060 (−59.6%, recovery 67; F1 + J1 37,255, −56.9%, 69); Iran 191 vs 2,331
+  (−91.8%, 13); Venezuela 87 vs 734 (−88.1%, 16; issued in 0); Nigeria, Russia, Ukraine,
+  UAE, UK, China and Ghana; compare default China, India, Vietnam, South Korea, France;
+  small and collapsing markets (F1: 25 fell below 100, 57 under 100 in both, 85 with timing
+  hidden); 44 countries get the "mostly elsewhere" note; the fallbacks; Montserrat and
+  Western Sahara left out. The advice fingerprints lock every country's category/action.
 
 ## Architecture
 
@@ -291,6 +298,19 @@ has its own version:
   (typical year)". Below 100 visas in an average typical year it shows "— (low volume)"
   and no seasonality ratio or "Highly Seasonal" flag. A country with no visas issued
   locally in the last 12 months gets no Timing line or timing-based advice.
+- **Country 360 by nationality (8-2b).** Country 360 leads with the country's nationals
+  (the monthly nationality table: the passport the visa was issued to, wherever it was
+  issued), with "Issued in [country]" (its U.S. consulates) alongside: a line under the
+  cards, a dotted line on the monthly trend, and the consulate-concentration figures.
+  "What to do" comes from `nationalitySignals()`: the shared classifier and rules, without
+  consulate concentration, plus two rules that come first: under 100 nationals in the last
+  12 months after 100+ before → "Declining / Review Structural Decline" ("Fell from X to
+  Y visas to nationals of [country]"); under 100 in both → "Insufficient Evidence". Those, and any fall of 75% or more, hide
+  the Timing line and timing-based advice. The change card follows the Period against the
+  previous equal-length period. With no nationality table (or no rows for the country,
+  e.g. Curacao) the page shows a banner and uses the issued-in figures. The Command Center
+  still ranks by where visas are issued until the Markets page, so the two pages can
+  disagree; the header's country card is labelled "Issued in [country]".
 - **Links are checked.** A `period=` year or range entirely outside the data (e.g.
   `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
   `country=` ignores capitalisation (`country=china` opens China).

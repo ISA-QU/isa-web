@@ -859,6 +859,7 @@ NATIONALITY_ALIASES = {
     "Gambia, The": "Gambia",
     "Great Britain and Northern Ireland": "United Kingdom",
     "Hong Kong S.A.R.": "Hong Kong",
+    "Korea, North": "North Korea",
     "Korea, South": "South Korea",
     "Macau S.A.R.": "Macau",
     "Marshall Islands, Republic of the": "Marshall Islands",

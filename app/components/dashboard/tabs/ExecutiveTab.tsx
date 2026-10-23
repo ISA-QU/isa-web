@@ -3,18 +3,17 @@
 import { useMemo } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
-import { calendarYearLabel } from "../../../lib/dashboard/periods";
+import { calendarYearLabel, yearListLabel } from "../../../lib/dashboard/periods";
 import { int } from "../../../lib/dashboard/format";
-import { changeText, changeVsBase } from "../../../lib/dashboard/measures";
-import { groupSum, idxMaxNumeric, idxMaxString } from "../../../lib/dashboard/metrics";
+import { changeText, changeVsBase, typicalYear, typicalYearsOf } from "../../../lib/dashboard/measures";
+import { groupSum, idxMaxString, peakMonthLabel } from "../../../lib/dashboard/metrics";
 import {
   arrowPct,
   monthRangeLabel,
   rollingTotals,
   type RollingGroup,
 } from "../../../lib/dashboard/rolling";
-import type { CountrySummaryRow } from "../../../lib/dashboard/types";
+import type { CountrySummaryRow, PostMonthlyRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
 import { FixedTag, Panel } from "../ui";
@@ -29,27 +28,30 @@ const BLUE_GOLD_SCALE: Array<[number, string]> = [
 const groupChange = (group: RollingGroup | undefined): string =>
   changeText(group ? changeVsBase(group.current, group.prior) : null, group?.prior ?? 0, arrowPct);
 
-const peakLabel = (peakMonth: number): string =>
-  peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A";
-
 /** `country_card_html` — the focus-market card beside the globe. */
 function CountryCard({
   row,
   f1,
   j1,
   period,
+  topPost,
+  peak,
 }: {
   row: CountrySummaryRow;
   f1: RollingGroup | undefined;
   j1: RollingGroup | undefined;
   period: string;
+  /** Most F1 in the last 12 months. */
+  topPost: string;
+  /** F1 peak month in a typical year. */
+  peak: string;
 }) {
   const stats: Array<[string, string]> = [
     ["F1, last 12 months", int(f1?.current ?? 0)],
     ["J1, last 12 months", int(j1?.current ?? 0)],
     ["F1 vs previous 12 months", groupChange(f1)],
-    ["Top Consulate", row.topPost],
-    ["Peak Visa Month", peakLabel(row.peakMonth)],
+    ["Top Consulate", topPost],
+    ["Peak month (typical year)", peak],
   ];
 
   return (
@@ -105,18 +107,42 @@ export default function ExecutiveTab() {
     ? `No consulate data for ${focusCountry} in ${operationalPeriod}.`
     : `No consulate data for ${focusCountry} in this view.`;
 
+  // F1 peak month in a typical year for every country (the shared calculation),
+  // and the top F1 consulate in the last 12 months for the focus card.
+  const typicalLabel = useMemo(() => {
+    const years = typicalYearsOf(data.meta.coverage.postsMonthly);
+    return { years, text: yearListLabel(years) };
+  }, [data.meta.coverage.postsMonthly]);
+  const f1Peaks = useMemo(() => {
+    const byCountry = new Map<string, PostMonthlyRow[]>();
+    for (const row of data.postsMonthly) {
+      if (row.visa !== "F1") continue;
+      const list = byCountry.get(row.country);
+      if (list) list.push(row);
+      else byCountry.set(row.country, [row]);
+    }
+    return new Map([...byCountry].map(([c, rows]) => [c, peakMonthLabel(typicalYear(rows, typicalLabel.years))]));
+  }, [data.postsMonthly, typicalLabel.years]);
+  const focusTopPost = useMemo(() => {
+    const posts = rollingTotals(data.postsMonthly, end, (r) =>
+      r.visa === "F1" && r.country === focusCountry ? r.post : null,
+    );
+    const totals = new Map([...posts.groups].filter(([, g]) => g.current > 0).map(([p, g]) => [p, g.current]));
+    return idxMaxString(totals) ?? "N/A";
+  }, [data.postsMonthly, end, focusCountry]);
+
   /* ---- Globe: choropleth by country name, with orthographic rotation ---- */
-  // Totals, top consulate and peak month follow the control bar's Period; the
-  // change line is always the last 12 months.
+  // Totals and top consulate follow the control bar's Period; the peak month is
+  // the typical year; the change line is always the last 12 months.
   const globeRows = useMemo(() => {
     const byCountry = new Map<
       string,
-      { f1: number; j1: number; posts: Map<string, number>; months: Map<number, number> }
+      { f1: number; j1: number; posts: Map<string, number> }
     >();
     for (const row of dfFiltered) {
       let entry = byCountry.get(row.country);
       if (!entry) {
-        entry = { f1: 0, j1: 0, posts: new Map(), months: new Map() };
+        entry = { f1: 0, j1: 0, posts: new Map() };
         byCountry.set(row.country, entry);
       }
       if (row.visa === "J1") {
@@ -125,7 +151,6 @@ export default function ExecutiveTab() {
       }
       entry.f1 += row.issuances;
       entry.posts.set(row.post, (entry.posts.get(row.post) ?? 0) + row.issuances);
-      entry.months.set(row.month, (entry.months.get(row.month) ?? 0) + row.issuances);
     }
     return [...byCountry.entries()]
       .filter(([, e]) => e.f1 > 0)
@@ -134,10 +159,10 @@ export default function ExecutiveTab() {
         f1: e.f1,
         j1: e.j1,
         topPost: idxMaxString(e.posts) ?? "N/A",
-        peakMonth: idxMaxNumeric(e.months) ?? 0,
+        peak: f1Peaks.get(country) ?? "N/A",
       }))
       .sort((a, b) => b.f1 - a.f1);
-  }, [dfFiltered]);
+  }, [dfFiltered, f1Peaks]);
 
   const globe = useMemo(() => {
     const colorTitle = `F1 Issuances, ${periodRange.label}`;
@@ -155,7 +180,7 @@ export default function ExecutiveTab() {
           int(row.j1),
           groupChange(last12.f1.get(row.country)),
           row.topPost,
-          peakLabel(row.peakMonth),
+          row.peak,
         ]),
         colorscale: BLUE_GOLD_SCALE,
         marker: { line: { color: "rgba(255,255,255,0.24)", width: 0.45 } },
@@ -171,7 +196,7 @@ export default function ExecutiveTab() {
           `J1, ${periodRange.label}: %{customdata[1]}<br>` +
           `F1 vs previous 12 months (${last12.period}): %{customdata[2]}<br>` +
           `Top consulate (F1, ${periodRange.label}): %{customdata[3]}<br>` +
-          `Peak F1 month (${periodRange.label}): %{customdata[4]}` +
+          `Peak F1 month (typical year: ${typicalLabel.text}): %{customdata[4]}` +
           "<extra></extra>",
       } as Trace,
     ];
@@ -242,7 +267,7 @@ export default function ExecutiveTab() {
     }
 
     return { data, layout, frames };
-  }, [globeRows, last12, periodRange.label]);
+  }, [globeRows, last12, periodRange.label, typicalLabel.text]);
 
   /* ---- Country rollup for the treemap (control bar's visa) ---- */
   const countryRollup = useMemo(() => {
@@ -385,7 +410,7 @@ export default function ExecutiveTab() {
       <div className="rounded-lg border border-[rgba(61,141,222,0.24)] bg-[radial-gradient(circle_at_72%_32%,rgba(61,141,222,0.18),transparent_22rem),linear-gradient(180deg,rgba(6,24,52,0.92),rgba(3,12,28,0.9))] p-[22px]">
         <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#ffdf87]">
           Visual Intelligence Layer
-          <FixedTag title="The globe's totals follow the Period; its change line and the focus card always use the last 12 months.">
+          <FixedTag title="The globe's totals and top consulate follow the Period; its peak month is the typical year; its change line and the focus card always use the last 12 months (the focus card's peak month is the typical year).">
             Change line and focus card: always last 12 months
           </FixedTag>
         </div>
@@ -394,8 +419,8 @@ export default function ExecutiveTab() {
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
           Drag to rotate the orthographic globe, use Rotate/Pause for motion, and hover countries for
-          F1/J1 totals, top consulate and peak month in {periodRange.inSentence}, plus the F1 change
-          vs the previous 12 months.
+          F1/J1 totals and top consulate in {periodRange.inSentence}, the peak month in a typical
+          year, plus the F1 change vs the previous 12 months.
           Country means where the visa was issued. This layer is visual
           only and does not control dashboard filters.
         </p>
@@ -416,6 +441,8 @@ export default function ExecutiveTab() {
             f1={last12.f1.get(focusRow.country)}
             j1={last12.j1.get(focusRow.country)}
             period={last12.period}
+            topPost={focusTopPost}
+            peak={f1Peaks.get(focusRow.country) ?? "N/A"}
           />
         ) : (
           <Panel accent="gold" className="h-full">

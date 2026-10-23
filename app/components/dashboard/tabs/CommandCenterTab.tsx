@@ -166,14 +166,15 @@ export default function CommandCenterTab() {
       render: (r) => momentumText(r),
     },
     { key: "recovery", header: "Recovery Status", numeric: true, render: (r) => recoveryText(r) },
-    { key: "peak", header: "Peak Recruitment Month", render: (r) => r.peakMonthName },
+    { key: "peak", header: "Peak month (typical year)", render: (r) => r.peakMonthName },
     { key: "concentration", header: "Concentration Risk", render: (r) => r.concentrationRisk },
     { key: "flags", header: "Secondary Flags", render: (r) => r.secondaryFlagsText },
     { key: "action", header: "Recommended Action", render: (r) => r.recommendedAction },
     { key: "driver", header: "Primary Driver", render: (r) => r.primaryDriver },
     { key: "counter", header: "Counter-Signal", render: (r) => r.counterSignal },
     { key: "confidence", header: "Confidence", render: (r) => r.confidence },
-    { key: "timing", header: "Timing", render: (r) => r.timing },
+    // Empty with no visas issued locally in the last 12 months.
+    { key: "timing", header: "Timing", render: (r) => r.timing || "—" },
     { key: "caveat", header: "Caveat", render: (r) => r.caveat },
     { key: "evidence", header: "Evidence", render: (r) => r.evidence },
   ];
@@ -192,7 +193,7 @@ export default function CommandCenterTab() {
     r.primaryDriver,
     r.counterSignal,
     r.confidence,
-    r.timing,
+    r.timing || "—",
     r.caveat,
     r.evidence,
   ]);
@@ -471,7 +472,7 @@ export default function CommandCenterTab() {
               { key: "country", header: "Country", render: (r) => r.country },
               { key: "index", header: "Recovery Index", numeric: true, render: (r) => recoveryText(r) },
               { key: "volume", header: "Latest 12-Month Volume", numeric: true, render: (r) => int(r.latest12Total) },
-              { key: "peak", header: "Peak Month", render: (r) => r.peakMonthName },
+              { key: "peak", header: "Peak month (typical year)", render: (r) => r.peakMonthName },
               { key: "action", header: "Action", render: (r) => r.recommendedAction },
             ]}
           />
@@ -495,7 +496,7 @@ export default function CommandCenterTab() {
               numeric: true,
               render: (r) => (notNa(r.seasonalityRatio) ? `${r.seasonalityRatio.toFixed(1)}x` : "N/A"),
             },
-            { key: "peak", header: "Peak Month", render: (r) => r.peakMonthName },
+            { key: "peak", header: "Peak month (typical year)", render: (r) => r.peakMonthName },
             { key: "flags", header: "Secondary Flags", render: (r) => r.secondaryFlagsText },
             { key: "action", header: "Action", render: (r) => r.recommendedAction },
           ]}
@@ -511,7 +512,7 @@ export default function CommandCenterTab() {
           columns={[
             { key: "country", header: "Country", render: (r) => r.country },
             { key: "category", header: "Category", render: (r) => r.marketCategory },
-            { key: "peak", header: "Peak Month", render: (r) => r.peakMonthName },
+            { key: "peak", header: "Peak month (typical year)", render: (r) => r.peakMonthName },
             {
               key: "window",
               header: "Outreach Window",

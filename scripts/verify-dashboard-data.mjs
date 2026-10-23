@@ -17,6 +17,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -98,6 +99,7 @@ async function main() {
   const measures = await import(pathToFileURL(path.join(outDir, "measures.js")).href);
   const sorting = await import(pathToFileURL(path.join(outDir, "sort.js")).href);
   const rolling = await import(pathToFileURL(path.join(outDir, "rolling.js")).href);
+  const format = await import(pathToFileURL(path.join(outDir, "format.js")).href);
 
   const VISA = ["F1", "J1"];
   const monthIndex = (year, month) => year * 12 + (month - 1);
@@ -538,6 +540,100 @@ async function main() {
   );
   const countryNames = [...new Set([...postsMonthly.map((r) => r.country), ...annualCountry.map((r) => r.country)])];
   check("links: country=china / INDIA / unknown", `${url.matchOption("china", countryNames)} / ${url.matchOption("INDIA", countryNames)} / ${url.matchOption("Atlantis", countryNames)}`, "China / India / undefined");
+
+  console.log("\n  Fix Pack A2  (missing months count as 0; one typical-year peak; expected values recounted with pandas from the raw by-post workbook)");
+  const typicalYrs = measures.typicalYearsOf(coverage);
+  check("typical years", typicalYrs.join(", "), "2018, 2019, 2022, 2023, 2024, 2025");
+  const f1Of = (pick) => postsMonthly.filter((r) => r.visa === "F1" && pick(r));
+  const indiaTypical = measures.typicalYear(f1Of((r) => r.country === "India"), typicalYrs);
+  check(
+    "India F1 typical year, average per month: Jan / May / Aug (unchanged)",
+    [1, 5, 8].map((m) => Math.round(indiaTypical.averages[m - 1])).join(" / "),
+    "1893 / 5526 / 6903",
+  );
+  const frameA2 = new Map(frame.map((r) => [r.country, r]));
+  check(
+    "peak month (typical year): India / China / Ukraine / Egypt / Pakistan",
+    ["India", "China", "Ukraine", "Egypt", "Pakistan"].map((c) => frameA2.get(c).peakMonthName).join(" / "),
+    "June / June / July / July / July",
+  );
+  check("Mumbai peak month (typical year)", metrics.peakMonthLabel(measures.typicalYear(f1Of((r) => r.post === "Mumbai"), typicalYrs)), "June");
+  check(
+    "Mauritania (17 a year) / Afghanistan (38 a year): peak month",
+    `${frameA2.get("Mauritania").peakMonthName} / ${frameA2.get("Afghanistan").peakMonthName}`,
+    "— (low volume) / — (low volume)",
+  );
+  check(
+    "low-volume peaks also hide the seasonality ratio",
+    frame.filter((r) => r.peakMonthName === measures.LOW_VOLUME && r.seasonalityRatio !== null).length,
+    0,
+  );
+  const f1ByCountry = new Map();
+  for (const r of f1Of(() => true)) {
+    if (!f1ByCountry.has(r.country)) f1ByCountry.set(r.country, []);
+    f1ByCountry.get(r.country).push(r);
+  }
+  check(
+    "every page's peak month agrees with Command Center for every country (F1)",
+    [...f1ByCountry].filter(([c, rows]) => metrics.peakMonthLabel(measures.typicalYear(rows, typicalYrs)) !== frameA2.get(c).peakMonthName).length,
+    0,
+  );
+  check(
+    "F1 countries / consulates with a low-volume peak",
+    `${[...f1ByCountry.values()].filter((rows) => measures.typicalYear(rows, typicalYrs).lowVolume).length} / ${
+      [...new Set(f1Of(() => true).map((r) => r.post))].filter((post) => measures.typicalYear(f1Of((r) => r.post === post), typicalYrs).lowVolume).length
+    }`,
+    "31 / 41",
+  );
+  const perMonth = (post, range) => format.perMonthText(measures.averagePerMonthIn(f1Of((r) => r.post === post), range));
+  check(
+    "average per month: Rangoon last 12 / Caracas All / Mumbai All",
+    `${perMonth("Rangoon", last12Range)} / ${perMonth("Caracas", allRange)} / ${perMonth("Mumbai", allRange)}`,
+    "10.8 / 29.7 / 1,503",
+  );
+  const vol = (post, range) => {
+    const cv = measures.volatilityIn(f1Of((r) => r.post === post && r.monthIndex >= range.start && r.monthIndex <= range.end), range);
+    return `${cv.toFixed(2)} ${metrics.volatilityLabel(cv)}`;
+  };
+  check("volatility, last 12 months: Moscow / Kyiv", `${vol("Moscow", last12Range)} / ${vol("Kyiv", last12Range)}`, "1.54 High / 1.12 High");
+  check("Russia F1 volatility, full history", frameA2.get("Russia").volatilityCv.toFixed(2), "2.02");
+  const moscowSeries = measures.monthlySeries(f1Of((r) => r.post === "Moscow"), coverage);
+  check(
+    "Moscow trend line: points / months at 0",
+    `${moscowSeries.length} / ${moscowSeries.filter((v) => v === 0).length}`,
+    "108 / 46",
+  );
+  const kabul = f1Of((r) => r.post === "Kabul");
+  const kabulBase = kabul.filter((r) => r.year === 2019).reduce((t, r) => t + r.issuances, 0);
+  check(
+    "Kabul recovery chart, 2019-2025 (drops to 0)",
+    [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+      .map((y) => Math.round((kabul.filter((r) => r.year === y).reduce((t, r) => t + r.issuances, 0) / kabulBase) * 100))
+      .join(", "),
+    "100, 8, 3, 0, 0, 0, 0",
+  );
+  const fingerprint = (rows) =>
+    createHash("sha1")
+      .update(rows.map((r) => `${r.country}=${r.marketCategory}/${r.recommendedAction}`).sort().join("\n"))
+      .digest("hex")
+      .slice(0, 12);
+  check("no F1 category or action changes vs A1 (every country)", fingerprint(frame), "2667c03ff99f");
+  check(
+    "no F1 + J1 category or action changes vs A1 (every country)",
+    fingerprint(metrics.buildCommandCenterFrame(operational, annualCountry, postsMonthly, "Both", latestComplete, coverage)),
+    "8a6ec0744bb9",
+  );
+  check("Canada J1 action (accepted change)", rowFor("Canada", "J1").recommendedAction, "Begin Outreach Earlier");
+  check(
+    "F1 flags: Volatile (A1 120, +24) / Highly Seasonal (A1 160, +1 -26)",
+    `${frame.filter((r) => r.secondaryFlags.includes("Volatile")).length} / ${frame.filter((r) => r.secondaryFlags.includes("Highly Seasonal")).length}`,
+    "144 / 135",
+  );
+  check(
+    "Timing hidden with 0 local visas: Venezuela / Afghanistan (India keeps it)",
+    `"${rowFor("Venezuela").timing}" / "${rowFor("Afghanistan").timing}" / ${frameA2.get("India").timing !== ""}`,
+    '"" / "" / true',
+  );
 
   await rm(outDir, { recursive: true, force: true });
 

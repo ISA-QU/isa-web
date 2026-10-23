@@ -18,7 +18,18 @@ import {
   MONTHLY_COUNTRY_ALIASES,
   REGION_MAP,
 } from "./constants";
-import { NO_LOCAL_VISAS, changeVsBase, lastTwelve, latestCompleteYearOf, recoveryVs2019 } from "./measures";
+import {
+  LOW_VOLUME,
+  NO_LOCAL_VISAS,
+  changeVsBase,
+  lastTwelve,
+  latestCompleteYearOf,
+  recoveryVs2019,
+  typicalYear,
+  typicalYearsOf,
+  volatilityIn,
+  type TypicalYear,
+} from "./measures";
 import type {
   AnnualCountryRow,
   CommandCenterRow,
@@ -523,7 +534,20 @@ export function latestCompleteYear(rows: readonly PostMonthlyRow[]): number | nu
   return complete.length > 0 ? Math.max(...complete) : null;
 }
 
+/** "July", "— (low volume)" when there are too few visas for a peak, or "N/A" with none. */
+export const peakMonthLabel = (typical: TypicalYear): string =>
+  typical.peakMonth !== null
+    ? (MONTH_NAMES_FULL[typical.peakMonth] ?? "N/A")
+    : typical.lowVolume
+      ? LOW_VOLUME
+      : "N/A";
+
 /**
+ * OLD: no live page uses this since Fix Pack A2; only the unused
+ * HistoricalConsulatesTab.tsx does. Its peak month, seasonality and volatility
+ * skip months with no rows; use typicalYear() and volatilityIn() in
+ * measures.ts instead. Kept until the unused tab files are removed.
+ *
  * One post's or country's monthly consulate rows, summarised. The last-12-month
  * window and the recovery year come from `window` (the data's coverage), never
  * from the rows' own last month: a consulate that stopped reporting must not
@@ -767,6 +791,8 @@ export function recommendationProfile(
   if (action === "Prepare for Peak Support Workload") {
     timing = `Prepare support capacity before ${row.peakMonthName || "the peak month"}`;
   }
+  // Timing advice doesn't apply with no visas issued locally in the last 12 months.
+  if (row.latest12Total === 0) timing = "";
 
   return { primaryDriver, counterSignal, timing, caveat };
 }
@@ -780,7 +806,7 @@ export function evidenceText(row: ClassificationInput): string {
   if (notNa(row.recoveryIndex)) {
     pieces.push(`recovery index ${row.recoveryIndex.toFixed(0)}`);
   }
-  if (row.peakMonthName) pieces.push(`peak month ${row.peakMonthName}`);
+  if (row.peakMonth) pieces.push(`peak month (typical year) ${row.peakMonthName}`);
   return pieces.length > 0 ? pieces.join("; ") : "Insufficient comparable evidence";
 }
 
@@ -838,6 +864,7 @@ export function buildCommandCenterFrame(
 
   // The same windows for every country: the data's last month and latest complete year.
   const recoveryYear = latestCompleteYearOf(coverage);
+  const typicalYears = typicalYearsOf(coverage);
 
   const rows = countries.map((country) => {
     const annualRows = annualByCountry.get(historicalCountryName(country)) ?? [];
@@ -851,6 +878,7 @@ export function buildCommandCenterFrame(
     let seasonalityRatio: number | null = null;
     let volatilityCv: number | null = null;
     let peakMonth: number | null = null;
+    let typical: TypicalYear | null = null;
     let topOneShare: number | null = null;
     let topThreeShare: number | null = null;
 
@@ -864,21 +892,13 @@ export function buildCommandCenterFrame(
       recoveryIndex = recovery.index;
       baseline2019 = recovery.base2019;
 
-      const monthly = groupSum(consulateRows, (r) => r.monthIndex, (r) => r.issuances);
-      const monthlyValues = [...monthly.values()];
-      const monthlyMean = mean(monthlyValues);
-      volatilityCv =
-        monthlyValues.length > 1 && monthlyMean
-          ? stdPopulation(monthlyValues) / monthlyMean
-          : null;
+      // Every month of the coverage, missing months as 0.
+      volatilityCv = volatilityIn(consulateRows, coverage);
 
-      const monthAvg = groupMean(consulateRows, (r) => r.month, (r) => r.issuances);
-      const monthAvgValues = [...monthAvg.values()];
-      const monthAvgMean = mean(monthAvgValues);
-      if (monthAvg.size > 0 && monthAvgMean) {
-        peakMonth = idxMaxNumeric(monthAvg);
-        seasonalityRatio = Math.max(...monthAvgValues) / monthAvgMean;
-      }
+      // The typical-year peak every page uses; none below PEAK_MIN_BASE a year.
+      typical = typicalYear(consulateRows, typicalYears);
+      peakMonth = typical.peakMonth;
+      seasonalityRatio = typical.seasonalityRatio;
 
       const postTotals = [...groupSum(consulateRows, (r) => r.post, (r) => r.issuances).values()].sort(
         (a, b) => b - a,
@@ -930,7 +950,7 @@ export function buildCommandCenterFrame(
       baseline2019,
       hasConsulateData: consulateRows.length > 0,
       peakMonth,
-      peakMonthName: peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A",
+      peakMonthName: typical ? peakMonthLabel(typical) : "N/A",
       seasonalityRatio,
       volatilityCv,
       topOneShare,

@@ -71,3 +71,7 @@ export const pct = (value: number | null | undefined, places = 1): string =>
 /** Share (0-1) rendered as a percentage. */
 export const share = (value: number | null | undefined, places = 1): string =>
   notNa(value) ? `${(value * 100).toFixed(places)}%` : "N/A";
+
+/** An average per month: one decimal under 100 ("10.8"), whole numbers from 100 ("1,503"). */
+export const perMonthText = (value: number | null | undefined): string =>
+  !notNa(value) ? "N/A" : Math.abs(value) < 100 ? value.toFixed(1) : GROUPED.format(Math.round(value));

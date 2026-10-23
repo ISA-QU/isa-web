@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES, MONTH_NAMES_FULL, VISA_COLORS } from "../../../lib/dashboard/constants";
+import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
   buildConsulateTable,
   consulateContext,
@@ -12,15 +12,31 @@ import {
   sameMonthsLabel,
   type ConsulateRow,
 } from "../../../lib/dashboard/consulates";
-import { int, metricNumber, metricPct, monthDisplay, monthLongDisplay, share } from "../../../lib/dashboard/format";
-import { LOW_VOLUME, MIN_BASE } from "../../../lib/dashboard/measures";
+import {
+  int,
+  metricNumber,
+  metricPct,
+  monthDisplay,
+  monthLongDisplay,
+  perMonthText,
+  share,
+} from "../../../lib/dashboard/format";
+import {
+  LOW_VOLUME,
+  MIN_BASE,
+  averagePerMonthIn,
+  monthlySeries,
+  typicalYear,
+  volatilityIn,
+} from "../../../lib/dashboard/measures";
 import {
   groupSum,
-  idxMaxNumeric,
-  postPeriodMetrics,
+  peakMonthLabel,
   recommendedOutreachWindow,
+  seasonalityStrengthLabel,
   selectedVisaClasses,
   sumBy,
+  volatilityLabel,
 } from "../../../lib/dashboard/metrics";
 import { averagePerMonth, calendarMonthYearCounts, calendarYearLabel } from "../../../lib/dashboard/periods";
 import {
@@ -197,14 +213,14 @@ export default function ConsulatesPage() {
 
     if (trendMode === "monthly") {
       const traces: Trace[] = compared.map((post) => {
-        const totals = groupSum(byPost.get(post) ?? [], (r) => r.monthIndex, (r) => r.issuances);
-        const months = [...totals.keys()].sort((a, b) => a - b);
+        // Every month of the coverage: the line drops to 0 where there were no visas.
+        const values = monthlySeries(byPost.get(post) ?? [], coverage);
         return {
           type: "scatter",
           mode: "lines",
           name: post,
-          x: months.map(monthDate),
-          y: months.map((m) => totals.get(m)!),
+          x: values.map((_, i) => monthDate(coverage.start + i)),
+          y: values,
           line: { width: post === selectedPost ? 4 : 2 },
           hovertemplate: `${post}: %{y:,.0f}<extra></extra>`,
         };
@@ -365,13 +381,12 @@ export default function ConsulatesPage() {
   const selectedPeriodRows = selectedHistory.filter(
     (r) => r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end,
   );
-  const typicalPeak = useMemo(() => {
-    const rows = typical.rows.filter((r) => r.post === selectedPost);
-    const counts = calendarMonthYearCounts(typical.rows);
-    const totals = groupSum(rows, (r) => r.month, (r) => r.issuances);
-    const averages = new Map([...totals.entries()].map(([m, t]) => [m, averagePerMonth(t, m, counts)]));
-    return averages.size > 0 ? idxMaxNumeric(averages) : null;
-  }, [typical, selectedPost]);
+  // The shared typical-year peak; "— (low volume)" under 100 visas in an average typical year.
+  const selectedTypical = useMemo(
+    () => typicalYear(selectedHistory, typical.years),
+    [selectedHistory, typical.years],
+  );
+  const typicalPeak = selectedTypical.peakMonth;
   const recoveryLabel = recoveryYear !== null ? `Recovery (${recoveryYear} vs 2019)` : "Recovery (vs 2019)";
   const changeLabel = prior
     ? `Change vs ${monthRangeLabel(prior)}`
@@ -381,27 +396,28 @@ export default function ConsulatesPage() {
     : `No previous period of the same length: the data starts ${monthDisplay(coverage.start)}.`;
 
   // More details: the selected consulate's own figures for the Period.
-  const periodMetrics = postPeriodMetrics(selectedPeriodRows);
-  const activeMonths = new Set(selectedPeriodRows.map((r) => r.monthIndex)).size;
+  // Volatility and the average use every month of the Period, missing months as 0.
+  const periodVolatility = volatilityLabel(volatilityIn(selectedPeriodRows, periodRange));
+  const monthsWithIssuances = new Set(selectedPeriodRows.map((r) => r.monthIndex)).size;
   // The data's last month (the same for every consulate), not this consulate's own last row.
   const latestIndex = selectedHistory.length > 0 ? coverage.end : null;
   const latestMonthTotal =
     latestIndex !== null
       ? sumBy(selectedHistory.filter((r) => r.monthIndex === latestIndex), (r) => r.issuances)
       : null;
-  const averageMonthly = activeMonths > 0 ? periodMetrics.total / activeMonths : null;
+  const averageMonthly = selectedPeriodRows.length > 0 ? averagePerMonthIn(selectedPeriodRows, periodRange) : null;
 
   const splitChart = useMemo(() => {
     const rows = data.postsMonthly.filter((r) => r.post === selectedPost);
     const traces: Trace[] = (["F1", "J1"] as const).map((v) => {
-      const totals = groupSum(rows.filter((r) => r.visa === v), (r) => r.monthIndex, (r) => r.issuances);
-      const months = [...totals.keys()].sort((a, b) => a - b);
+      // Every month of the coverage: the line drops to 0 where there were no visas.
+      const values = monthlySeries(rows.filter((r) => r.visa === v), coverage);
       return {
         type: "scatter",
         mode: "lines",
         name: v,
-        x: months.map(monthDate),
-        y: months.map((m) => totals.get(m)!),
+        x: values.map((_, i) => monthDate(coverage.start + i)),
+        y: values,
         line: { color: VISA_COLORS[v], width: 2 },
       };
     });
@@ -423,16 +439,18 @@ export default function ConsulatesPage() {
       const rows = selectedHistory.filter((r) => r.visa === v);
       const base = sumBy(rows.filter((r) => r.year === 2019), (r) => r.issuances);
       if (base < MOVER_MIN_ISSUANCES) continue;
+      // Every complete year from 2019, so a consulate that stopped drops to 0.
       const totals = groupSum(rows, (r) => r.year, (r) => r.issuances);
-      const years = [...totals.keys()]
-        .filter((y) => y >= 2019 && calendarYearLabel(y, coverage) === String(y))
-        .sort((a, b) => a - b);
+      const years: number[] = [];
+      for (let y = 2019; y <= Math.floor(coverage.end / 12); y += 1) {
+        if (calendarYearLabel(y, coverage) === String(y)) years.push(y);
+      }
       traces.push({
         type: "scatter",
         mode: "lines+markers",
         name: v,
         x: years.map(String),
-        y: years.map((y) => (totals.get(y)! / base) * 100),
+        y: years.map((y) => ((totals.get(y) ?? 0) / base) * 100),
         line: { color: VISA_COLORS[v], width: 3 },
         hovertemplate: `${v} %{x}: %{y:.0f} (100 = 2019 level)<extra></extra>`,
       });
@@ -451,7 +469,7 @@ export default function ConsulatesPage() {
     };
   }, [visas, selectedHistory, coverage]);
 
-  const peakName = typicalPeak !== null ? (MONTH_NAMES_FULL[typicalPeak] ?? "N/A") : "N/A";
+  const peakName = peakMonthLabel(selectedTypical);
   const insights: string[] = [];
   if (selectedRow) {
     insights.push(
@@ -501,7 +519,8 @@ export default function ConsulatesPage() {
       const rows = visaRows.filter(
         (x) => x.post === r.post && x.monthIndex >= periodRange.start && x.monthIndex <= periodRange.end,
       );
-      const m = postPeriodMetrics(rows);
+      const cv = volatilityIn(rows, periodRange);
+      const postTypical = typicalYear(visaRows.filter((x) => x.post === r.post), typical.years);
       const base = sumBy(visaRows.filter((x) => x.post === r.post && x.year === 2019), (x) => x.issuances);
       return [
         r.post,
@@ -513,9 +532,9 @@ export default function ConsulatesPage() {
         r.countryShare.toFixed(2),
         String(base),
         r.recovery === null ? "" : r.recovery.toFixed(1),
-        m.volatility,
-        m.volatilityCv === null ? "" : m.volatilityCv.toFixed(3),
-        m.seasonalityStrength,
+        volatilityLabel(cv),
+        cv === null ? "" : cv.toFixed(3),
+        postTypical.lowVolume ? LOW_VOLUME : seasonalityStrengthLabel(postTypical.seasonalityRatio),
       ];
     });
 
@@ -736,9 +755,9 @@ export default function ConsulatesPage() {
                 label={`Latest month (${monthDisplay(latestIndex)})`}
                 value={metricNumber(latestMonthTotal)}
               />
-              <KpiCard label={`Average per month, ${periodRange.label}`} value={metricNumber(averageMonthly)} />
-              <KpiCard label={`Active months, ${periodRange.label}`} value={metricNumber(activeMonths)} />
-              <KpiCard label="Volatility" value={periodMetrics.volatility} valueClassName="!text-[16px]" />
+              <KpiCard label={`Average per month, ${periodRange.label}`} value={perMonthText(averageMonthly)} />
+              <KpiCard label={`Months with issuances, ${periodRange.label}`} value={metricNumber(monthsWithIssuances)} />
+              <KpiCard label="Volatility" value={periodVolatility} valueClassName="!text-[16px]" />
             </KpiRow>
             <Panel accent="navy">
               <h4 className="mb-2 text-base font-bold text-[#93C5FD]">Summary</h4>
@@ -805,7 +824,7 @@ export default function ConsulatesPage() {
                   selectedRow.countryShare.toFixed(2),
                   selectedRow.recovery === null ? "" : selectedRow.recovery.toFixed(1),
                   peakName,
-                  periodMetrics.volatility,
+                  periodVolatility,
                 ]]}
               />
             </div>

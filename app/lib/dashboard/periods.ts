@@ -5,6 +5,7 @@
  */
 
 import { MONTH_NAMES } from "./constants";
+import { typicalYearsOf } from "./measures";
 import { pctGrowth } from "./metrics";
 import type { AnnualCountryRow, FiscalYearInfo, MonthRange, Visa } from "./types";
 
@@ -243,22 +244,12 @@ export function periodFromLink(param: string | null, coverage: MonthRange): Peri
  * Typical year (seasonality baseline)
  * ------------------------------------------------------------------ */
 
-/** Years left out of the seasonality baseline: COVID disrupted both. */
-const ATYPICAL_YEARS = new Set([2020, 2021]);
-
 /**
  * Complete calendar years in the monthly data, leaving out 2020 and 2021 (e.g.
  * 2018, 2019, 2022–2025). Seasonality charts average over these, whatever the
  * Period, so a partial or disrupted year can't distort the shape.
  */
-export function typicalYears(coverage: MonthRange): number[] {
-  const years: number[] = [];
-  for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
-    const complete = year * 12 >= coverage.start && year * 12 + 11 <= coverage.end;
-    if (complete && !ATYPICAL_YEARS.has(year)) years.push(year);
-  }
-  return years;
-}
+export const typicalYears = (coverage: MonthRange): number[] => typicalYearsOf(coverage);
 
 /** "2018, 2019, 2022–2025": consecutive runs joined with an en dash. */
 export function yearListLabel(years: readonly number[]): string {

@@ -224,6 +224,12 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
   Nepal tops Recovery Leaders at 323 (Guinea and Eritrea left out); Kinshasa −88.8%; 26
   countries' F1 change now low volume; Country 360 and Command Center agree for every
   country; risers and fallers unchanged; `period=2010` rejected; `country=china` opens China.
+- Fix Pack A2, against pandas recounts: India's typical year unchanged (Jan 1,893, May
+  5,526, Aug 6,903); peaks India/China June, Ukraine/Egypt/Pakistan July, Mumbai June;
+  Mauritania and Afghanistan low volume (31 F1 countries, 41 consulates); every page's peak
+  agrees with Command Center; Rangoon 10.8, Caracas 29.7, Mumbai 1,503 per month; Moscow
+  1.54 and Kyiv 1.12 (High); Russia 2.02; Moscow's trend has 108 points; Kabul's recovery
+  runs to 2025 at 0; no F1 or F1 + J1 category or action changes (Canada J1 accepted).
 
 ## Architecture
 
@@ -274,6 +280,17 @@ has its own version:
   one country, so it always gives the same advice as Command Center. A country with no
   visas issued in it in the last 12 months gets "Insufficient Evidence" with the reason
   "No visas issued locally in the last 12 months".
+- **Missing month = 0 (A2).** Averages per month, volatility, seasonality CV and every
+  monthly trend line use every month in the range, with months that have no rows as 0, so
+  a line drops to 0 instead of jumping across a gap. "Average per month" divides by the
+  months in the Period (Rangoon, last 12 months: 10.8, not 21.7); "Months with issuances"
+  still counts only months with visas. Averages show one decimal under 100.
+- **One peak month (A2).** Every page takes its peak month and seasonality ratio from
+  `typicalYear()`: the average per calendar month over the typical years (complete years
+  except 2020–2021: 2018, 2019, 2022–2025), missing months as 0, and labels it "Peak month
+  (typical year)". Below 100 visas in an average typical year it shows "— (low volume)"
+  and no seasonality ratio or "Highly Seasonal" flag. A country with no visas issued
+  locally in the last 12 months gets no Timing line or timing-based advice.
 - **Links are checked.** A `period=` year or range entirely outside the data (e.g.
   `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
   `country=` ignores capitalisation (`country=china` opens China).

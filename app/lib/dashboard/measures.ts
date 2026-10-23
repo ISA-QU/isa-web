@@ -90,3 +90,106 @@ export function recoveryVs2019(rows: readonly Issued[], year: number | null): Re
   const index = year !== null && !isLowVolume(base2019) ? (latest / base2019) * 100 : null;
   return { index, base2019, latest, year };
 }
+
+/* ------------------------------------------------------------------ *
+ * Fix Pack A2: missing months count as 0; one typical-year peak
+ * ------------------------------------------------------------------ */
+
+/** Years left out of the typical year: COVID disrupted both. */
+const ATYPICAL_YEARS = new Set([2020, 2021]);
+
+/** Complete calendar years in the coverage except 2020–2021 (2018, 2019, 2022–2025 today). */
+export function typicalYearsOf(coverage: MonthRange): number[] {
+  const years: number[] = [];
+  for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+    const complete = year * 12 >= coverage.start && year * 12 + 11 <= coverage.end;
+    if (complete && !ATYPICAL_YEARS.has(year)) years.push(year);
+  }
+  return years;
+}
+
+/** One value per month from `range.start` to `range.end`; months with no rows are 0. */
+export function monthlySeries(rows: readonly Issued[], range: MonthRange): number[] {
+  const values = new Array<number>(Math.max(0, range.end - range.start + 1)).fill(0);
+  for (const row of rows) {
+    if (row.monthIndex >= range.start && row.monthIndex <= range.end) {
+      values[row.monthIndex - range.start] += row.issuances;
+    }
+  }
+  return values;
+}
+
+/** Total ÷ every month in the range (not only months with issuances). */
+export function averagePerMonthIn(rows: readonly Issued[], range: MonthRange): number | null {
+  const months = range.end - range.start + 1;
+  return months > 0 ? monthlySeries(rows, range).reduce((a, b) => a + b, 0) / months : null;
+}
+
+/** Coefficient of variation (population SD ÷ mean); null with fewer than 2 values or a zero mean. */
+function coefficientOfVariation(values: readonly number[]): number | null {
+  if (values.length < 2) return null;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  if (!mean) return null;
+  const variance = values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance) / mean;
+}
+
+/** Monthly volatility over the range, missing months as 0; null with no rows at all. */
+export function volatilityIn(rows: readonly Issued[], range: MonthRange): number | null {
+  return rows.length === 0 ? null : coefficientOfVariation(monthlySeries(rows, range));
+}
+
+/** CV of the per-calendar-month averages within the range (each month ÷ how often it occurs in the range). */
+export function seasonalityCvIn(rows: readonly (Issued & { month: number })[], range: MonthRange): number | null {
+  if (rows.length === 0) return null;
+  const totals = new Array<number>(13).fill(0);
+  const counts = new Array<number>(13).fill(0);
+  for (let index = range.start; index <= range.end; index += 1) counts[(index % 12) + 1] += 1;
+  for (const row of rows) {
+    if (row.monthIndex >= range.start && row.monthIndex <= range.end) totals[row.month] += row.issuances;
+  }
+  const averages: number[] = [];
+  for (let month = 1; month <= 12; month += 1) if (counts[month] > 0) averages.push(totals[month] / counts[month]);
+  return coefficientOfVariation(averages);
+}
+
+/** Below this many visas in an average typical year, no peak month or seasonality is shown. */
+export const PEAK_MIN_BASE = 100;
+
+export interface TypicalYear {
+  /** Average per calendar month, January first (12 values). */
+  averages: number[];
+  /** Sum of the 12 averages: an average typical year's total. */
+  yearTotal: number;
+  /** 1–12, or null when there are no visas or the year total is below PEAK_MIN_BASE. */
+  peakMonth: number | null;
+  /** Peak average ÷ mean month; null whenever peakMonth is. */
+  seasonalityRatio: number | null;
+  /** True when there are visas but too few for a meaningful peak ("— (low volume)"). */
+  lowVolume: boolean;
+}
+
+/**
+ * The typical year for one country, consulate or selection: the average per
+ * calendar month over `years` (complete years except 2020–2021), missing
+ * months as 0. Every page takes its peak month and seasonality from here.
+ */
+export function typicalYear(rows: readonly (Issued & { month: number })[], years: readonly number[]): TypicalYear {
+  const included = new Set(years);
+  const totals = new Array<number>(12).fill(0);
+  for (const row of rows) if (included.has(row.year)) totals[row.month - 1] += row.issuances;
+  const averages = totals.map((value) => (years.length > 0 ? value / years.length : 0));
+  const yearTotal = averages.reduce((a, b) => a + b, 0);
+  const peak = Math.max(...averages);
+  if (yearTotal <= 0 || yearTotal < PEAK_MIN_BASE) {
+    return { averages, yearTotal, peakMonth: null, seasonalityRatio: null, lowVolume: rows.length > 0 };
+  }
+  // Ties go to the earliest month.
+  return {
+    averages,
+    yearTotal,
+    peakMonth: averages.indexOf(peak) + 1,
+    seasonalityRatio: peak / (yearTotal / 12),
+    lowVolume: false,
+  };
+}

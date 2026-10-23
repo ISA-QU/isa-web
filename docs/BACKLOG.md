@@ -125,6 +125,22 @@ After launch.
   - [ ] Needs university IT and data-governance approval; start that conversation early.
   - [ ] Aggregated data only, behind sign-in.
 
+## Future: automated monthly data updates
+
+After launch; for Koushik (AWS).
+
+- [ ] Weekly check of the State Department's monthly nonimmigrant visa (NIV) statistics page for a new month.
+- [ ] When one appears, download both PDFs (by Nationality and by Post) and run the existing parser.
+- [ ] Quality checks before anything is published:
+  - [ ] every page of both PDFs parsed;
+  - [ ] nationality totals vs post totals within ±5 for each month and visa class;
+  - [ ] no abnormal month-to-month jumps;
+  - [ ] flag for human review any nationality or consulate name not seen before, or containing a comma.
+- [ ] Rebuild the snapshot and run `npm run dashboard:verify`.
+- [ ] Email a person for one-click approval; publish only if approved and every check passes, otherwise keep the current data.
+- [ ] Once a year, replace the provisional fiscal-year figures with the official Report of the Visa Office.
+- [ ] Fallback: a manual upload page.
+
 ## Later ideas
 
 - [ ] Monthly "what changed" email digest.

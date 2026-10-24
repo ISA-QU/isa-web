@@ -64,6 +64,7 @@ Sourced event markers on the existing charts ("may have affected", never "caused
 - [ ] Consulates' calendar-year trend modes don't show events yet (monthly mode only).
 - [ ] Label spacing assumes a desktop-width chart; on phones some labels may crowd (hover still works). Check with Feature 9 mobile.
 - [ ] Polish: on yearly charts the existing "2020 disruption" label sits close to the 2020 event marker; nudge one of them.
+- [ ] Possible event for Sudan: U.S. Embassy Khartoum suspended operations in April 2023 (would add a `consulate` note on Consulates, like C8 Kabul). Needs a verified source before adding.
 
 ## 7 · Monthly nationality data
 

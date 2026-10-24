@@ -68,6 +68,7 @@ async function compileLib() {
       "app/lib/dashboard/rolling.ts",
       "app/lib/dashboard/format.ts",
       "app/lib/dashboard/consulates.ts",
+      "app/lib/dashboard/country360.ts",
       "app/lib/dashboard/periods.ts",
       "app/lib/dashboard/url.ts",
       "app/lib/dashboard/constants.ts",
@@ -969,6 +970,114 @@ async function main() {
     "events only add to a chart: existing traces, shapes and annotations kept first and unchanged",
     `${merged.traces[0] === sampleTraces[0]} / ${merged.layout.shapes[0] === sampleLayout.shapes[0]} / ${merged.layout.annotations[0] === sampleLayout.annotations[0]} / ${ev.withEvents(sampleTraces, sampleLayout, ev.EMPTY_OVERLAY).layout === sampleLayout}`,
     "true / true / true / true",
+  );
+
+  console.log("\n  Fix pack 9  (25-country sweep; expected values recounted with pandas from the raw files)");
+  const c360 = await import(pathToFileURL(path.join(outDir, "country360.js")).href);
+  const priorL12 = consulates.previousPeriod(last12Range, coverage);
+  const consulateCountryList = [...new Set(postsMonthly.map((r) => r.country))].sort();
+  const dormantList = (visas) =>
+    consulateCountryList
+      .map((c) => {
+        const selected = postsMonthly.filter((r) => visas.includes(r.visa));
+        const active = consulates.buildConsulateTable(selected, last12Range, priorL12, c, recoveryYear);
+        if (active.reduce((t, r) => t + r.volume, 0) > 0) return null;
+        const rows = consulates.dormantConsulates(selected, postsMonthly, last12Range, priorL12, c, recoveryYear);
+        const other = visas.length === 1 ? (visas[0] === "F1" ? "J1" : "F1") : null;
+        return { c, rows, text: `${c} (${rows.map((r) => `${r.post} ${consulates.lastIssuanceText(r, other)}`).join(", ")})` };
+      })
+      .filter(Boolean);
+  const dormantF1 = dormantList(["F1"]);
+  check(
+    "Consulates, This country, F1, last 12 months: no visas but consulates with history (listed with 0 and last issuance)",
+    dormantF1.map((d) => d.text).join("; "),
+    "Afghanistan (Kabul Aug 2021); Belarus (Minsk Feb 2022); Lesotho (Maseru Jan 2020); Micronesia (Kolonia May 2023); South Sudan (Juba None (J1: Mar 2025)); Sudan (Khartoum Apr 2023); Venezuela (Caracas Jan 2019)",
+  );
+  const dormantBoth = dormantList(["F1", "J1"]);
+  check(
+    "Consulates, F1 + J1, last 12 months: no visas but history",
+    dormantBoth.map((d) => d.text).join("; "),
+    "Afghanistan (Kabul Aug 2021); Belarus (Minsk Feb 2022); Sudan (Khartoum Apr 2023); Venezuela (Caracas Feb 2019)",
+  );
+  const notice = (list, c, visas) =>
+    consulates.noIssuanceNotice(list.find((d) => d.c === c).rows, c, visas, last12Range, coverage.start);
+  check(
+    "Consulates, no-visa notice: Afghanistan F1 / Venezuela F1 / South Sudan F1 / Venezuela F1 + J1",
+    [notice(dormantF1, "Afghanistan", ["F1"]), notice(dormantF1, "Venezuela", ["F1"]), notice(dormantF1, "South Sudan", ["F1"]), notice(dormantBoth, "Venezuela", ["F1", "J1"])].join(" | "),
+    "No U.S. F1 visas have been issued in Afghanistan since Aug 2021. | No U.S. F1 visas have been issued in Venezuela since Jan 2019. The last J1 visa there was issued in Feb 2019. | No U.S. F1 visas have been issued in South Sudan in this data (since Mar 2017). The last J1 visa there was issued in Mar 2025. | No U.S. F1 or J1 visas have been issued in Venezuela since Feb 2019.",
+  );
+  check(
+    "Consulates, no-visa notice: matching event (Afghanistan / Venezuela / Russia / Sudan)",
+    ["Afghanistan", "Venezuela", "Russia", "Sudan"].map((c) => ev.consulateEventsFor(c).map((e) => `${e.id} ${e.consulate.note}`).join("") || "none").join(" | "),
+    "C8 U.S. Embassy Kabul suspended operations on 31 Aug 2021. | C6 U.S. Embassy Caracas had suspended visa services by Mar 2019. | C7 U.S. Embassy Moscow halted visa services on 1 Aug 2021. | none",
+  );
+  const banCountries = [...new Set(restrictions.RESTRICTIONS.filter((r) => r.type === "travel-ban" && r.studentVisasAffected).map((r) => r.country))].sort();
+  const statusOf = (c) => consulates.consulateStatus(postsMonthly, c, coverage.end);
+  const lastSentence = (c) => restrictions.consulateScopeNotes(c, statusOf(c))[0].replace(/^.*\(travel ban\)\. /, "");
+  const byWording = (re) => banCountries.filter((c) => re.test(lastSentence(c)));
+  check(
+    "restriction note, travel-ban countries: may still issue to other nationalities / no U.S. visa services now / no consulate",
+    `${byWording(/other nationalities/).length} / ${byWording(/currently no U.S. visa services/).join(", ")} / ${byWording(/no U.S. consulate issuing/).join(", ")}`,
+    "26 / Afghanistan, South Sudan, Sudan, Venezuela / Antigua and Barbuda, Dominica, Iran, Libya, Somalia, Syria, Tonga, Yemen",
+  );
+  check(
+    "restriction note wording: Nigeria / Iran",
+    ["Nigeria", "Iran"].map((c) => restrictions.consulateScopeNotes(c, statusOf(c)).join(" ")).join(" | "),
+    "Nationals of Nigeria: student and exchange visas suspended since 1 Jan 2026 (travel ban). Consulates in Nigeria may still issue visas to other nationalities. | Nationals of Iran: student and exchange visas suspended since 9 Jun 2025 (travel ban). There is no U.S. consulate issuing visas in Iran.",
+  );
+  const annualOf = (c) => annualCountry.filter((r) => r.country === metrics.historicalCountryName(c));
+  const growthChanges = (years) => {
+    let hadPct = 0;
+    let hadNa = 0;
+    for (const c of countryNames) {
+      const rows = annualOf(c);
+      const shown = c360.fiscalYearGrowthText(rows, ["F1"], latestComplete, latestComplete - years);
+      const before = rows.length > 0 ? rolling.arrowPct(metrics.fiscalYearGrowth(rows, ["F1"], latestComplete, latestComplete - years)) : "N/A";
+      if (shown === before) continue;
+      if (before === "N/A") hadNa += 1;
+      else hadPct += 1;
+    }
+    return `${hadPct} had a % / ${hadNa} had N/A`;
+  };
+  check(
+    "Country 360, F1 growth cards now \"— (low volume)\" (FY base under 100): 10-year | 5-year",
+    `${growthChanges(10)} | ${growthChanges(5)}`,
+    "54 had a % / 13 had N/A | 84 had a % / 19 had N/A",
+  );
+  check(
+    "Country 360, 10-year growth card: North Korea (FY2015 1 → FY2025 0) / Malawi (98 → 226) / India",
+    ["North Korea", "Malawi", "India"].map((c) => c360.fiscalYearGrowthText(annualOf(c), ["F1"], latestComplete, latestComplete - 10)).join(" / "),
+    "— (low volume) / — (low volume) / ▼ 46.4%",
+  );
+  const shownProfile = (c) => {
+    const r = natRow(c);
+    return c360.profileForDisplay(r, r, c360.growthBaseIsLow(annualOf(c), ["F1"], latestComplete - 10), r.rule !== null);
+  };
+  check(
+    "Country 360, Why / But without a low-base 10-year growth: countries whose text changes",
+    natCountries.filter((c) => { const r = natRow(c); const s = shownProfile(c); return s.primaryDriver !== r.primaryDriver || s.counterSignal !== r.counterSignal; }).join(", "),
+    "Estonia, Gambia, Madagascar, Malawi, Mozambique, Niger, Saint Kitts and Nevis, South Sudan",
+  );
+  check(
+    "display only: category/action fingerprint after the display rules (= nationality advice fingerprint, F1)",
+    fingerprint(natCountries.map((c) => { const r = natRow(c); shownProfile(c); return r; })),
+    "9013461fccd7",
+  );
+  const lowConfidence = natCountries.filter((c) => {
+    const rows = natInControl.filter((r) => r.country === c && r.visa === "F1");
+    return c360.shownConfidence("High", measures.lastTwelve(rows, coverage.end), rows.length > 0) === "Low";
+  });
+  check(
+    "Country 360 confidence shown Low (low-volume measure): count / North Korea / India",
+    `${lowConfidence.length} / ${lowConfidence.includes("North Korea")} / ${lowConfidence.includes("India")}`,
+    "77 / true / false",
+  );
+  const natMonthly = new Set(natInControl.map((r) => r.country));
+  const natAnnual = new Set(annualCountry.map((r) => r.country));
+  check(
+    "Country 360, no nationality rows at all (figures shown as —)",
+    countryNames.filter((c) => !natMonthly.has(c) && !natAnnual.has(metrics.historicalCountryName(c))).join(", "),
+    "Curacao",
   );
 
   await rm(outDir, { recursive: true, force: true });

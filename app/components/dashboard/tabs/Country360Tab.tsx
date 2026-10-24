@@ -45,6 +45,12 @@ import {
   volatilityLabel,
 } from "../../../lib/dashboard/metrics";
 import { buildConsulateTable, previousPeriod } from "../../../lib/dashboard/consulates";
+import {
+  fiscalYearGrowthText,
+  growthBaseIsLow,
+  profileForDisplay,
+  shownConfidence,
+} from "../../../lib/dashboard/country360";
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { MonthRange, Visa } from "../../../lib/dashboard/types";
@@ -150,6 +156,9 @@ export default function Country360Tab() {
   /** The same at the start of a sentence. */
   const LeadName = leadName.charAt(0).toUpperCase() + leadName.slice(1);
   const hasLeadRows = lead.length > 0;
+  // No nationality rows at all, monthly or annual (Curacao: residents hold Dutch
+  // passports): nationality figures show "—", not 0.
+  const noNationality = !byNationality && histCountryAll.length === 0;
 
   // "Current Operational Signal" follows the control bar's Period. It reads the
   // full monthly consulate data, so any period since Mar 2017 works.
@@ -259,6 +268,21 @@ export default function Country360Tab() {
     const hideTiming = nationalityRow ? nationalityRow.hideTiming : (row?.latest12Total ?? 0) === 0;
     const confidence =
       dataConfidence === "High" && !flags.includes("Low Confidence") ? "High" : dataConfidence;
+    // Display only: "Why" and "But" leave out a 10-year growth whose FY base is under 100.
+    const rawProfile = {
+      primaryDriver: row?.primaryDriver ?? NO_LOCAL_VISAS,
+      counterSignal: row?.counterSignal ?? "No material counter-signal",
+      timing: row?.timing ?? "",
+      caveat: row?.caveat ?? "",
+    };
+    const profile = row
+      ? profileForDisplay(
+          row,
+          rawProfile,
+          growthBaseIsLow(histCountryAll, visaClasses, latestFy - 10),
+          (nationalityRow?.rule ?? null) !== null,
+        )
+      : rawProfile;
 
     return {
       latestFyF1, latestFyJ1, growth5, growth10,
@@ -268,12 +292,7 @@ export default function Country360Tab() {
       flags,
       confidence,
       action: row?.recommendedAction ?? "Insufficient Evidence",
-      profile: {
-        primaryDriver: row?.primaryDriver ?? NO_LOCAL_VISAS,
-        counterSignal: row?.counterSignal ?? "No material counter-signal",
-        timing: row?.timing ?? "",
-        caveat: row?.caveat ?? "",
-      },
+      profile,
     };
   }, [
     histCountryAll, hcCountry, lead, leadAll, visaClasses, latestFy, endIndex, nationalityTable,
@@ -589,7 +608,7 @@ export default function Country360Tab() {
         : `${int(periodF1)} F1 visas were issued in ${country} in ${periodRange.inSentence}.`,
     );
   }
-  if (metrics.growth10 !== null) {
+  if (metrics.growth10 !== null && !growthBaseIsLow(histCountryAll, ["F1"], latestFy - 10)) {
     summaryBullets.push(
       `FY${latestFy} F1 visas to nationals of ${country} are ${metricPct(metrics.growth10)} versus FY${latestFy - 10}.`,
     );
@@ -941,7 +960,9 @@ export default function Country360Tab() {
             </div>
           ) : (
             <InfoCallout>
-              {nationalityTable === null
+              {noNationality
+                ? `No nationality figures for ${country} in the State Department data; showing visas issued in ${country}.`
+                : nationalityTable === null
                 ? `Monthly nationality data isn't in this data snapshot, so Country 360 shows visas issued in ${country} (the U.S. consulates there) instead.`
                 : `No monthly nationality data for ${country}, so Country 360 shows visas issued in ${country} (the U.S. consulates there) instead.`}
             </InfoCallout>
@@ -967,11 +988,11 @@ export default function Country360Tab() {
               <KpiCard
                 accent="gold"
                 label={`F1 by nationality, FY${latestFy}${provisionalYears.has(latestFy) ? " (provisional)" : ""}`}
-                value={metricNumber(metrics.latestFyF1)}
+                value={noNationality ? "—" : metricNumber(metrics.latestFyF1)}
               />
               <KpiCard
                 label={`F1 growth by nationality, FY${latestFy - 10} → FY${latestFy}`}
-                value={arrowPct(metrics.growth10)}
+                value={noNationality ? "—" : fiscalYearGrowthText(histCountryAll, ["F1"], latestFy, latestFy - 10)}
               />
               <KpiCard
                 label={`${visaLabelOf(visa)} change vs ${priorRange ? monthRangeLabel(priorRange) : "previous period"}`}
@@ -1138,7 +1159,8 @@ export default function Country360Tab() {
             <Panel accent="gold">
               <p className="text-lg font-extrabold text-white">{metrics.action}</p>
               <p className="mt-1 text-sm text-slate-300">
-                {metrics.category} market · momentum: {momentumLabel} · confidence: {metrics.confidence}
+                {metrics.category} market · momentum: {momentumLabel} · confidence:{" "}
+                {shownConfidence(metrics.confidence, metrics.twelve, hasLeadRows)}
               </p>
               <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-[#DDEBFA]">
                 <li>
@@ -1172,10 +1194,10 @@ export default function Country360Tab() {
             <SubHeading>Secondary KPIs</SubHeading>
             <KpiRow>
               <KpiCard accent="navy" label={`J1, ${leadName}, ${periodRange.label}`} value={metricNumber(periodJ1)} />
-              <KpiCard accent="navy" label={`J1 by nationality, FY${latestFy}`} value={metricNumber(metrics.latestFyJ1)} />
+              <KpiCard accent="navy" label={`J1 by nationality, FY${latestFy}`} value={noNationality ? "—" : metricNumber(metrics.latestFyJ1)} />
               <KpiCard
                 label={`F1 growth by nationality, FY${latestFy - 5} → FY${latestFy}${latestFy - 5 === 2020 ? " (from the pandemic low)" : ""}`}
-                value={arrowPct(metrics.growth5)}
+                value={noNationality ? "—" : fiscalYearGrowthText(histCountryAll, ["F1"], latestFy, latestFy - 5)}
               />
               <KpiCard accent="gold" label={`F1, ${leadName}, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12F1)} />
               <KpiCard accent="navy" label={`J1, ${leadName}, last 12 months (${last12.period})`} value={metricNumber(metrics.latest12J1)} />

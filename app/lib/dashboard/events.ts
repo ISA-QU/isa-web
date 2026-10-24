@@ -38,6 +38,8 @@ export interface DashboardEvent {
   lastChecked: string;
   /** For events built from restrictions.ts: which proclamation or pause. */
   derivedFrom?: "proclamation-10949" | "proclamation-10998" | "visa-pause" | "restored";
+  /** A consulate that stopped issuing visas: shown on Consulates when the country's consulates have issued none since. */
+  consulate?: { post: string; note: string };
 }
 
 const event = (e: Omit<DashboardEvent, "lastChecked">): DashboardEvent => ({ ...e, lastChecked: EVENTS_LAST_CHECKED });
@@ -152,18 +154,21 @@ const MANUAL_EVENTS: DashboardEvent[] = [
     label: "By Mar 2019: Caracas visas suspended",
     description: "By March 2019, the U.S. Embassy in Caracas had suspended visa services.",
     source: "https://www.nixonpeabody.com/insights/articles/2019/03/05/dos-announces-suspension-of-visa-services-in-caracas-venezuela",
+    consulate: { post: "Caracas", note: "U.S. Embassy Caracas had suspended visa services by Mar 2019." },
   }),
   event({
     id: "C7", start: "2021-08-01", precision: "day", importance: "major", scope: ["Russia"],
     label: "U.S. Embassy Moscow halts visa services",
     description: "The U.S. Embassy in Moscow halted visa and consular services from 1 August 2021 after Russia barred it from employing local staff.",
     source: "https://www.themoscowtimes.com/2021/06/28/us-embassy-in-moscow-to-halt-visa-consular-services-from-aug-1-a74354",
+    consulate: { post: "Moscow", note: "U.S. Embassy Moscow halted visa services on 1 Aug 2021." },
   }),
   event({
     id: "C8", start: "2021-08-31", precision: "day", importance: "major", scope: ["Afghanistan"],
     label: "Embassy Kabul suspends operations",
     description: "The U.S. Embassy in Kabul suspended operations.",
     source: "https://www.iandoli.com/newsandupdates/dos-provides-update-on-us-embassy-kabul-all-embassy-operations-suspended952021",
+    consulate: { post: "Kabul", note: "U.S. Embassy Kabul suspended operations on 31 Aug 2021." },
   }),
   event({
     id: "C9", start: "2022-02", precision: "month", importance: "major", scope: ["Ukraine"],
@@ -258,6 +263,10 @@ export const EVENTS: readonly DashboardEvent[] = [...MANUAL_EVENTS, ...restricti
 );
 
 /** A country's own line on a global restriction event, e.g. Nigeria on Proclamation 10998. */
+/** Events about a consulate in `country` that stopped issuing visas (C6 Caracas, C7 Moscow, C8 Kabul). */
+export const consulateEventsFor = (country: string): DashboardEvent[] =>
+  EVENTS.filter((e) => e.consulate !== undefined && e.scope !== "global" && e.scope.includes(country));
+
 export function countryNote(e: DashboardEvent, country: string | null): string | null {
   if (!country) return null;
   const ban = restrictionsFor(country).find((r) => r.type === "travel-ban");

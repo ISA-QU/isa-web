@@ -281,10 +281,27 @@ export function restrictionCsv(country: string): [string, string] {
 }
 
 /**
+ * Whether U.S. consulates in a country issue visas today, from the data:
+ * "issuing" = F1 or J1 issued there in the last 12 months; "not-issuing" = a
+ * consulate in the data but none in the last 12 months; "no-consulate" = no
+ * consulate in the data at all.
+ */
+export type ConsulateStatus = "issuing" | "not-issuing" | "no-consulate";
+
+/** The travel-ban note's last sentence: what the country's own consulates do. */
+function consulateSentence(country: string, status: ConsulateStatus): string {
+  // A pause stops visa services for every nationality, whatever the last 12 months show.
+  const paused = restrictionsFor(country).some((r) => r.type === "visa-pause");
+  if (status === "no-consulate") return `There is no U.S. consulate issuing visas in ${country}.`;
+  if (status === "not-issuing" || paused) return `There are currently no U.S. visa services in ${country}.`;
+  return `Consulates in ${country} may still issue visas to other nationalities.`;
+}
+
+/**
  * The Consulates note for a country's own scope: what applies to its nationals,
  * and, for a pause, to every nationality at its consulates. Empty when none.
  */
-export function consulateScopeNotes(country: string): string[] {
+export function consulateScopeNotes(country: string, status: ConsulateStatus = "issuing"): string[] {
   return restrictionsFor(country).map((r) => {
     if (r.type === "visa-pause") {
       return `All U.S. visa services in ${country} paused since ${restrictionDate(r.effective)}${r.reason ? ` (${r.reason})` : ""}, for every nationality. Pauses may lift without notice.`;
@@ -292,7 +309,7 @@ export function consulateScopeNotes(country: string): string[] {
     if (r.restored) {
       return `Nationals of ${country}: student and exchange visas restored ${restrictionDate(r.restored.restoredOn)} after a suspension ${restoredSpan(r)}; only immigrant visas restricted since.`;
     }
-    return `Nationals of ${country}: student and exchange visas suspended since ${restrictionDate(r.suspendedSince ?? r.effective)} (travel ban). Consulates in ${country} may still issue visas to other nationalities.`;
+    return `Nationals of ${country}: student and exchange visas suspended since ${restrictionDate(r.suspendedSince ?? r.effective)} (travel ban). ${consulateSentence(country, status)}`;
   });
 }
 

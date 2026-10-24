@@ -7,10 +7,15 @@ import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
   buildConsulateTable,
   consulateContext,
+  consulateStatus,
+  dormantConsulates,
+  lastIssuanceText,
+  noIssuanceNotice,
   previousPeriod,
   recoveryYearOf,
   sameMonthsLabel,
   type ConsulateRow,
+  type DormantConsulate,
 } from "../../../lib/dashboard/consulates";
 import {
   int,
@@ -48,7 +53,7 @@ import {
 } from "../../../lib/dashboard/rolling";
 import { consulateScopeNotes, pausedPostText } from "../../../lib/dashboard/restrictions";
 import type { PostMonthlyRow } from "../../../lib/dashboard/types";
-import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
+import { EMPTY_OVERLAY, consulateEventsFor, eventOverlay, withEvents } from "../../../lib/dashboard/events";
 import Chart from "../Chart";
 import { EventsList, EventsToggle } from "../EventsControls";
 import ComparePicker from "../ComparePicker";
@@ -147,10 +152,22 @@ export default function ConsulatesPage() {
   const scopeName = scopeCountry ?? "all countries";
 
   /* ---- 1. Ranked consulates ---- */
-  const table = useMemo(
+  const activeTable = useMemo(
     () => buildConsulateTable(visaRows, periodRange, prior, scopeCountry, recoveryYear),
     [visaRows, periodRange, prior, scopeCountry, recoveryYear],
   );
+  // No visas in the Period but consulates with history (Kabul, Caracas, Khartoum,
+  // Minsk): list every consulate that ever issued F1 or J1, with 0 and its last issuance.
+  const dormantRows = useMemo<DormantConsulate[]>(
+    () =>
+      scopeCountry !== null && sumBy(activeTable, (r) => r.volume) === 0
+        ? dormantConsulates(visaRows, data.postsMonthly, periodRange, prior, scopeCountry, recoveryYear)
+        : [],
+    [activeTable, scopeCountry, visaRows, data.postsMonthly, periodRange, prior, recoveryYear],
+  );
+  const dormant = dormantRows.length > 0;
+  const table: ConsulateRow[] = dormant ? dormantRows : activeTable;
+  const otherVisa = visas.length === 1 ? (visas[0] === "F1" ? "J1" : "F1") : null;
   const sorted = useMemo(() => {
     const key: Record<Sort, (r: ConsulateRow) => number | null> = {
       Volume: (r) => r.volume,
@@ -196,7 +213,8 @@ export default function ConsulatesPage() {
   );
 
   /* ---- 2. Trend: compared consulates ---- */
-  const topPosts = useMemo(() => posts.slice(0, topN), [posts, topN]);
+  // With no visas in the Period, the chart shows every consulate with history (full history).
+  const topPosts = useMemo(() => posts.slice(0, dormant ? COMPARE_MAX : topN), [posts, topN, dormant]);
   const compared = useMemo(
     () =>
       compareChoice?.key === scopeKey ? compareChoice.posts.filter((p) => posts.includes(p)) : topPosts,
@@ -493,10 +511,17 @@ export default function ConsulatesPage() {
 
   const peakName = peakMonthLabel(selectedTypical);
   const insights: string[] = [];
-  if (selectedRow) {
+  const selectedDormant = dormant ? (dormantRows.find((r) => r.post === selectedPost) ?? null) : null;
+  if (selectedDormant) {
+    insights.push(
+      `${selectedDormant.post} issued no ${visaLabel} visas in ${periodRange.inSentence}; last ${visaLabel} issuance: ${lastIssuanceText(selectedDormant, otherVisa)}.`,
+    );
+  } else if (selectedRow) {
     insights.push(
       `${selectedRow.post} issued ${int(selectedRow.volume)} ${visaLabel} visas in ${periodRange.inSentence}, ${share(selectedRow.countryShare / 100)} of ${selectedRow.country}'s consulate total.`,
     );
+  }
+  if (selectedRow) {
     if (selectedRow.change !== null && prior) {
       insights.push(`That is ${metricPct(selectedRow.change)} vs ${monthRangeLabel(prior)}.`);
     }
@@ -561,7 +586,31 @@ export default function ConsulatesPage() {
     });
 
   // Visa restrictions for the country's nationals, or a pause at its consulates.
-  const notes = scope === "country" ? consulateScopeNotes(focusCountry) : [];
+  const notes =
+    scope === "country"
+      ? consulateScopeNotes(focusCountry, consulateStatus(data.postsMonthly, focusCountry, coverage.end))
+      : [];
+  // The line at the top when the country's consulates issued none of the selected visas in the Period.
+  const closureEvents = dormant && scopeCountry ? consulateEventsFor(scopeCountry) : [];
+  const dormantNotice =
+    dormant && scopeCountry ? (
+      <InfoCallout>
+        <span className="font-semibold text-white">
+          {noIssuanceNotice(dormantRows, scopeCountry, visas, periodRange, coverage.start)}
+        </span>
+        {closureEvents.map((e) => (
+          <span key={e.id}>
+            {" "}
+            {e.consulate?.note}{" "}
+            <a href={e.source} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">
+              Source
+            </a>
+          </span>
+        ))}{" "}
+        Every consulate with history in {scopeCountry} is listed below with 0 for {periodRange.label}, and the
+        trend shows them over the full data.
+      </InfoCallout>
+    ) : null;
   const restrictionNote =
     notes.length > 0 ? (
       <div className="space-y-1 rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-sm text-amber-100">
@@ -589,6 +638,7 @@ export default function ConsulatesPage() {
     <div className="space-y-6">
       <SectionTitle>Consulates</SectionTitle>
       <ScopeSwitch scope={scope} onChange={setScope} country={focusCountry} />
+      {dormantNotice}
       {restrictionNote}
 
       {context && (
@@ -650,6 +700,15 @@ export default function ConsulatesPage() {
               numeric: true,
               render: (r) => recoveryCell(r.recovery),
             },
+            ...(dormant
+              ? [
+                  {
+                    key: "last",
+                    header: `Last ${visaLabel} issuance`,
+                    render: (r: ConsulateRow) => lastIssuanceText(r as DormantConsulate, otherVisa),
+                  },
+                ]
+              : []),
           ]}
         />
         <p className="mt-2 text-xs text-slate-400">

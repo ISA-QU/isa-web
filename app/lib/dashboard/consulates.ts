@@ -6,8 +6,10 @@
  */
 
 import { MONTH_NAMES } from "./constants";
+import { monthDisplay } from "./format";
 import { changeVsBase, latestCompleteYearOf, recoveryVs2019 as recoveryOf } from "./measures";
 import { groupSum, sumBy } from "./metrics";
+import type { ConsulateStatus } from "./restrictions";
 import type { MonthRange, NationalityMonthlyRow, PostMonthlyRow, Visa } from "./types";
 
 /**
@@ -136,4 +138,103 @@ export function sameMonthsLabel(coverageEnd: number): string | null {
   const throughMonth = (coverageEnd % 12) + 1;
   if (throughMonth === 12) return null;
   return throughMonth === 1 ? MONTH_NAMES[1] : `${MONTH_NAMES[1]}–${MONTH_NAMES[throughMonth]}`;
+}
+
+/**
+ * Whether consulates in `country` issue visas today: F1 or J1 in the 12 months
+ * ending at the data's last month (whatever the Period and Visa controls say).
+ * `rows` is every consulate row (both visa classes).
+ */
+export function consulateStatus(rows: readonly PostMonthlyRow[], country: string, dataEnd: number): ConsulateStatus {
+  const own = rows.filter((r) => r.country === country && r.issuances > 0);
+  if (own.length === 0) return "no-consulate";
+  return own.some((r) => r.monthIndex > dataEnd - 12 && r.monthIndex <= dataEnd) ? "issuing" : "not-issuing";
+}
+
+export interface DormantConsulate extends ConsulateRow {
+  /** Last month with the selected visas at this consulate; null when it never issued them in the data. */
+  lastIssuance: number | null;
+  /** Last month with F1 or J1 at this consulate. */
+  lastAnyIssuance: number;
+}
+
+/**
+ * Every consulate that has ever issued F1 or J1 in `country`, with 0 for the
+ * Period, for a country whose consulates issued none of the selected visas in
+ * it. `selected` is limited to the selected visas; `all` has both classes.
+ * Change and recovery follow the same rules as the ranked table. Most recent
+ * last issuance first.
+ */
+export function dormantConsulates(
+  selected: readonly PostMonthlyRow[],
+  all: readonly PostMonthlyRow[],
+  range: MonthRange,
+  prior: MonthRange | null,
+  country: string,
+  recoveryYear: number | null,
+): DormantConsulate[] {
+  const own = all.filter((r) => r.country === country && r.issuances > 0);
+  const posts = [...new Set(own.map((r) => r.post))];
+  const inSpan = (span: MonthRange) => (r: PostMonthlyRow) => r.monthIndex >= span.start && r.monthIndex <= span.end;
+  return posts
+    .map((post) => {
+      const mine = selected.filter((r) => r.post === post && r.country === country && r.issuances > 0);
+      const volume = sumBy(mine.filter(inSpan(range)), (r) => r.issuances);
+      const priorValue = prior ? sumBy(mine.filter(inSpan(prior)), (r) => r.issuances) : null;
+      return {
+        post,
+        country,
+        volume,
+        prior: priorValue,
+        change: qualifiedChange(volume, priorValue),
+        share: 0,
+        countryShare: 0,
+        recovery: recoveryVs2019(mine, recoveryYear),
+        lastIssuance: mine.length > 0 ? Math.max(...mine.map((r) => r.monthIndex)) : null,
+        lastAnyIssuance: Math.max(...own.filter((r) => r.post === post).map((r) => r.monthIndex)),
+      };
+    })
+    .sort(
+      (a, b) =>
+        (b.lastIssuance ?? -1) - (a.lastIssuance ?? -1) ||
+        b.lastAnyIssuance - a.lastAnyIssuance ||
+        a.post.localeCompare(b.post),
+    );
+}
+
+/** "Aug 2021", or "None (J1: Mar 2025)" for a consulate that never issued the selected visas. */
+export function lastIssuanceText(row: DormantConsulate, otherVisa: string | null): string {
+  if (row.lastIssuance !== null) return monthDisplay(row.lastIssuance);
+  return otherVisa ? `None (${otherVisa}: ${monthDisplay(row.lastAnyIssuance)})` : "None";
+}
+
+/**
+ * The line at the top of Consulates for a country with no visas in the Period:
+ * "No U.S. F1 visas have been issued in Afghanistan since Aug 2021." Names the
+ * visa class because the data has F1 and J1 only. With a single visa class
+ * selected, adds when the other class was last issued if that is later.
+ */
+export function noIssuanceNotice(
+  rows: readonly DormantConsulate[],
+  country: string,
+  visas: readonly Visa[],
+  range: MonthRange & { inSentence: string },
+  coverageStart: number,
+): string {
+  const label = visas.length === 2 ? "F1 or J1" : visas[0];
+  const lastSelected = rows.reduce<number | null>(
+    (best, r) => (r.lastIssuance !== null && (best === null || r.lastIssuance > best) ? r.lastIssuance : best),
+    null,
+  );
+  const lastAny = Math.max(...rows.map((r) => r.lastAnyIssuance));
+  const first =
+    lastSelected === null
+      ? `No U.S. ${label} visas have been issued in ${country} in this data (since ${monthDisplay(coverageStart)}).`
+      : lastSelected < range.start
+        ? `No U.S. ${label} visas have been issued in ${country} since ${monthDisplay(lastSelected)}.`
+        : `No U.S. ${label} visas were issued in ${country} in ${range.inSentence}.`;
+  const other = visas.length === 1 ? (visas[0] === "F1" ? "J1" : "F1") : null;
+  return other && (lastSelected === null || lastAny > lastSelected)
+    ? `${first} The last ${other} visa there was issued in ${monthDisplay(lastAny)}.`
+    : first;
 }

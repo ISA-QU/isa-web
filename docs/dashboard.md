@@ -372,6 +372,31 @@ has its own version:
 - **Links are checked.** A `period=` year or range entirely outside the data (e.g.
   `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
   `country=` ignores capitalisation (`country=china` opens China).
+- **Consulates with no visas in the Period (fix pack 9).** In "This country" scope,
+  when the country's consulates issued none of the selected visas in the Period but
+  have F1 or J1 history (F1, last 12 months: Afghanistan, Belarus, Lesotho,
+  Micronesia, South Sudan, Sudan, Venezuela), every such consulate is listed with 0
+  and a "Last F1 issuance" column, the trend defaults to them, and a line at the top
+  says "No U.S. F1 visas have been issued in Afghanistan since Aug 2021." It names
+  the visa class because the data has F1 and J1 only, and adds the other class's
+  last month when that is later (Juba: none F1, J1 Mar 2025). A matching event
+  (`consulate` on C6 Caracas, C7 Moscow, C8 Kabul) adds its note and source.
+- **Restriction note, last sentence** (`consulateScopeNotes(country, status)`):
+  "may still issue visas to other nationalities" only when the country's consulates
+  issued F1 or J1 in the last 12 months and visa services are not paused; "There are
+  currently no U.S. visa services in X" when they issued none or are paused
+  (Afghanistan, South Sudan, Sudan, Venezuela); "There is no U.S. consulate issuing
+  visas in X" with no consulate in the data (Antigua and Barbuda, Dominica, Iran,
+  Libya, Somalia, Syria, Tonga, Yemen).
+- **Country 360 display rules** (`lib/dashboard/country360.ts`, display only; the
+  category, flags and action keep their inputs, and the advice fingerprints are
+  unchanged). The 10- and 5-year growth cards show "— (low volume)" when the earlier
+  fiscal year is under 100 (North Korea FY2015: 1), the summary leaves that growth
+  out, and "Why"/"But" are written as if there were no 10-year growth. Confidence
+  shows "Low" when the last 12 months or the 12 before are under 100. A country
+  with no nationality rows at all (Curacao: residents hold Dutch passports) shows
+  "—" for nationality figures with "No nationality figures for Curacao in the State
+  Department data; showing visas issued in Curacao." CSV exports are unchanged.
 
 ## Choices the data forced
 

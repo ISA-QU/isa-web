@@ -481,7 +481,8 @@ export function eventOverlay(opts: OverlayOptions): EventOverlay {
     } else {
       shapes.push({
         type: "line", xref: "x", yref: "paper", x0: p.x, x1: p.x, y0: 0, y1: 1,
-        line: { color: strong ? "rgba(196,181,253,0.7)" : "rgba(196,181,253,0.35)", width: 1, dash: strong ? "dash" : "dot" },
+        // Purple, like the ◆ markers, so event lines never read as data lines.
+        line: { color: strong ? "rgba(167,139,250,0.9)" : "rgba(167,139,250,0.5)", width: 1, dash: strong ? "dash" : "dot" },
         layer: "below",
       });
     }

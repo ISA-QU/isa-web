@@ -58,7 +58,9 @@ one shared country and F1 defaults (5a).
 Sourced event markers on the existing charts ("may have affected", never "caused").
 
 - [x] 2a: `lib/dashboard/events.ts` (25 events: 14 global, 9 country, plus the Ebola pause and Turkmenistan restored built from `restrictions.ts`) drawn on Historical Trends, Country 360 (monthly trend, long-term trajectory, recovery) and Consulates (monthly, This country), with a shared "Show events" checkbox (`events=off` in the link) and a collapsed "Events on this chart" list.
-- [ ] 2b: the 30-year world chart with the same events.
+- [x] 2b-1: Market cycles at the top of Historical Trends (`lib/dashboard/cycles.ts`, `MarketCycles.tsx`): world and world-excluding-mainland-China lines FY1997–FY2025 with downturn bands, the recovery summary (always F1), the latest signal, and world and country downturn tables; event lines purple with a "hover ◆" hint.
+- [ ] 2b-2: market history labels (Structural / Gradual / Cyclical / Too early to tell, always F1) on Markets, Country 360 "What to do" and Historical Trends. Counts with the dashboard's merged names: 43 Cyclical, 39 Structural, 19 Gradual, 102 Too early (203 countries with F1); the raw annual workbook gives 104 Too early (205), because it lists both Congos under old and new names.
+- [ ] Markets' "10-year trend" column still shows a % from tiny FY bases (e.g. North Korea ▼ 100.0% from 1); apply the shared minimum-base rule there as fix pack 9 did on Country 360 (display only).
 - [ ] Replace the Wikipedia sources (G1 9/11, G3 financial crisis, G5 Executive Order 13769, C9 Embassy Kyiv) with official or academic sources before launch.
 - [ ] Review `events.ts` with `restrictions.ts` and update `EVENTS_LAST_CHECKED`.
 - [ ] Consulates' calendar-year trend modes don't show events yet (monthly mode only).

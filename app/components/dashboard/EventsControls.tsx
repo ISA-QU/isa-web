@@ -15,6 +15,7 @@ export function EventsToggle() {
         onChange={(event) => setShowEvents(event.target.checked)}
       />
       Show events
+      {showEvents && <span className="ml-2 text-[11px] text-violet-300">┆ events — hover ◆ for details</span>}
     </label>
   );
 }

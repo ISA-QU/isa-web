@@ -397,6 +397,27 @@ has its own version:
   with no nationality rows at all (Curacao: residents hold Dutch passports) shows
   "—" for nationality figures with "No nationality figures for Curacao in the State
   Department data; showing visas issued in Curacao." CSV exports are unchanged.
+- **Market cycles (2b-1).** Top of Historical Trends (`lib/dashboard/cycles.ts`,
+  `components/dashboard/MarketCycles.tsx`); information only, no existing figure
+  changes. World and "World excluding mainland China" by nationality, countries only,
+  FY1997 to the latest complete year (FY2025, provisional and hollow-marked; the
+  partial FY2026 is left off), following the Visa control. Downturn rule: a year 20%+
+  below the highest year so far (since FY1997) starts a downturn, which ends when that
+  peak is regained; a zero year is never a peak. Grey bands run peak → trough on the
+  World line ("▼ 26% · regained FY2007"). The recovery summary is always F1, over
+  countries with 500+ in their best year (dashboard names): 101 markets, 196
+  downturns, 110 recovered (56%), median 3 years from the low; peaks in FY2000–02: 32
+  of 44 (median 4); post-COVID 43 of 74 above FY2019 in FY2023. With the raw
+  workbook's unmerged Congo names it is 195 / 109 and 31 of 43. The latest signal
+  compares the fiscal year so far with the same months a year earlier (monthly
+  nationality data, special categories out, so the Palestinian Authority Travel
+  Document, labelled "Country or area" in the monthly workbook, is excluded): "no sign
+  of a bottom yet" while each of the latest 3 months is 20%+ below a year earlier,
+  otherwise "the decline is narrowing". World and selected-country downturn tables show
+  peak, trough, depth, rebound within 3 years of the trough, the year regained and
+  any later new high; FY2025 values and "not yet" are marked provisional. Event lines
+  on every chart are now purple like the ◆ markers, with a "┆ events — hover ◆ for
+  details" hint beside the Show events checkbox.
 
 ## Choices the data forced
 

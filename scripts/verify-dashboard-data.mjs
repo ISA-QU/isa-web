@@ -69,6 +69,7 @@ async function compileLib() {
       "app/lib/dashboard/format.ts",
       "app/lib/dashboard/consulates.ts",
       "app/lib/dashboard/country360.ts",
+      "app/lib/dashboard/cycles.ts",
       "app/lib/dashboard/periods.ts",
       "app/lib/dashboard/url.ts",
       "app/lib/dashboard/constants.ts",
@@ -1078,6 +1079,134 @@ async function main() {
     "Country 360, no nationality rows at all (figures shown as —)",
     countryNames.filter((c) => !natMonthly.has(c) && !natAnnual.has(metrics.historicalCountryName(c))).join(", "),
     "Curacao",
+  );
+
+  console.log("\n  2b-1 Market cycles  (expected values recounted with pandas from the raw annual and monthly workbooks)");
+  const cy = await import(pathToFileURL(path.join(outDir, "cycles.js")).href);
+  const COUNTRY_SPLIT_NAMES = new Set(Object.keys(cy.COUNTRY_SPLITS));
+  const fyFirst = snapshot.coverage.annual.first;
+  const lines = (visas) => cy.worldSeries(annualCountry, visas, fyFirst, latestComplete);
+  const at = (series, year) => series.find((p) => p.year === year).value;
+  const f1Lines = lines(["F1"]);
+  check(
+    "world F1 by nationality (countries only): FY2001 / 2003 / 2006 / 2007 / 2008 / 2015 / 2019 / 2020 / 2023 / 2024 / 2025",
+    [2001, 2003, 2006, 2007, 2008, 2015, 2019, 2020, 2023, 2024, 2025].map((y) => at(f1Lines.world, y)).join(" / "),
+    "293026 / 215528 / 273412 / 298118 / 340484 / 643756 / 363890 / 111271 / 445076 / 400381 / 287520",
+  );
+  check(
+    "world F1 excluding mainland China: FY2015 / 2019 / 2020 / 2023 / 2025",
+    [2015, 2019, 2020, 2023, 2025].map((y) => at(f1Lines.excludingChina, y)).join(" / "),
+    "369296 / 258115 / 96835 / 359126 / 228623",
+  );
+  check(
+    "world follows the Visa control: F1 + J1 | J1, FY2001 / 2015 / 2019 / 2025",
+    `${[2001, 2015, 2019, 2025].map((y) => at(lines(["F1", "J1"]).world, y)).join(" / ")} | ${[2001, 2015, 2019, 2025].map((y) => at(lines(["J1"]).world, y)).join(" / ")}`,
+    "554007 / 976001 / 716921 / 579938 | 260981 / 332245 / 353031 / 292418",
+  );
+  const describeDownturns = (series) =>
+    cy.findDownturns(series).map((d) =>
+      `FY${d.peakYear} ${d.peak} → FY${d.troughYear} ${d.trough} ${rolling.arrowPct(d.depthPct)}, rebound ${d.reboundPct === null ? "—" : rolling.arrowPct(d.reboundPct)}, ${d.regainedYear === null ? "not yet" : `regained FY${d.regainedYear} (${d.regained})`}${d.newHighYear === null ? "" : `, new high FY${d.newHighYear}`}`,
+    ).join(" | ");
+  check(
+    "world F1 downturns (peak → trough, depth, rebound within 3 years, regained, new high)",
+    describeDownturns(f1Lines.world),
+    "FY2001 293026 → FY2003 215528 ▼ 26.4%, rebound ▲ 26.9%, regained FY2007 (298118), new high FY2007 | FY2015 643756 → FY2020 111271 ▼ 82.7%, rebound ▲ 300.0%, not yet",
+  );
+  check(
+    "world F1 excluding mainland China downturns",
+    describeDownturns(f1Lines.excludingChina),
+    "FY2001 267808 → FY2003 199359 ▼ 25.6%, rebound ▲ 22.9%, regained FY2008 (284226), new high FY2008 | FY2015 369296 → FY2020 96835 ▼ 73.8%, rebound ▲ 270.9%, not yet",
+  );
+  check(
+    "world F1 + J1 downturns",
+    describeDownturns(lines(["F1", "J1"]).world),
+    "FY2015 976001 → FY2020 219713 ▼ 77.5%, rebound ▲ 246.6%, not yet",
+  );
+  check(
+    "India F1 downturns",
+    describeDownturns(cy.fiscalYearSeries(annualCountry.filter((r) => r.country === "India"), ["F1"], fyFirst, latestComplete)),
+    "FY2001 24106 → FY2004 18309 ▼ 24.0%, rebound ▲ 88.3%, regained FY2006 (26342), new high FY2006 | FY2008 36149 → FY2012 23446 ▼ 35.1%, rebound ▲ 219.2%, regained FY2014 (56653), new high FY2014 | FY2015 74831 → FY2020 15323 ▼ 79.5%, rebound ▲ 753.2%, regained FY2021 (80451), new high FY2021 | FY2023 130730 → FY2025 40077 ▼ 69.3%, rebound —, not yet",
+  );
+  const rs = cy.recoverySummary(cy.seriesByCountry(annualCountry, ["F1"], fyFirst, latestComplete));
+  check(
+    "recovery summary, F1, markets with 500+ in their best year (dashboard names): markets / downturns / recovered (%) / median years from the low",
+    `${rs.markets} / ${rs.downturns} / ${rs.recovered} (${Math.round(rs.recoveredPct)}%) / ${rs.medianYears}`,
+    "101 / 196 / 110 (56%) / 3",
+  );
+  check(
+    "recovery summary: downturns from peaks in FY2000–02 (recovered of, median years) / post-COVID above FY2019 in FY2023",
+    `${rs.early.recovered} of ${rs.early.downturns}, ${rs.early.medianYears} / ${rs.postCovid.above} of ${rs.postCovid.markets}`,
+    "32 of 44, 4 / 43 of 74",
+  );
+  check(
+    "downturn rule: a zero year is never a peak; regained at the peak itself; a 19% fall is not a downturn",
+    [
+      [0, 0, 600, 300, 600],
+      [0, 0, 0, 0, 500],
+      [500, 405, 500],
+      [1000, 800, 900, 1000, 1100],
+    ].map((v) => describeDownturns(v.map((value, i) => ({ year: 2000 + i, value }))) || "none").join(" | "),
+    "FY2002 600 → FY2003 300 ▼ 50.0%, rebound ▲ 100.0%, regained FY2004 (600) | none | none | FY2000 1000 → FY2001 800 ▼ 20.0%, rebound ▲ 37.5%, regained FY2003 (1000), new high FY2004",
+  );
+  const sig = (visas, keep) => {
+    const s = cy.latestSignal(nationality, visas, coverage.end, keep);
+    return `FY${s.fiscalYear} ${s.monthsLabel}: ${s.current} vs ${s.prior} ${rolling.arrowPct(s.changePct)} | ${s.latestMonths.map((m) => rolling.arrowPct(m.changePct)).join(", ")} | ${s.reading}`;
+  };
+  check(
+    "latest signal, F1, countries only: FY so far vs same months / latest 3 months / reading",
+    sig(["F1"]),
+    "FY2026 Oct–Feb: 44006 vs 79367 ▼ 44.6% | ▼ 45.1%, ▼ 35.3%, ▼ 40.7% | no-bottom",
+  );
+  check(
+    "latest signal, F1 + J1 (narrowing) / India F1",
+    `${sig(["F1", "J1"])} || ${sig(["F1"], (r) => r.country === "India").split(" | ")[0]}`,
+    "FY2026 Oct–Feb: 113483 vs 157090 ▼ 27.8% | ▼ 33.8%, ▼ 19.3%, ▼ 15.9% | narrowing || FY2026 Oct–Feb: 4515 vs 14300 ▼ 68.4%",
+  );
+  // Selected-country table: the shared minimum base (100) and country splits.
+  const countryView = (c) =>
+    cy.countryDownturnView(c, cy.fiscalYearSeries(annualCountry.filter((r) => r.country === c), ["F1"], fyFirst, latestComplete));
+  const viewText = (c) => {
+    const v = countryView(c);
+    if (v.kind === "too-few") return `too few: best ${v.best} in FY${v.bestYear}`;
+    if (v.kind === "split") return `split ${v.year} into ${v.successors.join(" and ")}, last FY${v.lastYear}`;
+    if (v.kind === "no-visas") return "no visas";
+    return v.rows
+      .map((d) => `FY${d.peakYear} ${d.peak} → FY${d.troughYear} ${d.trough} rebound ${d.reboundPct === null ? "—" : d.reboundLowVolume ? "low volume" : rolling.arrowPct(d.reboundPct)}`)
+      .join(" | ");
+  };
+  check("country downturns, F1: Comoros (best year under 100)", viewText("Comoros"), "too few: best 8 in FY2008");
+  check(
+    "country downturns, F1: Libya (FY1999 19 → FY2002 1 dropped, peak under 100; other rows kept)",
+    viewText("Libya"),
+    "FY2008 1676 → FY2025 68 rebound —",
+  );
+  check("country downturns, F1: Laos (trough 4: rebound low volume)", viewText("Laos"), "FY2019 144 → FY2021 4 rebound low volume");
+  check(
+    "country downturns, F1: Nepal (troughs 100+: rebounds kept)",
+    viewText("Nepal"),
+    "FY1998 1144 → FY1999 800 rebound ▲ 82.6% | FY2008 4708 → FY2012 1125 rebound ▲ 283.0% | FY2016 5928 → FY2020 401 rebound ▲ 1439.9% | FY2024 13184 → FY2025 6361 rebound —",
+  );
+  check(
+    "country downturns, F1: Serbia and Montenegro (split note instead of rows)",
+    viewText("Serbia and Montenegro"),
+    "split 2006 into Serbia and Montenegro, last FY2012",
+  );
+  const views = countryNames.map((c) => [c, countryView(c)]);
+  const allRows = views.flatMap(([, v]) => (v.kind === "rows" ? v.rows : []));
+  const allRaw = countryNames.flatMap((c) =>
+    COUNTRY_SPLIT_NAMES.has(c) ? [] : cy.findDownturns(cy.fiscalYearSeries(annualCountry.filter((r) => r.country === c), ["F1"], fyFirst, latestComplete)),
+  );
+  check(
+    "country downturns, F1, every country: too few (best under 100) / no F1 / rows dropped (peak under 100) / rows with trough under 100 / peak 100+ and no F1 in the last 3 FYs",
+    `${views.filter(([, v]) => v.kind === "too-few").length} / ${views.filter(([, v]) => v.kind === "no-visas").map(([c]) => c).join(", ")} / ${allRaw.length - allRows.length - views.filter(([, v]) => v.kind === "too-few").reduce((t, [c]) => t + cy.findDownturns(cy.fiscalYearSeries(annualCountry.filter((r) => r.country === c), ["F1"], fyFirst, latestComplete)).length, 0)} / ${allRows.filter((d) => d.reboundLowVolume).length} / ${countryNames.filter((c) => { const sr = cy.fiscalYearSeries(annualCountry.filter((r) => r.country === c), ["F1"], fyFirst, latestComplete); return Math.max(...sr.map((p) => p.value)) >= 100 && sr.slice(-3).every((p) => p.value === 0); }).join(", ")}`,
+    // Curacao: a consulate country with no annual rows. 82 = pandas 83 minus the Serbia and Montenegro row (split note).
+    "41 / Curacao, Palau / 27 / 82 / Serbia and Montenegro",
+  );
+  const styled = ev.eventOverlay({ axis: { kind: "fiscalYear", start: 1997, end: 2025 }, dataEnd: coverage.end, country: "India", globalDetail: false });
+  check(
+    "event lines are purple (labelled / hover-only)",
+    [...new Set(styled.shapes.filter((x) => x.type === "line").map((x) => x.line.color))].sort().join(" / "),
+    "rgba(167,139,250,0.5) / rgba(167,139,250,0.9)",
   );
 
   await rm(outDir, { recursive: true, force: true });

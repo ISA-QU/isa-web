@@ -22,6 +22,7 @@ import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
 import Chart from "../Chart";
 import { EventsList, EventsToggle } from "../EventsControls";
+import MarketCycles from "../MarketCycles";
 import RestrictionBadges from "../RestrictionBadges";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
@@ -300,6 +301,11 @@ export default function HistoricalTrendsTab() {
       </ScopeNote>
 
       <SectionTitle>Historical Trends</SectionTitle>
+
+      {/* 2b-1: world market cycles, above the country view */}
+      <MarketCycles />
+
+      <Divider />
 
       <Panel accent="navy">
         <p className="leading-relaxed text-[#CBD5E1]">

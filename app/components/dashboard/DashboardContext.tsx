@@ -69,6 +69,9 @@ interface DashboardState {
   setCompareCountries: (countries: string[] | null) => void;
   topN: number;
   setTopN: (topN: number) => void;
+  /** Events on the charts (2a): one setting shared by every "Show events" checkbox; on by default. */
+  showEvents: boolean;
+  setShowEvents: (show: boolean) => void;
 
   /** Options derived from the data. */
   countries: string[];
@@ -138,6 +141,8 @@ export interface InitialSelection {
   country?: string;
   visa?: VisaSelection;
   period?: PeriodChoice;
+  /** False when the address says events=off. */
+  showEvents?: boolean;
 }
 
 export const DEFAULT_COUNTRY = "India";
@@ -202,6 +207,7 @@ export function DashboardProvider({
   );
   const [compareCountries, setCompareCountries] = useState<string[] | null>(null);
   const [topN, setTopN] = useState(25);
+  const [showEvents, setShowEvents] = useState(initial?.showEvents ?? true);
 
   // Resolved during render rather than corrected in an effect, so a dataset swap
   // never leaves a stale country selected for a frame.
@@ -297,6 +303,8 @@ export function DashboardProvider({
     setCompareCountries,
     topN,
     setTopN,
+    showEvents,
+    setShowEvents,
     countries,
     allCountries,
     consulateCountries,

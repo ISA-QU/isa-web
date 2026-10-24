@@ -19,7 +19,9 @@ import {
 import { arrowPct } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
+import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
 import Chart from "../Chart";
+import { EventsList, EventsToggle } from "../EventsControls";
 import RestrictionBadges from "../RestrictionBadges";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
@@ -52,6 +54,7 @@ export default function HistoricalTrendsTab() {
     nationalityCountries,
     focusCountry: country,
     fyRange,
+    showEvents,
   } = useDashboard();
   // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
   const firstFy = data.meta.coverage.annual.first ?? 1997;
@@ -207,6 +210,17 @@ export default function HistoricalTrendsTab() {
 
     return { data: traces, layout };
   }, [pivot, country, startYear, endYear, metrics, provisional]);
+
+  // Events (2a): global "major" events and the country's own, in the fiscal years shown.
+  const dataEnd = data.meta.coverage.postsMonthly.end;
+  const events = useMemo(
+    () =>
+      showEvents
+        ? eventOverlay({ axis: { kind: "fiscalYear", start: startYear, end: endYear }, dataEnd, country, globalDetail: false })
+        : EMPTY_OVERLAY,
+    [showEvents, startYear, endYear, dataEnd, country],
+  );
+  const eventChart = useMemo(() => withEvents(chart.data, chart.layout, events), [chart, events]);
 
   /* ---- Rankings: latest complete fiscal year, vs FY2019 and over 10 years ---- */
   const rankYear = historicalMetrics[0]?.latestYear ?? latestFy;
@@ -370,7 +384,11 @@ export default function HistoricalTrendsTab() {
             </p>
       )}
 
-          <Chart data={chart.data} layout={chart.layout} height={520} />
+          <div className="mb-1 flex justify-end">
+            <EventsToggle />
+          </div>
+          <Chart data={eventChart.traces} layout={eventChart.layout} height={520} />
+          <EventsList overlay={events} />
 
           <DownloadCsvButton
             label="Download Selected Historical Country CSV"

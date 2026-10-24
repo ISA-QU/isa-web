@@ -62,6 +62,7 @@ async function compileLib() {
     [
       "tsc",
       "app/lib/dashboard/metrics.ts",
+      "app/lib/dashboard/events.ts",
       "app/lib/dashboard/measures.ts",
       "app/lib/dashboard/sort.ts",
       "app/lib/dashboard/rolling.ts",
@@ -854,6 +855,120 @@ async function main() {
     "Markets Period columns: India F1 nationals, 2024 vs 2023",
     `${indiaNat(india2024)} vs ${indiaNat(india2023)}, ${measures.changeVsBase(indiaNat(india2024), indiaNat(india2023)).toFixed(1)}`,
     "76695 vs 125632, -39.0",
+  );
+
+  console.log("\n  Events timeline  (2a; events.ts, restriction events built from restrictions.ts)");
+  const ev = await import(pathToFileURL(path.join(outDir, "events.js")).href);
+  const ids = ev.EVENTS.map((e) => e.id);
+  const datePattern = { day: /^\d{4}-\d{2}-\d{2}$/, month: /^\d{4}-\d{2}$/, year: /^\d{4}$/ };
+  const incomplete = ev.EVENTS.filter(
+    (e) =>
+      !datePattern[e.precision]?.test(e.start) ||
+      (e.end && (!datePattern[e.precision].test(e.end) || e.end < e.start)) ||
+      !(e.scope === "global" || (Array.isArray(e.scope) && e.scope.length > 0)) ||
+      !["major", "detail"].includes(e.importance) ||
+      !/^https:\/\//.test(e.source) ||
+      e.lastChecked !== "2026-10-23" ||
+      !e.label || e.label.length > 40 ||
+      !/\.$/.test(e.description) || /(?<!U\.S)\.\s+[A-Z]/.test(e.description),
+  );
+  check(
+    "events: count / unique ids / incomplete (date, scope, importance, https source, last checked, label <= 40, one sentence)",
+    `${ev.EVENTS.length} / ${new Set(ids).size === ids.length} / ${incomplete.map((e) => e.id).join(", ") || "none"}`,
+    "25 / true / none",
+  );
+  const scoped = [...new Set(ev.EVENTS.filter((e) => e.scope !== "global").flatMap((e) => e.scope))].sort();
+  check(
+    "event country names in the Country control / unmatched",
+    `${scoped.join(", ")} / ${scoped.filter((c) => !controlCountries.has(c)).length}`,
+    "Afghanistan, China, Democratic Republic of the Congo, Russia, Saudi Arabia, South Sudan, Turkmenistan, Uganda, Ukraine, Venezuela / 0",
+  );
+  check(
+    "fiscal years: 2014-11-12 / 2020-03-20 / 2001-09-11 / 2008-09 / G9 27 May-18 Jun 2025 / C1 2005 / C2 2015-2016",
+    [
+      ev.fiscalYearOf("2014-11-12", "day"), ev.fiscalYearOf("2020-03-20", "day"), ev.fiscalYearOf("2001-09-11", "day"),
+      ev.fiscalYearOf("2008-09", "month"), `${ev.fiscalYearOf("2025-05-27", "day")}-${ev.fiscalYearOf("2025-06-18", "day")}`,
+      ev.fiscalYearOf("2005", "year"), `${ev.fiscalYearOf("2015", "year")}-${ev.fiscalYearOf("2016", "year")}`,
+    ].join(" / "),
+    "2015 / 2020 / 2001 / 2008 / 2025-2025 / 2005 / 2015-2016",
+  );
+  const byId = (id) => ev.EVENTS.find((e) => e.id === id);
+  const pauseCountries = restrictions.RESTRICTIONS.filter((r) => r.type === "visa-pause").map((r) => r.country);
+  const turkmen = restrictions.restoredRestriction("Turkmenistan");
+  check(
+    "restriction events = restrictions.ts: G10 date, countries / G13 date, countries / pause date, scope / Turkmenistan restored date",
+    [
+      `${byId("G10").start}, ${ev.proclamation10949Countries().length} (${banSince("2025-06-09")} + Turkmenistan)`,
+      `${byId("G13").start}, ${restrictions.RESTRICTIONS.filter((r) => r.type === "travel-ban" && r.studentVisasAffected && r.effective === "2026-01-01").length}`,
+      `${byId("R-PAUSE").start === restrictions.restrictionsFor("Uganda")[0].effective ? byId("R-PAUSE").start : "MISMATCH"}, ${byId("R-PAUSE").scope.join("|") === pauseCountries.join("|")}`,
+      `${byId("R-RESTORED-Turkmenistan").start === turkmen.restored.restoredOn ? turkmen.restored.restoredOn : "MISMATCH"}`,
+    ].join(" / "),
+    "2025-06-09, 19 (18 + Turkmenistan) / 2026-01-01, 38 / 2026-05-18, true / 2026-01-01",
+  );
+  check(
+    'event wording: "cause(d)" anywhere in labels or descriptions',
+    ev.EVENTS.filter((e) => /\bcaus(e|ed|ing)\b/i.test(`${e.label} ${e.description}`)).map((e) => e.id).join(", ") || "none",
+    "none",
+  );
+  // Every country, every chart type: nothing drawn outside the chart's range or after the data ends.
+  const monthAxis = { kind: "month", start: coverage.start, end: coverage.end };
+  const fyAxis = { kind: "fiscalYear", start: snapshot.coverage.annual.first ?? 1997, end: latestComplete };
+  const calAxis = {
+    kind: "calendarYear",
+    categories: [2019, 2020, 2021, 2022, 2023, 2024, 2025].map((y) => ({ label: String(y), year: y })).concat({ label: "2026 Jan–Feb", year: 2026 }),
+  };
+  const outside = [];
+  let drawn = 0;
+  for (const c of [...controlCountries]) {
+    for (const [axis, globalDetail] of [[monthAxis, true], [monthAxis, false], [fyAxis, true], [fyAxis, false], [calAxis, true]]) {
+      const o = ev.eventOverlay({ axis, dataEnd: coverage.end, country: c, globalDetail });
+      drawn += o.shown.length;
+      for (const p of o.shown) {
+        const startIdx = ev.startMonthIndex(p.event);
+        const inRange =
+          axis.kind === "month"
+            ? startIdx >= axis.start && startIdx <= axis.end
+            : axis.kind === "fiscalYear"
+              ? p.x >= axis.start && p.x <= axis.end && (p.x1 === undefined || p.x1 <= axis.end)
+              : axis.categories.some((cat) => cat.label === p.x);
+        if (!inRange || startIdx > coverage.end) outside.push(`${c}:${p.event.id}`);
+      }
+    }
+  }
+  check(
+    "events drawn outside a chart's range or after the data ends (every country, every chart type)",
+    `${outside.length}${outside.length ? ` (${outside.slice(0, 5).join(", ")})` : ""} of ${drawn > 0 ? "all drawn" : "none drawn"}`,
+    "0 of all drawn",
+  );
+  const describe = (o) =>
+    `${o.shown.map((p) => `${p.event.id}${p.labelled ? "" : "(h)"}`).join(" ")} | labels ${o.annotations.length} | later ${o.later.map((e) => e.id).join(" ") || "-"}`;
+  check(
+    "China, Country 360 monthly: events (h = hover only) / labels / later",
+    describe(ev.eventOverlay({ axis: monthAxis, dataEnd: coverage.end, country: "China", globalDetail: true })),
+    "G6 C4 G7(h) G8(h) G9 C5 G10 G11(h) G12(h) G13 | labels 5 | later G14",
+  );
+  check(
+    "China, Country 360 long-term (FY): events / labels / later",
+    describe(ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: "China", globalDetail: true })),
+    "G1 G2(h) G3 C3 G4(h) G5(h) G6(h) C4 G7(h) G8(h) G9 C5 G10 G11(h) G12(h) | labels 5 | later G13 G14",
+  );
+  check(
+    "India, Historical Trends (FY, major global only): events / labels / later",
+    describe(ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: "India", globalDetail: false })),
+    "G1 G3 G6(h) G9 G10 | labels 3 | later G13",
+  );
+  check(
+    "Nigeria on Proclamation 10998 / Venezuela on 10949 (hover note)",
+    `${ev.countryNote(byId("G13"), "Nigeria")} | ${ev.countryNote(byId("G10"), "Venezuela")} | ${ev.countryNote(byId("G10"), "India")}`,
+    "Nigeria: Partial suspension under Proclamation 10998 from 1 Jan 2026. | Venezuela: Partial suspension under Proclamation 10949 from 9 Jun 2025, continued by Proclamation 10998 from 1 Jan 2026. | null",
+  );
+  const sampleTraces = [{ x: [1], y: [2] }];
+  const sampleLayout = { shapes: [{ type: "rect" }], annotations: [{ text: "a" }] };
+  const merged = ev.withEvents(sampleTraces, sampleLayout, ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: "India", globalDetail: false }));
+  check(
+    "events only add to a chart: existing traces, shapes and annotations kept first and unchanged",
+    `${merged.traces[0] === sampleTraces[0]} / ${merged.layout.shapes[0] === sampleLayout.shapes[0]} / ${merged.layout.annotations[0] === sampleLayout.annotations[0]} / ${ev.withEvents(sampleTraces, sampleLayout, ev.EMPTY_OVERLAY).layout === sampleLayout}`,
+    "true / true / true / true",
   );
 
   await rm(outDir, { recursive: true, force: true });

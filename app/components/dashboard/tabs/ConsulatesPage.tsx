@@ -48,7 +48,9 @@ import {
 } from "../../../lib/dashboard/rolling";
 import { consulateScopeNotes, pausedPostText } from "../../../lib/dashboard/restrictions";
 import type { PostMonthlyRow } from "../../../lib/dashboard/types";
+import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
 import Chart from "../Chart";
+import { EventsList, EventsToggle } from "../EventsControls";
 import ComparePicker from "../ComparePicker";
 import { PausedPostBadge } from "../RestrictionBadges";
 import { useDashboard } from "../DashboardContext";
@@ -117,6 +119,7 @@ export default function ConsulatesPage() {
     periodRange,
     typical,
     consulateCountries,
+    showEvents,
   } = useDashboard();
 
   const [initial] = useState(readPageParams);
@@ -292,6 +295,23 @@ export default function ConsulatesPage() {
     };
     return { traces, layout };
   }, [visaRows, compared, trendMode, coverage, selectedPost, visaLabel, periodRange, throughLabel, throughMonth]);
+
+  // Events (2a): monthly mode in "This country" scope only: the country's own
+  // events and global "major" ones.
+  const eventsOn = trendMode === "monthly" && scope === "country";
+  const trendEvents = useMemo(
+    () =>
+      showEvents && eventsOn
+        ? eventOverlay({
+            axis: { kind: "month", start: coverage.start, end: coverage.end },
+            dataEnd: coverage.end,
+            country: focusCountry,
+            globalDetail: false,
+          })
+        : EMPTY_OVERLAY,
+    [showEvents, eventsOn, coverage.start, coverage.end, focusCountry],
+  );
+  const trendChart = useMemo(() => withEvents(trend.traces, trend.layout, trendEvents), [trend, trendEvents]);
 
   const partialYears = useMemo(() => {
     const labels: string[] = [];
@@ -691,7 +711,15 @@ export default function ConsulatesPage() {
           </div>
         </div>
         {compared.length > 0 ? (
-          <Chart data={trend.traces} layout={trend.layout} height={460} />
+          <>
+            {eventsOn && (
+              <div className="mb-1 flex justify-end">
+                <EventsToggle />
+              </div>
+            )}
+            <Chart data={trendChart.traces} layout={trendChart.layout} height={460} />
+            {eventsOn && <EventsList overlay={trendEvents} />}
+          </>
         ) : (
           <InfoCallout>Add a consulate or pick Top 3, 5 or 8 to draw the trend.</InfoCallout>
         )}

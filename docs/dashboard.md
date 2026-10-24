@@ -348,6 +348,27 @@ has its own version:
   detail; the Executive focus card and globe hover add one line. The Markets and Country
   360 rankings CSVs have "Restriction" and "Suspended since" columns. Numbers and charts
   are unchanged. Update `LAST_CHECKED` when the list is reviewed.
+- **Events timeline (2a).** `lib/dashboard/events.ts` lists dated, sourced events
+  (id, start and optional end, precision day/month/year, label of at most 40
+  characters, one-sentence description, scope "global" or country names, importance
+  major/detail, source, last checked). The travel bans (Proclamations 10949 and
+  10998), the Ebola visa-services pause and Turkmenistan's restored student and
+  exchange visas are built from `restrictions.ts`, so dates and counts live in one
+  place. `eventOverlay()` places them: a thin dashed line (dotted for hover-only
+  events) or a shaded band for ranges; labels for global "major" and country events
+  in up to three rows above the plot (a label that doesn't fit becomes hover-only,
+  and events in the same month or year share one label, e.g. "Interview pause +4");
+  hover shows the description, date and source site. Fiscal-year charts place each
+  event in its Oct–Sep year (2014-11-12 → FY2015); a year-only event uses the same
+  FY number (2005 → FY2005). COVID (G6) is hover-only on yearly charts, which keep
+  their red 2020 band. Nothing is drawn outside a chart's range or after the data
+  ends; later events are listed under the chart. Shown on Historical Trends (global
+  major + the country's), Country 360's monthly trend, long-term trajectory and
+  recovery chart (all global + the country's) and the Consulates trend in monthly
+  mode with "This country" scope (global major + the country's). One "Show events"
+  setting is shared by every chart's checkbox and written to the link as
+  `events=off` when off. Each chart has a collapsed "Events on this chart (N)" list
+  with clickable sources. Existing chart data and decorations are unchanged.
 - **Links are checked.** A `period=` year or range entirely outside the data (e.g.
   `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
   `country=` ignores capitalisation (`country=china` opens China).

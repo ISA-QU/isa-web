@@ -55,12 +55,15 @@ one shared country and F1 defaults (5a).
 
 ## 4b · Events timeline
 
-Sourced event markers on the Historical Trends chart.
+Sourced event markers on the existing charts ("may have affected", never "caused").
 
-- [ ] Research and draft the events, for example: 2001 9/11 and visa screening; 2008–09 financial crisis; 2010–15 China/India growth; 2016–17 decline; 2020 COVID; 2021–23 recovery; 2025 US visa-policy changes.
-- [ ] Each marker has a date, one neutral line of description and a source link.
-- [ ] Get the wording and sources approved before building.
-- [ ] Build the markers on the Historical Trends chart.
+- [x] 2a: `lib/dashboard/events.ts` (25 events: 14 global, 9 country, plus the Ebola pause and Turkmenistan restored built from `restrictions.ts`) drawn on Historical Trends, Country 360 (monthly trend, long-term trajectory, recovery) and Consulates (monthly, This country), with a shared "Show events" checkbox (`events=off` in the link) and a collapsed "Events on this chart" list.
+- [ ] 2b: the 30-year world chart with the same events.
+- [ ] Replace the Wikipedia sources (G1 9/11, G3 financial crisis, G5 Executive Order 13769, C9 Embassy Kyiv) with official or academic sources before launch.
+- [ ] Review `events.ts` with `restrictions.ts` and update `EVENTS_LAST_CHECKED`.
+- [ ] Consulates' calendar-year trend modes don't show events yet (monthly mode only).
+- [ ] Label spacing assumes a desktop-width chart; on phones some labels may crowd (hover still works). Check with Feature 9 mobile.
+- [ ] Polish: on yearly charts the existing "2020 disruption" label sits close to the 2020 event marker; nudge one of them.
 
 ## 7 · Monthly nationality data
 

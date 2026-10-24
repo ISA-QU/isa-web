@@ -48,7 +48,9 @@ import { buildConsulateTable, previousPeriod } from "../../../lib/dashboard/cons
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { MonthRange, Visa } from "../../../lib/dashboard/types";
+import { EMPTY_OVERLAY, eventOverlay, withEvents, type EventAxis } from "../../../lib/dashboard/events";
 import Chart from "../Chart";
+import { EventsList, EventsToggle } from "../EventsControls";
 import ComparePicker from "../ComparePicker";
 import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
@@ -98,6 +100,7 @@ export default function Country360Tab() {
     consulateCountries,
     allCountries,
     summary,
+    showEvents,
   } = useDashboard();
   const { coverage, fiscalYears } = data.meta;
   // Annual metrics use complete fiscal years; a year-to-date one would read as a collapse.
@@ -883,6 +886,40 @@ export default function Country360Tab() {
 
   const openTab = useOpenTab();
 
+  // Events (2a): every global event in range plus the country's own, on the
+  // monthly trend, the long-term trajectory and the recovery chart.
+  const eventsEnd = coverage.postsMonthly.end;
+  const overlayFor = (axis: EventAxis) =>
+    showEvents ? eventOverlay({ axis, dataEnd: eventsEnd, country, globalDetail: true }) : EMPTY_OVERLAY;
+  const monthlyEvents = useMemo(
+    () => overlayFor({ kind: "month", start: coverage.postsMonthly.start, end: coverage.postsMonthly.end }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showEvents, coverage.postsMonthly.start, eventsEnd, country],
+  );
+  const histEvents = useMemo(
+    () => overlayFor({ kind: "fiscalYear", start: histStart, end: histEnd }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showEvents, histStart, histEnd, eventsEnd, country],
+  );
+  const recoveryEvents = useMemo(
+    () =>
+      overlayFor({
+        kind: "calendarYear",
+        categories: recovery.rows.map((r) => ({ label: r.period, year: Number.parseInt(r.period, 10) })),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showEvents, recovery.rows, eventsEnd, country],
+  );
+  const monthlyChart = useMemo(
+    () => withEvents(monthlyTrend.traces, monthlyTrend.layout, monthlyEvents),
+    [monthlyTrend, monthlyEvents],
+  );
+  const histEventChart = useMemo(() => withEvents(histChart.data, histChart.layout, histEvents), [histChart, histEvents]);
+  const recoveryChart = useMemo(
+    () => withEvents(recovery.data, recovery.layout, recoveryEvents),
+    [recovery, recoveryEvents],
+  );
+
   return (
     <div className="space-y-6">
       <SectionTitle>Country 360 · {country}</SectionTitle>
@@ -987,7 +1024,13 @@ export default function Country360Tab() {
           <section>
             <SubHeading>Monthly trend</SubHeading>
             {leadAll.length > 0 ? (
-              <Chart data={monthlyTrend.traces} layout={monthlyTrend.layout} height={420} />
+              <>
+                <div className="mb-1 flex justify-end">
+                  <EventsToggle />
+                </div>
+                <Chart data={monthlyChart.traces} layout={monthlyChart.layout} height={420} />
+                <EventsList overlay={monthlyEvents} />
+              </>
             ) : (
               <InfoCallout>No monthly rows for {leadName}.</InfoCallout>
             )}
@@ -1072,7 +1115,13 @@ export default function Country360Tab() {
             </div>
             <MethodologyNote wide>{annualSourceNote}</MethodologyNote>
             {histChart.hasRows ? (
-              <Chart data={histChart.data} layout={histChart.layout} height={460} />
+              <>
+                <div className="mb-1 flex justify-end">
+                  <EventsToggle />
+                </div>
+                <Chart data={histEventChart.traces} layout={histEventChart.layout} height={460} />
+                <EventsList overlay={histEvents} />
+              </>
             ) : (
               <InfoCallout>No annual country history is available for the selected country label.</InfoCallout>
             )}
@@ -1153,7 +1202,13 @@ export default function Country360Tab() {
               </FixedTag>
             </SubHeading>
             {recovery.rows.length > 0 ? (
-              <Chart data={recovery.data} layout={recovery.layout} height={390} />
+              <>
+                <div className="mb-1 flex justify-end">
+                  <EventsToggle />
+                </div>
+                <Chart data={recoveryChart.traces} layout={recoveryChart.layout} height={390} />
+                <EventsList overlay={recoveryEvents} />
+              </>
             ) : (
               <InfoCallout>
                 Recovery index {hasLeadRows ? LOW_VOLUME : "N/A"}: needs at least {MIN_BASE} issuances

@@ -148,17 +148,21 @@ function readUrlSelection(): UrlSelection {
     visa,
     period,
     tab,
+    showEvents: params.get("events")?.toLowerCase() !== "off",
   };
 }
 
 /** Writes the selection into the address without adding browser-history entries. */
-function useUrlSync(country: string, visa: VisaSelection, period: string, tab: string) {
+function useUrlSync(country: string, visa: VisaSelection, period: string, tab: string, showEvents: boolean) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     params.set("country", country);
     params.set("visa", VISA_PARAM[visa]);
     params.set("period", period);
     params.set("tab", tab);
+    // Events are on by default, so only "off" is written.
+    if (showEvents) params.delete("events");
+    else params.set("events", "off");
     // The Consulates page's own settings only belong in its address.
     if (tab !== "consulates") {
       params.delete("consulate");
@@ -168,14 +172,14 @@ function useUrlSync(country: string, visa: VisaSelection, period: string, tab: s
     if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [country, visa, period, tab]);
+  }, [country, visa, period, tab, showEvents]);
 }
 
 function DashboardBody({ initialTab }: { initialTab?: string }) {
-  const { data, focusCountry, visa, period } = useDashboard();
+  const { data, focusCountry, visa, period, showEvents } = useDashboard();
   const [active, setActive] = useState<string>(initialTab ?? TABS[0].id);
   const ActiveTab = TABS.find((tab) => tab.id === active)?.Component ?? TABS[0].Component;
-  useUrlSync(focusCountry, visa, periodToParam(period), active);
+  useUrlSync(focusCountry, visa, periodToParam(period), active, showEvents);
 
   // Lets a page open another tab with that tab's own address settings, e.g.
   // Country 360's "See all consulates" link opens Consulates with scope=country.

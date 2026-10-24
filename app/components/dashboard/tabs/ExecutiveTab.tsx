@@ -13,6 +13,7 @@ import {
   rollingTotals,
   type RollingGroup,
 } from "../../../lib/dashboard/rolling";
+import { restrictionLines } from "../../../lib/dashboard/restrictions";
 import type { CountrySummaryRow, PostMonthlyRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
@@ -60,6 +61,11 @@ function CountryCard({
         Focus Market
       </div>
       <div className="mt-1 text-2xl font-extrabold text-white">{row.country}</div>
+      {restrictionLines(row.country).map((line) => (
+        <p key={line} className="mt-1 text-xs font-semibold leading-relaxed text-amber-200">
+          {line}
+        </p>
+      ))}
       <p className="mt-2 text-xs leading-relaxed text-slate-400">
         Hover over the globe for the same country-level intelligence in context.
       </p>
@@ -181,6 +187,9 @@ export default function ExecutiveTab() {
           groupChange(last12.f1.get(row.country)),
           row.topPost,
           row.peak,
+          restrictionLines(row.country)
+            .map((line) => `<br>${line}`)
+            .join(""),
         ]),
         colorscale: BLUE_GOLD_SCALE,
         marker: { line: { color: "rgba(255,255,255,0.24)", width: 0.45 } },
@@ -197,6 +206,7 @@ export default function ExecutiveTab() {
           `F1 vs previous 12 months (${last12.period}): %{customdata[2]}<br>` +
           `Top consulate (F1, ${periodRange.label}): %{customdata[3]}<br>` +
           `Peak F1 month (typical year: ${typicalLabel.text}): %{customdata[4]}` +
+          "%{customdata[5]}" +
           "<extra></extra>",
       } as Trace,
     ];

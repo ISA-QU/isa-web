@@ -31,6 +31,14 @@ import {
   volatilityIn,
   type TypicalYear,
 } from "./measures";
+import {
+  restrictedAction,
+  restoredAction,
+  restoredRestriction,
+  restrictionBadgeText,
+  studentRestriction,
+  type Restriction,
+} from "./restrictions";
 import type {
   AnnualCountryRow,
   CommandCenterRow,
@@ -649,42 +657,84 @@ type ClassificationInput = Omit<
 >;
 
 /**
- * Primary market category. Rules are mutually exclusive and evaluated in order;
- * see docs/command_center_classification_audit.md in the original project.
+ * Market thresholds, calibrated in 8-3 for one measure: issuances in the last
+ * 12 months (nationals on Markets and Country 360). One set for F1, J1 and Both.
+ */
+export const MARKET_THRESHOLDS = {
+  /** Core: at least this many in the last 12 months, and not structurally declining. */
+  core: 5_000,
+  /** Declining: 10-year growth at or below this… */
+  structuralGrowth: -35,
+  /** …and last-12-month change at or below this… */
+  structuralMomentum: -20,
+  /** …with at least this many in the previous 12 months (its size before the fall). */
+  declineMinPrior: 250,
+  /** Emerging: change at or above this, with emergingMin to core - 1 in the last 12 months. */
+  emergingMomentum: 25,
+  emergingMin: 250,
+  /** Growth: 10-year growth at or above this, with growthMin+ in the last 12 months. */
+  growthTenYear: 50,
+  growthMin: 500,
+  /** Recovery: latest complete year vs 2019 at or above this, with recoveryMin+. */
+  recoveryIndex: 115,
+  recoveryMin: 500,
+  /** Flags apply only from this many in the last 12 months; below it, "Low Confidence". */
+  flagMin: 100,
+  strongGrowth: 35,
+  /** Weak momentum: falling faster than all F1 nationals did (−34.6%, Mar 2025 – Feb 2026). */
+  weakMomentum: -35,
+  /** Highly Seasonal, and the "Begin Outreach Earlier" action: typical-year peak ÷ mean month. */
+  seasonalRatio: 3.0,
+  volatileCv: 1.2,
+} as const;
+
+/**
+ * Primary market category. Rules are mutually exclusive and evaluated in order.
+ * ("Restricted" is set by nationalitySignals before any of these.)
  */
 export function marketCategory(row: ClassificationInput): string {
-  const currentVolume = row.currentVolume || 0;
+  const T = MARKET_THRESHOLDS;
   const latest12 = row.latest12Total || 0;
   const momentum = row.latest12Momentum;
   const growth10yr = row.growth10yr;
   const recovery = row.recoveryIndex;
 
   const structurallyDeclining =
-    notNa(growth10yr) && growth10yr <= -35 && notNa(momentum) && momentum <= -20;
+    notNa(growth10yr) &&
+    growth10yr <= T.structuralGrowth &&
+    notNa(momentum) &&
+    momentum <= T.structuralMomentum;
 
-  if ((currentVolume >= 50_000 || latest12 >= 20_000) && !structurallyDeclining) return "Core";
-  if (structurallyDeclining && currentVolume >= 500) return "Declining";
-  if (notNa(momentum) && momentum >= 25 && latest12 >= 250 && currentVolume < 25_000) {
+  if (latest12 >= T.core && !structurallyDeclining) return "Core";
+  if (structurallyDeclining && (row.prior12Total || 0) >= T.declineMinPrior) return "Declining";
+  if (notNa(momentum) && momentum >= T.emergingMomentum && latest12 >= T.emergingMin && latest12 < T.core) {
     return "Emerging";
   }
-  if (notNa(growth10yr) && growth10yr >= 50 && latest12 >= 500) return "Growth";
-  if (notNa(recovery) && recovery >= 115 && latest12 >= 500) return "Recovery";
+  if (notNa(growth10yr) && growth10yr >= T.growthTenYear && latest12 >= T.growthMin) return "Growth";
+  if (notNa(recovery) && recovery >= T.recoveryIndex && latest12 >= T.recoveryMin) return "Recovery";
   return "Watch";
 }
 
+/**
+ * Flags that mean something: thresholds set so each picks out a minority of
+ * markets (8-3). Consulate concentration and the every-row partial-year caution
+ * are no longer flags. Below flagMin, only "Low Confidence".
+ */
 export function secondaryFlags(row: ClassificationInput & { marketCategory: string }): string[] {
+  const T = MARKET_THRESHOLDS;
   const flags: string[] = [];
-  if (notNa(row.growth10yr) && row.growth10yr >= 35) flags.push("Strong Long-Term Growth");
-  if (notNa(row.latest12Momentum) && row.latest12Momentum <= -20) flags.push("Weak Recent Momentum");
-  if (notNa(row.recoveryIndex) && row.recoveryIndex >= 115) flags.push("Recovery Leader");
-  if (notNa(row.seasonalityRatio) && row.seasonalityRatio >= 1.7) flags.push("Highly Seasonal");
-  if (notNa(row.topOneShare) && row.topOneShare >= 0.45) flags.push("High Concentration");
-  if (notNa(row.volatilityCv) && row.volatilityCv >= 0.85) flags.push("Volatile");
-  if (["Core", "Growth", "Recovery"].includes(row.marketCategory) && notNa(row.peakMonth)) {
-    flags.push("Travel Opportunity");
+  const small = (row.latest12Total || 0) < T.flagMin;
+  if (!small) {
+    if (notNa(row.growth10yr) && row.growth10yr >= T.strongGrowth) flags.push("Strong Long-Term Growth");
+    if (notNa(row.latest12Momentum) && row.latest12Momentum <= T.weakMomentum) flags.push("Weak Recent Momentum");
+    if (notNa(row.recoveryIndex) && row.recoveryIndex >= T.recoveryIndex) flags.push("Recovery Leader");
+    if (notNa(row.seasonalityRatio) && row.seasonalityRatio >= T.seasonalRatio) flags.push("Highly Seasonal");
+    if (notNa(row.volatilityCv) && row.volatilityCv >= T.volatileCv) flags.push("Volatile");
+    if (["Core", "Growth", "Recovery"].includes(row.marketCategory) && notNa(row.peakMonth)) {
+      flags.push("Travel Opportunity");
+    }
   }
-  if ((row.latest12Total || 0) < 100 || !notNa(row.growth10yr)) flags.push("Low Confidence");
-  flags.push("Partial-Year Caution");
+  if (small || !notNa(row.growth10yr)) flags.push("Low Confidence");
   return flags;
 }
 
@@ -719,8 +769,7 @@ export function recommendedAction(
   if (category === "Emerging") return "Increase Digital Outreach";
   if (category === "Growth") return "Expand Recruitment";
   if (category === "Recovery") return "Consider Travel";
-  if (flags.includes("High Concentration")) return "Monitor Specific Consulate";
-  if (notNa(seasonality) && seasonality >= 1.7) return "Begin Outreach Earlier";
+  if (notNa(seasonality) && seasonality >= MARKET_THRESHOLDS.seasonalRatio) return "Begin Outreach Earlier";
   if (notNa(momentum) && momentum <= -20) return "Monitor Current Slowdown";
   if ((row.latest12Total || 0) < 100) return "Insufficient Evidence";
   return "Maintain Strategic Priority";
@@ -993,14 +1042,18 @@ export function buildCommandCenterFrame(
  * ------------------------------------------------------------------ */
 
 /**
- * Which small- or collapsing-market rule decided the advice: "fell" = under 100
- * nationals in the last 12 months after 100+ in the 12 before; "small" = under
- * 100 in both. null = the shared rules decided.
+ * Which rule decided the advice before the shared ones: "restricted" = student
+ * and exchange visas blocked by a travel ban or a visa-services pause (checked
+ * first); "restored" = student and exchange visas suspended earlier and since
+ * restored (Turkmenistan: the recent fall reflects the suspension); "fell" = under 100 nationals in the last 12 months after 100+ in the 12
+ * before; "small" = under 100 in both. null = the shared rules decided.
  */
-export type NationalityRule = "fell" | "small" | null;
+export type NationalityRule = "restricted" | "restored" | "fell" | "small" | null;
 
 export interface NationalitySignals extends CommandCenterRow {
   rule: NationalityRule;
+  /** The restriction blocking student and exchange visas ("restricted"), or the restored one ("restored"). */
+  restriction: Restriction | null;
   /** Timing and timing-based advice don't apply: either rule above, or a fall of 75% or more. */
   hideTiming: boolean;
 }
@@ -1084,27 +1137,59 @@ export function nationalitySignals(
     concentrationRisk: "N/A",
   };
 
-  // Small or collapsing markets first, before any seasonality or timing rule.
-  const rule: NationalityRule =
-    twelve.current < MIN_BASE ? (twelve.prior >= MIN_BASE ? "fell" : "small") : null;
-  const category = rule === "fell" ? "Declining" : marketCategory(base);
-  const flags = secondaryFlags({ ...base, marketCategory: category });
+  // First: student and exchange visas blocked by a travel ban or a visa-services
+  // pause, or restored after a suspension. Then small or collapsing markets,
+  // before any seasonality or timing rule.
+  const blocking = studentRestriction(country);
+  const restored = blocking ? null : restoredRestriction(country);
+  const restriction = blocking ?? restored;
+  const rule: NationalityRule = blocking
+    ? "restricted"
+    : restored
+      ? "restored"
+      : twelve.current < MIN_BASE
+        ? twelve.prior >= MIN_BASE
+          ? "fell"
+          : "small"
+        : null;
+  const hideTiming =
+    rule !== null || (twelve.change !== null && twelve.change <= STEEP_FALL_PCT);
+  const category =
+    rule === "restricted"
+      ? "Restricted"
+      : rule === "restored"
+        ? "Watch"
+        : rule === "fell"
+          ? "Declining"
+          : marketCategory(base);
+  // A market where timing doesn't apply is no travel opportunity.
+  const flags = secondaryFlags({ ...base, marketCategory: category }).filter(
+    (flag) => !(hideTiming && flag === "Travel Opportunity"),
+  );
   const confidence = dataConfidenceLabel({ ...base, secondaryFlags: flags });
-  const action =
-    rule === "fell"
-      ? "Review Structural Decline"
-      : rule === "small"
-        ? "Insufficient Evidence"
-        : recommendedAction({ ...base, marketCategory: category, secondaryFlags: flags });
+  let action =
+    rule === "restricted" && restriction
+      ? restrictedAction(restriction)
+      : rule === "restored" && restriction
+        ? restoredAction(restriction)
+        : rule === "fell"
+          ? "Review Structural Decline"
+          : rule === "small"
+            ? "Insufficient Evidence"
+            : recommendedAction({ ...base, marketCategory: category, secondaryFlags: flags });
+  if (hideTiming && action === "Begin Outreach Earlier") {
+    action = notNa(twelve.change) && twelve.change <= -20 ? "Monitor Current Slowdown" : "Maintain Strategic Priority";
+  }
   const profile = recommendationProfile({ ...base, recommendedAction: action, confidence });
   const count = (value: number) => value.toLocaleString("en-US");
-  if (rule === "fell") {
+  if ((rule === "restricted" || rule === "restored") && restriction) {
+    profile.primaryDriver =
+      rule === "restored" ? restriction.history.replace(/\.$/, "") : restrictionBadgeText(restriction);
+  } else if (rule === "fell") {
     profile.primaryDriver = `Fell from ${count(twelve.prior)} to ${count(twelve.current)} visas to nationals of ${country} (${visaLabel}, last 12 months)`;
   } else if (rule === "small") {
     profile.primaryDriver = `Fewer than ${MIN_BASE} visas to nationals of ${country} in the last 12 months`;
   }
-  const hideTiming =
-    rule !== null || (twelve.change !== null && twelve.change <= STEEP_FALL_PCT);
   if (hideTiming) profile.timing = "";
 
   return {
@@ -1117,6 +1202,7 @@ export function nationalitySignals(
     ...profile,
     evidence: evidenceText(base),
     rule,
+    restriction,
     hideTiming,
   };
 }

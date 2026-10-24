@@ -43,7 +43,7 @@ one shared country and F1 defaults (5a).
 
 **Command Center will be rebuilt as the "Markets" page in the 5-page redesign (Feature 8), absorbing this feature.**
 
-- [ ] Country 360 recommendation still uses the Jan 2024 – Feb 2026 operational inputs (shared with Command Center); rebuild with the Markets page.
+- [x] Country 360 recommendation still uses the Jan 2024 – Feb 2026 operational inputs (shared with Command Center); rebuild with the Markets page. (Done in 8-2b/8-3.)
 - [ ] Flags fire for almost every market (e.g. 161 high-concentration, 160 highly seasonal); recalibrate the thresholds so flags discriminate.
 - [ ] Review the market categories (Core, Growth, Emerging, Recovery, Watch, Declining) and the recommendation rules.
 - [ ] Make the action queue's sort key visible, and rename the "Latest Comparable Period" view (it sorts by last-12-month volume).
@@ -86,8 +86,10 @@ Sourced event markers on the Historical Trends chart.
   - [x] When a country had 0 visas issued locally in the last 12 months, hide the "Timing" line in "What to do" (e.g. Venezuela's "March–May outreach before July peak"), since timing advice doesn't apply.
 - [x] 8-2b: switch Country 360 to the monthly nationality data ("Issued in [country]" alongside; small and collapsing market rules in `nationalitySignals()`).
 - [ ] Montserrat and Western Sahara have nationality rows but no consulate or annual rows, so they're left out of the Country control and Country 360's compare options; decide whether to add them.
-- [ ] Markets page: rank by nationality there, so Command Center and Country 360 agree again.
-- [ ] 8-3: Command Center's "Current Volume" covers the 26-month operational window (Jan 2024 – Feb 2026), which the Core ≥ 50,000 threshold was set against; decide its window and thresholds.
+- [x] 8-3: Command Center rebuilt as Markets, by nationality (agrees with Country 360); 12-month thresholds replace the 26-month "Current Volume"; flags recalibrated; travel-ban and visa-pause restrictions (`restrictions.ts`).
+- [ ] Next for Markets: a "cyclical vs structural" label per declining country (shown beside Declining in the Action column).
+- [ ] Review `restrictions.ts` against the State Department pages regularly and update `LAST_CHECKED`; temporary pauses may lift without notice.
+- [ ] Remove the unused `CommandCenterTab.tsx` (replaced by `MarketsTab.tsx`) with the other unused tab files.
 - [ ] Historical Trends measures each country from its own last fiscal-year row, so a country with no recent rows shows an old year as "latest" (North Korea FY2022, Marshall Islands and Nauru FY2024); use the latest complete fiscal year for every country.
 - [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
 - [ ] Carry over what works: Historical Consulates (best page), the Country 360 narrative, the Historical Trends 30-year chart, the Command Center action queue.
@@ -97,6 +99,7 @@ Sourced event markers on the Historical Trends chart.
 
 - [ ] Mobile (~640px wide): on Historical Trends and Country 360's long-term chart the fiscal-year labels overlap and the axis range stretches; fix the tick spacing and range at narrow widths.
 
+- [ ] % rounding differs between pages: Uganda's 10-year trend shows ▲ 75.1% on Markets but +75.0% on Historical Trends (exact 75.05%). Use one shared percent formatter everywhere.
 - [ ] Complete the region mapping for all 205 countries so region presets include every country.
 - [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
 - [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).

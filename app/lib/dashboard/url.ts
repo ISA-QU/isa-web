@@ -1,9 +1,12 @@
 /**
  * Tab names in the web address. Pages that were merged keep working in old
  * links: Consulate Intelligence and Historical Consulates became Consulates (8-1);
- * Country Intelligence became part of Country 360 (8-2a).
+ * Country Intelligence became part of Country 360 (8-2a); Command Center became
+ * Markets (8-3).
  */
 export const TAB_ALIASES: Readonly<Record<string, string>> = {
+  // The Command Center became Markets (8-3).
+  command: "markets",
   "consulate-intelligence": "consulates",
   "historical-consulates": "consulates",
   "country-intelligence": "country-360",

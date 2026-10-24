@@ -18,7 +18,7 @@ import { DashboardProvider, useDashboard, type InitialSelection } from "./Dashbo
 import HeaderKpis from "./HeaderKpis";
 import { MethodologyExpanders } from "./shared";
 
-import CommandCenterTab from "./tabs/CommandCenterTab";
+import MarketsTab from "./tabs/MarketsTab";
 import ExecutiveTab from "./tabs/ExecutiveTab";
 import Country360Tab from "./tabs/Country360Tab";
 import ConsulatesPage from "./tabs/ConsulatesPage";
@@ -30,7 +30,7 @@ import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
  * labels now match their content.
  */
 const TABS = [
-  { id: "command", label: "Command", Component: CommandCenterTab },
+  { id: "markets", label: "Markets", Component: MarketsTab },
   { id: "executive", label: "Executive", Component: ExecutiveTab },
   { id: "country-360", label: "Country 360", Component: Country360Tab },
   { id: "consulates", label: "Consulates", Component: ConsulatesPage },

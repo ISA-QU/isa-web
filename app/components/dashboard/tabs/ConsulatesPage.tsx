@@ -46,9 +46,11 @@ import {
   risersAndFallers,
   rollingTotals,
 } from "../../../lib/dashboard/rolling";
+import { consulateScopeNotes, pausedPostText } from "../../../lib/dashboard/restrictions";
 import type { PostMonthlyRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
+import { PausedPostBadge } from "../RestrictionBadges";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import {
@@ -538,11 +540,23 @@ export default function ConsulatesPage() {
       ];
     });
 
+  // Visa restrictions for the country's nationals, or a pause at its consulates.
+  const notes = scope === "country" ? consulateScopeNotes(focusCountry) : [];
+  const restrictionNote =
+    notes.length > 0 ? (
+      <div className="space-y-1 rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-sm text-amber-100">
+        {notes.map((note) => (
+          <p key={note}>{note}</p>
+        ))}
+      </div>
+    ) : null;
+
   if (scope === "country" && !consulateCountries.has(focusCountry)) {
     return (
       <div className="space-y-6">
         <SectionTitle>Consulates</SectionTitle>
         <ScopeSwitch scope={scope} onChange={setScope} country={focusCountry} />
+        {restrictionNote}
         <InfoCallout>
           No consulate data for {focusCountry} in this view: the monthly consulate data has no posts
           in this country. Switch to All countries to see every consulate.
@@ -555,6 +569,7 @@ export default function ConsulatesPage() {
     <div className="space-y-6">
       <SectionTitle>Consulates</SectionTitle>
       <ScopeSwitch scope={scope} onChange={setScope} country={focusCountry} />
+      {restrictionNote}
 
       {context && (
         <p className="text-sm text-slate-300">
@@ -593,7 +608,16 @@ export default function ConsulatesPage() {
           isSelected={(row) => row.post === selectedPost}
           empty={`No ${visaLabel} consulate issuances in ${scopeName} for ${periodRange.label}.`}
           columns={[
-            { key: "post", header: "Consulate", render: (r) => r.post },
+            {
+              key: "post",
+              header: "Consulate",
+              render: (r) => (
+                <>
+                  {r.post}
+                  <PausedPostBadge post={r.post} compact />
+                </>
+              ),
+            },
             ...(scope === "all"
               ? [{ key: "country", header: "Country", render: (r: ConsulateRow) => r.country }]
               : []),
@@ -733,6 +757,11 @@ export default function ConsulatesPage() {
       {selectedRow && (
         <section>
           <SubHeading>Consulate detail: {selectedRow.post}</SubHeading>
+          {pausedPostText(selectedRow.post) && (
+            <div className="mb-3">
+              <PausedPostBadge post={selectedRow.post} />
+            </div>
+          )}
           <KpiRow>
             <KpiCard accent="gold" label={`${visaLabel}, ${periodRange.label}`} value={int(selectedRow.volume)} />
             <KpiCard label={changeLabel} value={changeCell(selectedRow)} delta={noPriorNote ?? undefined} />

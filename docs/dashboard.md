@@ -237,6 +237,12 @@ The deploy build deletes `out/dashboard-data`, so a local snapshot is never publ
   small and collapsing markets (F1: 25 fell below 100, 57 under 100 in both, 85 with timing
   hidden); 44 countries get the "mostly elsewhere" note; the fallbacks; Montserrat and
   Western Sahara left out. The advice fingerprints lock every country's category/action.
+- 8-3 Markets, against pandas recounts with the rules re-implemented: categories (F1: Core
+  8, Growth 8, Emerging 0, Recovery 11, Declining 25, Watch 111, Restricted 40 — 38 travel
+  ban, 2 pause), the Core list, flag counts, the example rows (Nigeria, Zimbabwe, Uganda,
+  DR Congo, South Sudan, Turkmenistan, Ghana, India, China, Vietnam), the Travel Timing
+  list (64), movers by nationality, India's 2024 vs 2023 Period figures, the restriction
+  names, and `tab=command` opening Markets.
 
 ## Architecture
 
@@ -308,9 +314,40 @@ has its own version:
   Y visas to nationals of [country]"); under 100 in both → "Insufficient Evidence". Those, and any fall of 75% or more, hide
   the Timing line and timing-based advice. The change card follows the Period against the
   previous equal-length period. With no nationality table (or no rows for the country,
-  e.g. Curacao) the page shows a banner and uses the issued-in figures. The Command Center
-  still ranks by where visas are issued until the Markets page, so the two pages can
-  disagree; the header's country card is labelled "Issued in [country]".
+  e.g. Curacao) the page shows a banner and uses the issued-in figures. Markets (8-3) uses
+  the same rows, so the two pages agree; the header's country card is labelled "Issued in
+  [country]".
+- **Markets (8-3).** The Command Center became the Markets page (`?tab=markets`; old
+  `?tab=command` links still open it). It lists every country by nationality from the same
+  `nationalitySignals()` rows as Country 360, so the two pages agree: six columns
+  (country, nationals in the Period, change vs the previous equal-length period, 10-year
+  trend, action with category, timing), category counts, Travel Timing Opportunities
+  (ordered by the next outreach window from today's month), 12-month movers by nationality,
+  and everything else under More details and in the CSV. The 26-month "Current Volume" is
+  gone. Thresholds were recalibrated for the 12-month measure (`MARKET_THRESHOLDS` in
+  `metrics.ts`; one set for F1, J1 and Both): Core 5,000+ in the last 12 months and not
+  structurally declining; Declining needs 250+ in the previous 12 months; flags only from
+  100 nationals, with Highly Seasonal at 3.0x, Volatile at CV 1.2 and Weak Recent Momentum
+  at −35% (falling faster than all F1 nationals). Consulate concentration and the every-row
+  partial-year caution are no longer flags.
+- **Visa restrictions (8-3).** `lib/dashboard/restrictions.ts` lists, per country and
+  restriction, the type, level, the date student and exchange (F, M, J) visas have been
+  suspended since, a one-line history, the State Department sources and when it was last
+  checked. Proclamation 10998 (1 Jan 2026) continued Proclamation 10949 (9 Jun 2025): 18
+  countries have been suspended since 9 Jun 2025 and 20 since 1 Jan 2026 (19 full, 19
+  partial today). Turkmenistan's student and exchange visas were suspended 9 Jun – 31 Dec
+  2025 and restored on 1 Jan 2026 (immigrant visas only since). Uganda, DR Congo and South
+  Sudan have a temporary pause of all visa services from 18 May 2026 (Ebola).
+  `nationalitySignals()` checks it first: a country whose student and exchange visas are
+  blocked is "Restricted", with Timing and timing-based advice hidden and no place in
+  Core/Growth/Emerging/Recovery or the Travel Timing list; Turkmenistan is "Watch" with a
+  "restored" note and timing hidden. Badges (red full, amber partial, purple pause, grey
+  restored) show on Markets (main table and movers), Country 360 and the Historical Trends
+  tables, with the history and sources in the tooltip. Consulates shows a note in "This
+  country" scope and a purple "paused" badge on the Kampala, Kinshasa and Juba rows and
+  detail; the Executive focus card and globe hover add one line. The Markets and Country
+  360 rankings CSVs have "Restriction" and "Suspended since" columns. Numbers and charts
+  are unchanged. Update `LAST_CHECKED` when the list is reviewed.
 - **Links are checked.** A `period=` year or range entirely outside the data (e.g.
   `period=2010`) or with a month outside 1–12 falls back to the last 12 months, and
   `country=` ignores capitalisation (`country=china` opens China).

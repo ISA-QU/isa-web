@@ -45,10 +45,12 @@ import {
   volatilityLabel,
 } from "../../../lib/dashboard/metrics";
 import { buildConsulateTable, previousPeriod } from "../../../lib/dashboard/consulates";
+import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { MonthRange, Visa } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import ComparePicker from "../ComparePicker";
+import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
 import { useOpenTab } from "../TabNavigation";
 import {
@@ -884,6 +886,7 @@ export default function Country360Tab() {
   return (
     <div className="space-y-6">
       <SectionTitle>Country 360 · {country}</SectionTitle>
+      <RestrictionBadges country={country} />
 
       {empty ? (
         <InfoCallout>
@@ -898,7 +901,6 @@ export default function Country360Tab() {
                 Nationality = the passport the visa was issued to, not where the person lives. Issued
                 in = the U.S. consulates in that country, which also serve other nationalities.
               </p>
-              <p>Command Center still ranks by where visas are issued until the Markets page.</p>
             </div>
           ) : (
             <InfoCallout>
@@ -1111,6 +1113,9 @@ export default function Country360Tab() {
                 ))}
               </ul>
             </Panel>
+            <div className="mt-2">
+              <RestrictionSmallPrint />
+            </div>
           </section>
 
           {/* 7. More details */}
@@ -1247,6 +1252,24 @@ export default function Country360Tab() {
                   metrics.leadMetrics.volatility,
                   metrics.dataConfidence,
                 ]]}
+              />
+              <DownloadCsvButton
+                label="All-country Rankings CSV"
+                filename={`qu_country360_rankings_${nationalityTable ? "nationality" : "issued_in"}_last_12_months.csv`}
+                headers={[
+                  "country", "f1_last_12_months", "j1_last_12_months", "f1_previous_12_months", "f1_change_pct",
+                  "top_post_issued_in", "peak_month_typical_year", "Restriction", "Suspended since",
+                ]}
+                rows={rankings.map((r) => [
+                  r.country,
+                  String(r.f1Last12),
+                  String(r.j1Last12),
+                  String(r.f1Prior),
+                  r.f1Change === null ? "" : r.f1Change.toFixed(1),
+                  r.topPost,
+                  r.peakName,
+                  ...restrictionCsv(r.country),
+                ])}
               />
               <DownloadCsvButton
                 label="Annual Country History CSV"

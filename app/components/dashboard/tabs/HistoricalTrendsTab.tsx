@@ -20,6 +20,7 @@ import { arrowPct } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
+import RestrictionBadges from "../RestrictionBadges";
 import { useDashboard } from "../DashboardContext";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import {
@@ -223,7 +224,17 @@ export default function HistoricalTrendsTab() {
   }, [data.annualCountry, historicalMetrics]);
 
   const rankingColumns: Column<RankingRow>[] = [
-    { key: "country", header: "Country", render: (r) => r.country },
+    {
+      key: "country",
+      header: "Country",
+      // Travel-ban / visa-pause badges: the history is unchanged, but recruiting may not be possible now.
+      render: (r) => (
+        <>
+          {r.country}
+          <RestrictionBadges country={r.country} compact />
+        </>
+      ),
+    },
     { key: "latest", header: `F1 ${rankYearLabel}`, numeric: true, render: (r) => int(r.latestF1) },
     {
       key: "vs2019",

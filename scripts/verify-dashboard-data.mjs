@@ -247,6 +247,7 @@ async function main() {
     metrics.marketCategory({
       currentVolume: 60000,
       latest12Total: 25000,
+      prior12Total: 30000,
       latest12Momentum: 5,
       growth10yr: 10,
       recoveryIndex: 100,
@@ -410,7 +411,7 @@ async function main() {
   );
 
   console.log("\n  Country 360  (8-2a: Country Intelligence merged in; old links; leader matches Consulates)");
-  const tabIds = ["command", "executive", "country-360", "consulates", "historical-trends"];
+  const tabIds = ["markets", "executive", "country-360", "consulates", "historical-trends"];
   check("old country-intelligence links open", url.canonicalTab("country-intelligence", tabIds), "country-360");
   check(
     "old consulate-intelligence / historical-consulates links open",
@@ -505,12 +506,12 @@ async function main() {
     return `${up.map((r) => r.country).join(", ")} | ${down.map((r) => r.country).join(", ")}`;
   };
   check(
-    "Command Center risers | fallers, F1 (identical to before A1)",
+    "issued-in fallback risers | fallers, F1 (unchanged since A1)",
     movers("F1"),
     "Belgium, Lithuania, Austria, Romania, Iceland, Slovenia, Luxembourg, Cyprus, Curacao | Myanmar, Armenia, Cote d'Ivoire, Nepal, Netherlands, Nigeria, India, Eswatini, Angola, Malawi",
   );
   check(
-    "Command Center risers | fallers, F1 + J1 (identical to before A1)",
+    "issued-in fallback risers | fallers, F1 + J1 (unchanged since A1)",
     movers("Both"),
     "Bosnia and Herzegovina, Kazakhstan, Belgium, Albania, Moldova, Kosovo, Hungary, Serbia, United Kingdom, Austria | Myanmar, Democratic Republic of the Congo, Turkmenistan, Armenia, Cote d'Ivoire, Nepal, Paraguay, Netherlands, India, Nigeria",
   );
@@ -619,17 +620,18 @@ async function main() {
       .update(rows.map((r) => `${r.country}=${r.marketCategory}/${r.recommendedAction}`).sort().join("\n"))
       .digest("hex")
       .slice(0, 12);
-  check("no F1 category or action changes vs A1 (every country)", fingerprint(frame), "7d7c2115780a");
+  // Re-recorded in 8-3: the shared category, flag and action rules were recalibrated.
+  check("issued-in fallback advice fingerprint, F1 (every country; 8-3 rules)", fingerprint(frame), "6dd572b4cf3c");
   check(
-    "no F1 + J1 category or action changes vs A1 (every country)",
+    "issued-in fallback advice fingerprint, F1 + J1 (every country; 8-3 rules)",
     fingerprint(metrics.buildCommandCenterFrame(operational, annualCountry, postsMonthly, "Both", latestComplete, coverage)),
-    "6cd7a8ce8352",
+    "9fbbae8ba007",
   );
-  check("Canada J1 action (accepted change)", rowFor("Canada", "J1").recommendedAction, "Begin Outreach Earlier");
+  check("Canada J1 action (seasonality now needs 3.0x)", rowFor("Canada", "J1").recommendedAction, "Maintain Strategic Priority");
   check(
-    "F1 flags: Volatile (A1 120, +24) / Highly Seasonal (A1 160, +1 -26)",
+    "issued-in fallback F1 flags: Volatile (CV 1.2+) / Highly Seasonal (3.0x+), 100+ in the last 12 months",
     `${frame.filter((r) => r.secondaryFlags.includes("Volatile")).length} / ${frame.filter((r) => r.secondaryFlags.includes("Highly Seasonal")).length}`,
-    "144 / 135",
+    "16 / 43",
   );
   check(
     "Command Center (issued in): Timing hidden with 0 local visas: Venezuela / Afghanistan (India keeps it)",
@@ -683,31 +685,40 @@ async function main() {
   };
   check("What to do by nationality: India (keeps timing)", advice("India"), "Declining / Review Structural Decline");
   check(
-    "What to do by nationality: Iran (fell 91.8%) / Venezuela / Afghanistan / Syria",
+    "What to do by nationality (travel ban checked first; since 9 Jun 2025 under 10949 or 1 Jan 2026 under 10998): Iran / Venezuela / Afghanistan / Syria",
     ["Iran", "Venezuela", "Afghanistan", "Syria"].map(advice).join(" | "),
-    "Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing | Declining / Review Structural Decline / no timing",
+    [
+      ...Array(3).fill("Restricted / Restricted — student and exchange visas suspended since 9 Jun 2025 / no timing"),
+      "Restricted / Restricted — student and exchange visas suspended since 1 Jan 2026 / no timing",
+    ].join(" | "),
   );
   check(
-    "reasons: Venezuela / Afghanistan / Syria / North Korea",
-    ["Venezuela", "Afghanistan", "Syria", "North Korea"].map((c) => natRow(c).primaryDriver).join(" | "),
-    "Fell from 734 to 87 visas to nationals of Venezuela (F1, last 12 months) | Fell from 370 to 38 visas to nationals of Afghanistan (F1, last 12 months) | Fell from 222 to 84 visas to nationals of Syria (F1, last 12 months) | Fewer than 100 visas to nationals of North Korea in the last 12 months",
+    "reasons: Turkmenistan (restored) / North Korea (small)",
+    ["Turkmenistan", "North Korea"].map((c) => natRow(c).primaryDriver).join(" | "),
+    "Student and exchange (F, M, J) visas were suspended 9 Jun – 31 Dec 2025 under Proclamation 10949 and restored on 1 Jan 2026; only immigrant visas are restricted since then (Proclamation 10998) | Fewer than 100 visas to nationals of North Korea in the last 12 months",
   );
-  check("What to do by nationality: UK / Nigeria", `${advice("United Kingdom")} | ${advice("Nigeria")}`, "Watch / Begin Outreach Earlier | Watch / Begin Outreach Earlier");
+  check("What to do by nationality: UK / Nigeria", `${advice("United Kingdom")} | ${advice("Nigeria")}`, "Watch / Begin Outreach Earlier | Restricted / Restricted — student and exchange visas suspended since 1 Jan 2026 / no timing");
   const natCountries = [...new Set(natInControl.map((r) => r.country))].sort();
   const ruleCounts = (visa) => {
     const rows = natCountries.map((c) => natRow(c, visa));
-    return `${rows.length} countries: a ${rows.filter((r) => r.rule === "fell").length} / b ${rows.filter((r) => r.rule === "small").length} / c ${rows.filter((r) => r.hideTiming).length}`;
+    const restricted = rows.filter((r) => r.rule === "restricted");
+    return `${rows.length} countries: restricted ${restricted.length} (ban ${restricted.filter((r) => r.restriction.type === "travel-ban").length} / pause ${restricted.filter((r) => r.restriction.type === "visa-pause").length}) / a ${rows.filter((r) => r.rule === "fell").length} / b ${rows.filter((r) => r.rule === "small").length} / c ${rows.filter((r) => r.hideTiming).length}`;
   };
-  check("small and collapsing markets, F1: (a) fell below 100 / (b) under 100 both periods / (c) timing hidden", ruleCounts("F1"), "203 countries: a 25 / b 57 / c 85");
-  check("small and collapsing markets, F1 + J1", ruleCounts("Both"), "203 countries: a 19 / b 46 / c 68");
+  check(
+    "restricted (first), then small and collapsing markets, F1: (a) fell below 100 / (b) under 100 both periods / (c) timing hidden",
+    ruleCounts("F1"),
+    "203 countries: restricted 40 (ban 38 / pause 2) / a 7 / b 46 / c 94",
+  );
+  check("restricted, then small and collapsing markets, F1 + J1", ruleCounts("Both"), "203 countries: restricted 40 (ban 38 / pause 2) / a 4 / b 36 / c 81");
   const natRowsF1 = natCountries.map((c) => natRow(c));
   check(
     "nationality advice: no consulate concentration / no Begin Outreach Earlier with timing hidden",
     `${natRowsF1.filter((r) => r.secondaryFlags.includes("High Concentration")).length} / ${natRowsF1.filter((r) => r.hideTiming && r.recommendedAction === "Begin Outreach Earlier").length}`,
     "0 / 0",
   );
-  check("nationality advice fingerprint, F1 (every country)", fingerprint(natRowsF1), "cd98bc116375");
-  check("nationality advice fingerprint, F1 + J1 (every country)", fingerprint(natCountries.map((c) => natRow(c, "Both"))), "518a0bf7050a");
+  // Re-recorded in 8-3 (fixes): "student and exchange" wording, per-country dates, Turkmenistan restored.
+  check("nationality advice fingerprint, F1 (every country)", fingerprint(natRowsF1), "9013461fccd7");
+  check("nationality advice fingerprint, F1 + J1 (every country)", fingerprint(natCountries.map((c) => natRow(c, "Both"))), "c332e7aeb6b1");
   const issuedL12 = new Map();
   for (const r of f1Posts) {
     if (r.monthIndex >= last12Range.start && r.monthIndex <= last12Range.end) issuedL12.set(r.country, (issuedL12.get(r.country) ?? 0) + r.issuances);
@@ -726,6 +737,123 @@ async function main() {
     "Montserrat and Western Sahara are not in the Country control or compare options",
     ["Montserrat", "Western Sahara"].filter((c) => controlCountries.has(c)).length,
     0,
+  );
+
+  console.log("\n  Markets  (8-3; expected values recounted with pandas from the raw workbooks, rules re-implemented there)");
+  const restrictions = await import(pathToFileURL(path.join(outDir, "restrictions.js")).href);
+  check("tab=command (old links) opens Markets", url.canonicalTab("command", tabIds), "markets");
+  const restrictedNames = [...new Set(restrictions.RESTRICTIONS.map((r) => r.country))];
+  check(
+    "restriction list: countries / not in the Country control / non-country entries",
+    `${restrictedNames.length} / ${restrictedNames.filter((c) => !controlCountries.has(c)).length} / ${restrictions.RESTRICTED_NON_COUNTRY.join(", ")}`,
+    "41 / 0 / Palestinian Authority Travel Document",
+  );
+  check(
+    "Turkmenistan: badge (immigrant visas only) but no advice override",
+    `${restrictions.restrictionsFor("Turkmenistan").map((r) => r.level).join(", ")} / ${restrictions.studentRestriction("Turkmenistan")}`,
+    "immigrant-only / null",
+  );
+  const banSince = (iso) =>
+    restrictions.RESTRICTIONS.filter((r) => r.type === "travel-ban" && r.studentVisasAffected && r.suspendedSince === iso).length;
+  check(
+    "travel ban: suspended since 9 Jun 2025 (10949) / since 1 Jan 2026 (10998) / Laos and Sierra Leone since",
+    `${banSince("2025-06-09")} / ${banSince("2026-01-01")} / ${["Laos", "Sierra Leone"].map((c) => restrictions.studentRestriction(c).suspendedSince).join(", ")}`,
+    "18 / 20 / 2025-06-09, 2025-06-09",
+  );
+  const allRestrictionText = restrictions.RESTRICTIONS.flatMap((r) => [
+    restrictions.restrictionBadgeText(r),
+    restrictions.restrictionTooltip(r),
+    restrictions.restrictedAction(r),
+  ]).concat(restrictions.RESTRICTION_SMALL_PRINT, natCountries.flatMap((c) => restrictions.consulateScopeNotes(c)));
+  check(
+    'restriction wording: "student visas" without "and exchange" (badges, tooltips, advice, notes, small print)',
+    allRestrictionText.filter((t) => /student visas/.test(t)).length,
+    0,
+  );
+  const postNames = new Set(postsMonthly.map((r) => r.post));
+  check(
+    "paused consulates: matched to post names / unmatched / badge text",
+    `${Object.keys(restrictions.PAUSED_POSTS).filter((p) => postNames.has(p)).join(", ")} / ${Object.keys(restrictions.PAUSED_POSTS).filter((p) => !postNames.has(p)).length} / ${restrictions.pausedPostText("Kampala")}`,
+    "Kampala, Kinshasa, Juba / 0 / All U.S. visa services paused since 18 May 2026 (Ebola)",
+  );
+  check(
+    "CSV Restriction / Suspended since: Iran | Nigeria | Venezuela | Uganda | South Sudan | Turkmenistan | India",
+    ["Iran", "Nigeria", "Venezuela", "Uganda", "South Sudan", "Turkmenistan", "India"].map((c) => restrictions.restrictionCsv(c).join(" / ")).join(" | "),
+    "Travel ban — full / 2025-06-09 | Travel ban — partial / 2026-01-01 | Travel ban — partial / 2025-06-09 | Temporary pause / 2026-05-18 | Travel ban — full / 2026-01-01 | Restored / 2025-06-09 to 2025-12-31 | none / ",
+  );
+  const catCounts = (visa) => {
+    const rows = natCountries.map((c) => natRow(c, visa));
+    return ["Core", "Growth", "Emerging", "Recovery", "Declining", "Watch", "Restricted"]
+      .map((cat) => `${cat} ${rows.filter((r) => r.marketCategory === cat).length}`)
+      .join(" / ");
+  };
+  check("Markets categories, F1", catCounts("F1"), "Core 8 / Growth 8 / Emerging 0 / Recovery 11 / Declining 24 / Watch 112 / Restricted 40");
+  check("Markets categories, F1 + J1", catCounts("Both"), "Core 25 / Growth 11 / Emerging 0 / Recovery 3 / Declining 18 / Watch 106 / Restricted 40");
+  check(
+    "Core markets, F1",
+    natRowsF1.filter((r) => r.marketCategory === "Core").map((r) => r.country).sort().join(", "),
+    "Brazil, France, Germany, Italy, Mexico, South Korea, Taiwan, Vietnam",
+  );
+  const flagTally = (name) => natRowsF1.filter((r) => r.secondaryFlags.includes(name)).length;
+  check(
+    "Markets flags, F1: Highly Seasonal / Volatile / Weak Recent Momentum / Recovery Leader / Strong Long-Term Growth / Travel Opportunity / Low Confidence",
+    ["Highly Seasonal", "Volatile", "Weak Recent Momentum", "Recovery Leader", "Strong Long-Term Growth", "Travel Opportunity", "Low Confidence"].map(flagTally).join(" / "),
+    "45 / 14 / 27 / 32 / 20 / 27 / 82",
+  );
+  check(
+    "no consulate concentration or every-row partial-year flag on Markets",
+    `${flagTally("High Concentration")} / ${flagTally("Partial-Year Caution")}`,
+    "0 / 0",
+  );
+  const marketRow = (c) => {
+    const r = natRow(c);
+    return `${r.marketCategory}: ${r.recommendedAction}${r.timing ? "" : " (no timing)"}`;
+  };
+  check(
+    "Markets rows: Nigeria / Zimbabwe (travel ban)",
+    ["Nigeria", "Zimbabwe"].map(marketRow).join(" | "),
+    Array(2).fill("Restricted: Restricted — student and exchange visas suspended since 1 Jan 2026 (no timing)").join(" | "),
+  );
+  check(
+    "Markets rows: Uganda / DR Congo (visa services paused) / South Sudan (both; the ban comes first)",
+    ["Uganda", "Democratic Republic of the Congo", "South Sudan"].map(marketRow).join(" | "),
+    "Restricted: Restricted (temporary) — U.S. visa services paused in Uganda since 18 May 2026 (no timing) | Restricted: Restricted (temporary) — U.S. visa services paused in Democratic Republic of the Congo since 18 May 2026 (no timing) | Restricted: Restricted — student and exchange visas suspended since 1 Jan 2026 (no timing)",
+  );
+  check(
+    "Markets rows: Turkmenistan / Ghana / India / China / Vietnam",
+    ["Turkmenistan", "Ghana", "India", "China", "Vietnam"].map(marketRow).join(" | "),
+    "Watch: Watch — student and exchange visas restored 1 Jan 2026 after a 2025 suspension; the recent fall reflects that suspension (no timing) | Growth: Monitor Current Slowdown | Declining: Review Structural Decline | Declining: Review Structural Decline | Core: Maintain Strategic Priority",
+  );
+  check(
+    "Travel Timing list: 500+ nationals, timing shown, not restricted (F1)",
+    natRowsF1.filter((r) => r.marketCategory !== "Restricted" && !r.hideTiming && r.peakMonth && r.latest12Total >= 500).length,
+    64,
+  );
+  const natMovers = (visa) => {
+    const pool = natCountries
+      .map((c) => natRow(c, visa))
+      .filter((r) => r.latest12Momentum !== null && r.latest12Total >= 100 && r.prior12Total >= 100);
+    const up = sorting.sortBy(pool.filter((r) => r.latest12Momentum > 0), [(r) => r.latest12Momentum]).slice(0, 10);
+    const down = sorting.sortBy(pool.filter((r) => r.latest12Momentum < 0), [(r) => r.latest12Momentum], true).slice(0, 10);
+    return `${up.map((r) => r.country).join(", ")} | ${down.map((r) => r.country).join(", ")}`;
+  };
+  check(
+    "Markets movers by nationality, F1",
+    natMovers("F1"),
+    "Latvia, Croatia, Czechia, Iceland, Belgium, Lithuania, Ukraine, Cyprus, Kosovo, Canada | Myanmar, Iran, Democratic Republic of the Congo, Nepal, Cote d'Ivoire, Kyrgyzstan, Angola, India, Ghana, Kuwait",
+  );
+  check(
+    "Markets movers by nationality, F1 + J1",
+    natMovers("Both"),
+    "Kazakhstan, Serbia, Moldova, Madagascar, Hungary, United Kingdom, Estonia, Kosovo, Eswatini, Bosnia and Herzegovina | Iran, Myanmar, Venezuela, Turkmenistan, Democratic Republic of the Congo, Nepal, Paraguay, Burkina Faso, Kyrgyzstan, India",
+  );
+  const india2024 = periods.resolvePeriod({ kind: "year", year: 2024 }, coverage);
+  const india2023 = consulates.previousPeriod(india2024, coverage);
+  const indiaNat = (range) => sum(natInControl.filter((r) => r.country === "India" && r.visa === "F1" && r.monthIndex >= range.start && r.monthIndex <= range.end));
+  check(
+    "Markets Period columns: India F1 nationals, 2024 vs 2023",
+    `${indiaNat(india2024)} vs ${indiaNat(india2023)}, ${measures.changeVsBase(indiaNat(india2024), indiaNat(india2023)).toFixed(1)}`,
+    "76695 vs 125632, -39.0",
   );
 
   await rm(outDir, { recursive: true, force: true });

@@ -69,3 +69,14 @@ export function profileForDisplay(
     caveat: shown.caveat,
   };
 }
+
+/**
+ * A % card with the shared minimum base (Country 360 and Historical Trends):
+ * "N/A" when the comparison doesn't apply or has no base row; "— (low volume)"
+ * when the base is under 100 (e.g. Tuvalu vs its FY1999 peak of 2); else "▼ 53.4%".
+ */
+export function pctCardText(change: number | null, base: number | null | undefined, applies = true): string {
+  if (!applies || base === null || base === undefined) return "N/A";
+  if (isLowVolume(base)) return LOW_VOLUME;
+  return arrowPct(change);
+}

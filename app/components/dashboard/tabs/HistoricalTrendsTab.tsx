@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
+import { pctCardText } from "../../../lib/dashboard/country360";
 import { int, metricNumber, metricPct } from "../../../lib/dashboard/format";
 import {
   buildAnnualPivot,
@@ -16,7 +17,6 @@ import {
   fyLabel,
   provisionalFiscalYears,
 } from "../../../lib/dashboard/periods";
-import { arrowPct } from "../../../lib/dashboard/rolling";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
@@ -97,6 +97,19 @@ export default function HistoricalTrendsTab() {
     shownYear !== null && shownYear > PRE_PANDEMIC_FY
       ? fyChange(countryF1, shownYear, PRE_PANDEMIC_FY)
       : null;
+  // The shared minimum base: "— (low volume)" when the earlier figure is under 100.
+  const tenYearBase =
+    shownYear !== null ? (pivot.find((r) => r.fiscalYear === shownYear - 10)?.F1 ?? null) : null;
+  const cards = {
+    vsPriorYear: pctCardText(vsPriorYear, shownYear !== null ? countryF1.get(shownYear - 1) : null),
+    vsPeak: pctCardText(vsPeak, metrics.peakF1),
+    vsPrePandemic: pctCardText(
+      vsPrePandemic,
+      countryF1.get(PRE_PANDEMIC_FY),
+      shownYear !== null && shownYear > PRE_PANDEMIC_FY,
+    ),
+    cagr10: pctCardText(metrics.cagr10yrPct, tenYearBase),
+  };
 
   const chart = useMemo(() => {
     // Provisional years get a hollow, larger marker and say so on hover.
@@ -352,7 +365,7 @@ export default function HistoricalTrendsTab() {
                   ? `F1 by nationality, FY${shownYear} vs FY${shownYear - 1}`
                   : "F1 by nationality, year on year"
               }
-              value={arrowPct(vsPriorYear)}
+              value={cards.vsPriorYear}
               title={
                 shownYear !== null
                   ? `FY${shownYear - 1}: ${metricNumber(countryF1.get(shownYear - 1) ?? null)}`
@@ -361,11 +374,11 @@ export default function HistoricalTrendsTab() {
             />
             <KpiCard
               label={`F1 by nationality vs peak (${metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"})`}
-              value={metrics.peakF1Year === shownYear && shownYear !== null ? "At peak" : arrowPct(vsPeak)}
+              value={metrics.peakF1Year === shownYear && shownYear !== null ? "At peak" : cards.vsPeak}
             />
             <KpiCard
               label={`F1 by nationality vs FY${PRE_PANDEMIC_FY} (pre-pandemic)`}
-              value={arrowPct(vsPrePandemic)}
+              value={cards.vsPrePandemic}
               title={`FY${PRE_PANDEMIC_FY}: ${metricNumber(countryF1.get(PRE_PANDEMIC_FY) ?? null)}`}
             />
             <KpiCard
@@ -374,7 +387,7 @@ export default function HistoricalTrendsTab() {
                   ? `10-Year CAGR by nationality, FY${shownYear - 10}–FY${shownYear}`
                   : "10-Year CAGR by nationality"
               }
-              value={arrowPct(metrics.cagr10yrPct)}
+              value={cards.cagr10}
             />
             <KpiCard accent="navy" label="Peak F1 by nationality" value={metricNumber(metrics.peakF1)} />
             <KpiCard

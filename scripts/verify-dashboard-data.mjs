@@ -1202,6 +1202,32 @@ async function main() {
     // Curacao: a consulate country with no annual rows. 82 = pandas 83 minus the Serbia and Montenegro row (split note).
     "41 / Curacao, Palau / 27 / 82 / Serbia and Montenegro",
   );
+  // Historical Trends country cards (the default FY range): the shared minimum base on every % card.
+  const histCards = (c) => {
+    const rows = annualCountry.filter((r) => r.country === c && r.fiscalYear >= fyFirst && r.fiscalYear <= latestComplete);
+    const pivot = metrics.buildAnnualPivot(rows);
+    const m = metrics.calculateHistoricalRangeMetrics(pivot);
+    const f1 = periods.annualByYear(annualCountry, c, "F1");
+    const y = pivot[pivot.length - 1].fiscalYear;
+    const peak = m.peakF1Year === y ? "At peak" : c360.pctCardText(metrics.pctGrowth(m.latestF1, m.peakF1), m.peakF1);
+    return [
+      m.latestF1,
+      c360.pctCardText(periods.fyChange(f1, y, y - 1), f1.get(y - 1)),
+      peak,
+      c360.pctCardText(y > 2019 ? periods.fyChange(f1, y, 2019) : null, f1.get(2019), y > 2019),
+      c360.pctCardText(m.cagr10yrPct, pivot.find((r) => r.fiscalYear === y - 10)?.F1 ?? null),
+    ].join(" / ");
+  };
+  check(
+    "Historical Trends cards, India (unchanged): FY2025 F1 / vs FY2024 / vs peak / vs FY2019 / 10-year CAGR",
+    histCards("India"),
+    "40077 / ▼ 53.4% / ▼ 69.3% / ▼ 8.3% / ▼ 6.1%",
+  );
+  check(
+    "Historical Trends cards, Tuvalu (bases: FY2024 1, peak 2, no FY2019 row, FY2015 1): FY2025 F1 / vs FY2024 / vs peak / vs FY2019 / 10-year CAGR",
+    histCards("Tuvalu"),
+    "0 / — (low volume) / — (low volume) / N/A / — (low volume)",
+  );
   const styled = ev.eventOverlay({ axis: { kind: "fiscalYear", start: 1997, end: 2025 }, dataEnd: coverage.end, country: "India", globalDetail: false });
   check(
     "event lines are purple (labelled / hover-only)",

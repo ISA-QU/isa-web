@@ -10,9 +10,11 @@ import {
   calculateHistoricalRangeMetrics,
   notNa,
   pctGrowth,
+  selectedVisaClasses,
 } from "../../../lib/dashboard/metrics";
 import {
   annualByYear,
+  annualChartPlan,
   fyChange,
   fyLabel,
   provisionalFiscalYears,
@@ -56,6 +58,8 @@ export default function HistoricalTrendsTab() {
     focusCountry: country,
     fyRange,
     showEvents,
+    visa,
+    visaLabel,
   } = useDashboard();
   // Complete fiscal years only; a year-to-date fiscal year would read as a collapse.
   const firstFy = data.meta.coverage.annual.first ?? 1997;
@@ -111,6 +115,8 @@ export default function HistoricalTrendsTab() {
     cagr10: pctCardText(metrics.cagr10yrPct, tenYearBase),
   };
 
+  // The chart follows the Visa control: F1, J1, or both lines on one axis.
+  const plan = useMemo(() => annualChartPlan(pivot, selectedVisaClasses(visa)), [pivot, visa]);
   const chart = useMemo(() => {
     // Provisional years get a hollow, larger marker and say so on hover.
     const isProvisional = pivot.map((r) => provisional.has(r.fiscalYear));
@@ -121,7 +127,7 @@ export default function HistoricalTrendsTab() {
       symbol: isProvisional.map((p) => (p ? "circle-open" : "circle")),
       line: { color, width: 2 },
     });
-    const traces: Trace[] = [
+    const allTraces: Trace[] = [
       {
         type: "scatter",
         mode: "lines+markers",
@@ -145,6 +151,14 @@ export default function HistoricalTrendsTab() {
         hovertemplate: "<b>FY%{x}</b>%{customdata}<br>J1: %{y:,.0f}<extra></extra>",
       },
     ];
+    const traces = allTraces.filter((t) => plan.lines.includes(t.name as "F1" | "J1"));
+    // The peak marker: F1's peak (as the cards) unless only J1 is drawn.
+    const peak =
+      plan.peakVisa === "F1"
+        ? metrics.peakF1Year !== null && metrics.peakF1 !== null
+          ? { year: metrics.peakF1Year, value: metrics.peakF1 }
+          : null
+        : plan.peak;
 
     const showPandemicBand = startYear <= 2020 && 2020 <= endYear;
     const shapes = showPandemicBand
@@ -169,8 +183,8 @@ export default function HistoricalTrendsTab() {
       // The "Peak F1" callout sits just above the peak point. Put this label in the
       // other half of the chart (bottom when the peak is in the top half, top
       // otherwise) so the two can never overlap.
-      const maxValue = Math.max(0, ...pivot.map((r) => Math.max(r.F1, r.J1)));
-      const peakInTopHalf = metrics.peakF1 !== null && maxValue > 0 && metrics.peakF1 / maxValue > 0.5;
+      const maxValue = plan.maxValue;
+      const peakInTopHalf = peak !== null && maxValue > 0 && peak.value / maxValue > 0.5;
       annotations.push({
         x: 2019.6,
         y: peakInTopHalf ? 0.02 : 0.98,
@@ -187,18 +201,18 @@ export default function HistoricalTrendsTab() {
       if (!provisional.has(row.fiscalYear)) continue;
       annotations.push({
         x: row.fiscalYear,
-        y: Math.max(row.F1, row.J1),
+        y: Math.max(...plan.lines.map((v) => row[v])),
         text: `FY${row.fiscalYear} provisional`,
         showarrow: false,
         yshift: 20,
         font: { color: "#CBD5E1", size: 11 },
       });
     }
-    if (metrics.peakF1Year !== null && metrics.peakF1 !== null) {
+    if (peak !== null) {
       annotations.push({
-        x: metrics.peakF1Year,
-        y: metrics.peakF1,
-        text: `Peak F1: FY${metrics.peakF1Year}`,
+        x: peak.year,
+        y: peak.value,
+        text: `Peak ${plan.peakVisa}: FY${peak.year}`,
         showarrow: true,
         arrowhead: 2,
         ax: 32,
@@ -213,17 +227,18 @@ export default function HistoricalTrendsTab() {
     const layout: ChartLayout = {
       height: 520,
       title: {
-        text: `Annual F1 and J1 Issuance Trends - ${country} (FY${startYear}-FY${endYear})`,
+        text: `${plan.lines.length === 2 ? "Annual F1 and J1 Issuance Trends" : `Annual ${plan.lines[0]} Issuance Trend`} - ${country} (FY${startYear}-FY${endYear})`,
       },
       xaxis: { title: { text: "Fiscal Year" }, dtick: 2 },
-      yaxis: { title: { text: "Issuances" } },
+      // Start at 0 in every view, so a single line's decline isn't exaggerated.
+      yaxis: { title: { text: "Issuances" }, rangemode: "tozero" },
       hovermode: "x unified",
       shapes,
       annotations,
     };
 
     return { data: traces, layout };
-  }, [pivot, country, startYear, endYear, metrics, provisional]);
+  }, [pivot, country, startYear, endYear, metrics, provisional, plan]);
 
   // Events (2a): global "major" events and the country's own, in the fiscal years shown.
   const dataEnd = data.meta.coverage.postsMonthly.end;
@@ -407,6 +422,12 @@ export default function HistoricalTrendsTab() {
             <EventsToggle />
           </div>
           <Chart data={eventChart.traces} layout={eventChart.layout} height={520} />
+          {plan.lines.length === 1 && (
+            <p className="mt-1 text-xs text-slate-400">
+              Showing {visaLabel} only — choose F1 + J1 in the Visa control to compare with{" "}
+              {plan.lines[0] === "F1" ? "J1" : "F1"}.
+            </p>
+          )}
           <EventsList overlay={events} />
 
           <DownloadCsvButton

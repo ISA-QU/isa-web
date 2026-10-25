@@ -263,3 +263,21 @@ export function yearListLabel(years: readonly number[]): string {
   }
   return parts.join(", ");
 }
+
+/**
+ * Historical Trends' country chart follows the Visa control: the lines it draws
+ * (F1, J1, or both on one axis), which line carries the peak marker (F1 unless
+ * only J1 is shown), that line's peak (ties: the earliest year), and the
+ * highest value drawn, for placing labels.
+ */
+export function annualChartPlan(
+  pivot: readonly { fiscalYear: number; F1: number; J1: number }[],
+  visas: readonly Visa[],
+): { lines: Visa[]; peakVisa: Visa; peak: { year: number; value: number } | null; maxValue: number } {
+  const lines = (["F1", "J1"] as const).filter((v) => visas.includes(v));
+  const peakVisa: Visa = lines.includes("F1") ? "F1" : "J1";
+  let peak: { year: number; value: number } | null = null;
+  for (const row of pivot) if (peak === null || row[peakVisa] > peak.value) peak = { year: row.fiscalYear, value: row[peakVisa] };
+  const maxValue = Math.max(0, ...pivot.flatMap((row) => lines.map((v) => row[v])));
+  return { lines, peakVisa, peak, maxValue };
+}

@@ -1228,6 +1228,22 @@ async function main() {
     histCards("Tuvalu"),
     "0 / — (low volume) / — (low volume) / N/A / — (low volume)",
   );
+  // Historical Trends country chart follows the Visa control (expected values from the raw annual workbook).
+  const chartPlan = (c, visas) => {
+    const pivot = metrics.buildAnnualPivot(annualCountry.filter((r) => r.country === c && r.fiscalYear >= fyFirst && r.fiscalYear <= latestComplete));
+    const p = periods.annualChartPlan(pivot, visas);
+    return `${p.lines.join("+")}: peak ${p.peakVisa} FY${p.peak.year} ${p.peak.value}, axis max ${p.maxValue}`;
+  };
+  check(
+    "Historical Trends chart, Russia: F1 / J1 / F1 + J1 (lines, peak marker, highest value drawn)",
+    [["F1"], ["J1"], ["F1", "J1"]].map((v) => chartPlan("Russia", v)).join(" | "),
+    "F1: peak F1 FY2013 6278, axis max 6278 | J1: peak J1 FY2008 31597, axis max 31597 | F1+J1: peak F1 FY2013 6278, axis max 31597",
+  );
+  check(
+    "Historical Trends chart, India F1 (same line and peak as before) / Moldova F1 vs F1 + J1",
+    `${chartPlan("India", ["F1"])} | ${chartPlan("Moldova", ["F1"])} | ${chartPlan("Moldova", ["F1", "J1"])}`,
+    "F1: peak F1 FY2023 130730, axis max 130730 | F1: peak F1 FY2008 296, axis max 296 | F1+J1: peak F1 FY2008 296, axis max 6099",
+  );
   const styled = ev.eventOverlay({ axis: { kind: "fiscalYear", start: 1997, end: 2025 }, dataEnd: coverage.end, country: "India", globalDetail: false });
   check(
     "event lines are purple (labelled / hover-only)",

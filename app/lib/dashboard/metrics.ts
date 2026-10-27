@@ -553,10 +553,10 @@ export const peakMonthLabel = (typical: TypicalYear): string =>
       : "N/A";
 
 /**
- * OLD: no live page uses this since Fix Pack A2; only the unused
- * HistoricalConsulatesTab.tsx does. Its peak month, seasonality and volatility
- * skip months with no rows; use typicalYear() and volatilityIn() in
- * measures.ts instead. Kept until the unused tab files are removed.
+ * OLD: no page uses this since Fix Pack A2 (the old Historical Consulates tab
+ * that used it has been removed); only a verify check still calls it. Its peak
+ * month, seasonality and volatility skip months with no rows; use typicalYear()
+ * and volatilityIn() in measures.ts instead.
  *
  * One post's or country's monthly consulate rows, summarised. The last-12-month
  * window and the recovery year come from `window` (the data's coverage), never

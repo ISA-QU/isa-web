@@ -555,7 +555,7 @@ The Consulates page, top to bottom:
 
 In Feature 8-2a, **Country Intelligence was merged into Country 360**, so each country has one
 page (layout only; every number is unchanged and still consulate-based). Old links with
-`tab=country-intelligence` open Country 360. `tabs/ConsulatesTab.tsx` is no longer used.
+`tab=country-intelligence` open Country 360. The old `tabs/ConsulatesTab.tsx` has been removed.
 
 Country 360, top to bottom:
 - **Primary KPIs** (each names its period; Recovery says "100 = 2019 level").

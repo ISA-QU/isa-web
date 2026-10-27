@@ -83,10 +83,10 @@ Sourced event markers on the existing charts ("may have affected", never "caused
 
 - [ ] Draft and approve the page blueprint.
 - [x] 8-1: merge Consulate Intelligence and Historical Consulates into one Consulates page.
-- [ ] Remove the two unused tab files (`ResearchCountryTab.tsx`, `HistoricalConsulatesTab.tsx`) once 8-1 is accepted.
-- [ ] With them, remove `postPeriodMetrics()` (marked old in A2; only `HistoricalConsulatesTab.tsx` still uses it) and the context's unused `focus` rollup and summary `peakMonth`/`topPost`.
+- [x] Remove the two unused tab files (`ResearchCountryTab.tsx`, `HistoricalConsulatesTab.tsx`) once 8-1 is accepted.
+- [ ] With them, remove `postPeriodMetrics()` (marked old in A2; the tab that used it is removed, only a verify check still calls it) and the context's unused `focus` rollup and summary `peakMonth`/`topPost`.
 - [x] 8-2a: merge Country Intelligence into Country 360 (layout only, numbers unchanged).
-- [ ] Remove the unused `ConsulatesTab.tsx` (Country Intelligence) once 8-2a is accepted.
+- [x] Remove the unused `ConsulatesTab.tsx` (Country Intelligence) once 8-2a is accepted.
 - [x] Fix Pack A1: shared number rules (data end, minimum base of 100, link checks, one "What to do"); see "Shared number rules" in docs/dashboard.md.
 - [x] Fix Pack A2: missing months count as 0 everywhere (totals, averages, volatility, seasonality, trend lines) and one typical-year peak-month calculation.
   - [x] When a country had 0 visas issued locally in the last 12 months, hide the "Timing" line in "What to do" (e.g. Venezuela's "March–May outreach before July peak"), since timing advice doesn't apply.
@@ -95,7 +95,7 @@ Sourced event markers on the existing charts ("may have affected", never "caused
 - [x] 8-3: Command Center rebuilt as Markets, by nationality (agrees with Country 360); 12-month thresholds replace the 26-month "Current Volume"; flags recalibrated; travel-ban and visa-pause restrictions (`restrictions.ts`).
 - [ ] Next for Markets: a "cyclical vs structural" label per declining country (shown beside Declining in the Action column).
 - [ ] Review `restrictions.ts` against the State Department pages regularly and update `LAST_CHECKED`; temporary pauses may lift without notice.
-- [ ] Remove the unused `CommandCenterTab.tsx` (replaced by `MarketsTab.tsx`) with the other unused tab files.
+- [x] Remove the unused `CommandCenterTab.tsx` (replaced by `MarketsTab.tsx`) with the other unused tab files.
 - [ ] Historical Trends measures each country from its own last fiscal-year row, so a country with no recent rows shows an old year as "latest" (North Korea FY2022, Marshall Islands and Nauru FY2024); use the latest complete fiscal year for every country.
 - [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
 - [ ] Carry over what works: Historical Consulates (best page), the Country 360 narrative, the Historical Trends 30-year chart, the Command Center action queue.

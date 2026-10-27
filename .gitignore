@@ -45,3 +45,7 @@ next-env.d.ts
 /dashboard/
 /dashboard-data/
 /public/dashboard-data/
+
+# python bytecode
+__pycache__/
+*.pyc

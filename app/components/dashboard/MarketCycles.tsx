@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ChartLayout, Trace } from "./Chart";
 
 import {
   DOWNTURN_SHARE,
+  COUNTRY_SPLITS,
+  INDEX_BASE_YEAR,
+  chinaNote,
   countryDownturnView,
+  countryVsWorld,
   MAJOR_MARKET_MIN,
   REBOUND_YEARS,
   findDownturns,
@@ -77,6 +81,62 @@ export default function MarketCycles() {
   );
   // Minimum base (100) and country splits: see countryDownturnView.
   const countryView = useMemo(() => countryDownturnView(focusCountry, countrySeries), [focusCountry, countrySeries]);
+
+  // 2b-1b: the selected country against the world (same visas), indexed to FY2019 = 100.
+  const [compareView, setCompareView] = useState<"index" | "share">("index");
+  const visaWordsAll = visas.length === 2 ? "F1 or J1" : visas[0];
+  const vsWorld = useMemo(
+    () =>
+      countrySeries.some((p) => p.value > 0) && !COUNTRY_SPLITS[focusCountry]
+        ? countryVsWorld(focusCountry, countrySeries, lines.world, { visaWords: visaWordsAll, latestProvisional: lastIsProvisional })
+        : null,
+    [focusCountry, countrySeries, lines.world, visaWordsAll, lastIsProvisional],
+  );
+  const chinaFacts = useMemo(() => chinaNote(lines.world, lines.excludingChina), [lines]);
+  const compareChart = useMemo(() => {
+    if (!vsWorld) return null;
+    const isProvisional = lines.world.map((p) => provisional.has(p.year));
+    const marker = (color: string) => ({
+      color,
+      size: isProvisional.map((p) => (p ? 11 : 6)),
+      symbol: isProvisional.map((p) => (p ? "circle-open" : "circle")),
+      line: { color, width: 2 },
+    });
+    const traceOf = (name: string, series: YearValue[], color: string, suffix: string, digits: number): Trace => ({
+      type: "scatter",
+      mode: "lines+markers",
+      name,
+      x: series.map((p) => p.year),
+      y: series.map((p) => p.value),
+      customdata: isProvisional.map((p) => (p ? " (provisional)" : "")),
+      line: { color, width: 3 },
+      marker: marker(color),
+      hovertemplate: `${name}: %{y:,.${digits}f}${suffix}%{customdata}<extra></extra>`,
+    });
+    const share = compareView === "share" && vsWorld.share !== null;
+    const traces: Trace[] = share
+      ? [traceOf(`${focusCountry}, share of world`, vsWorld.share!, WORLD_COLOR, "%", 2)]
+      : [
+          ...(vsWorld.countryIndex ? [traceOf(focusCountry, vsWorld.countryIndex, WORLD_COLOR, "", 0)] : []),
+          traceOf("World", vsWorld.worldIndex, "#E2E8F0", "", 0),
+        ];
+    const layout: ChartLayout = {
+      height: 380,
+      title: {
+        text: share
+          ? `${focusCountry}: share of world ${visaLabel} visas, FY${first}–FY${last}`
+          : `${focusCountry} and the world, ${visaLabel}, FY${INDEX_BASE_YEAR} = 100`,
+      },
+      xaxis: { title: { text: "Fiscal Year" }, dtick: 2 },
+      yaxis: { title: { text: share ? "% of world visas" : `Index (FY${INDEX_BASE_YEAR} = 100)` }, rangemode: "tozero", ...(share ? { ticksuffix: "%" } : {}) },
+      hovermode: "x unified",
+      legend: { orientation: "h", y: -0.2 },
+      shapes: share
+        ? []
+        : [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100, line: { dash: "dot", color: "#94A3B8", width: 1 } }],
+    };
+    return { traces, layout };
+  }, [vsWorld, compareView, lines.world, provisional, focusCountry, visaLabel, first, last]);
 
   const chart = useMemo(() => {
     const isProvisional = lines.world.map((p) => provisional.has(p.year));
@@ -248,6 +308,14 @@ export default function MarketCycles() {
         </Panel>
       </div>
 
+      {chinaFacts && (
+        <p className="text-xs text-slate-400">
+          World excluding mainland China: shown because mainland China alone was {chinaFacts.chinaSharePct.toFixed(1)}% of
+          all {visaLabel} visas in FY{chinaFacts.peakYear}; without it, the rest of the world was back to{" "}
+          {Math.round(chinaFacts.restPctOfPeak)}% of its FY{chinaFacts.peakYear} level by FY{chinaFacts.bestYear}.
+        </p>
+      )}
+
       {signalText && signal && (
         <div className="rounded-md border border-sky-300/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-slate-200">
           <span className="mr-2 text-[10px] font-extrabold uppercase tracking-wider text-sky-300">Latest signal</span>
@@ -279,6 +347,52 @@ export default function MarketCycles() {
             `FY${last} is provisional: summed from the monthly reports (the State Department notes monthly reports since FY2020 shouldn't simply be added up for annual totals); official annual figures will replace it. `}
           {partial && `FY${partial.fiscalYear} (${partial.monthsIncluded} months so far) is left off the chart.`}
         </p>
+      </div>
+
+      <div className="rounded-md border border-slate-400/15 bg-white/[0.02] p-3">
+        <h4 className="mb-2 text-sm font-bold text-white">
+          {focusCountry} compared with the world ({visaLabel})
+        </h4>
+        {vsWorld && compareChart ? (
+          <>
+            {vsWorld.share !== null && (
+              <div role="radiogroup" aria-label="Comparison view" className="mb-2 inline-flex rounded-md border border-slate-400/25 bg-[#07152E] p-0.5">
+                {(
+                  [
+                    ["index", `Index, FY${INDEX_BASE_YEAR} = 100`],
+                    ["share", "Share of world visas"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={compareView === value}
+                    onClick={() => setCompareView(value)}
+                    className={`rounded px-3 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#FFB81C] ${
+                      compareView === value ? "bg-[#FFB81C] text-[#0C2340]" : "text-slate-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Chart data={compareChart.traces} layout={compareChart.layout} height={380} />
+            {vsWorld.countryIndex === null && (
+              <p className="mt-1 text-xs text-slate-400">
+                {focusCountry}&apos;s line isn&apos;t drawn: its FY{INDEX_BASE_YEAR} base is under 100 (low volume).
+              </p>
+            )}
+            <p className="mt-2 text-sm leading-relaxed text-white">{vsWorld.sentence}</p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">
+            {COUNTRY_SPLITS[focusCountry]
+              ? `${focusCountry} split in ${COUNTRY_SPLITS[focusCountry].year}; compare ${COUNTRY_SPLITS[focusCountry].successors.join(" or ")} with the world instead.`
+              : `No ${visaWordsAll} visas for ${focusCountry} in the annual data.`}
+          </p>
+        )}
       </div>
 
       <div>

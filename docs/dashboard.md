@@ -418,6 +418,17 @@ has its own version:
   any later new high; FY2025 values and "not yet" are marked provisional. Event lines
   on every chart are now purple like the ◆ markers, with a "┆ events — hover ◆ for
   details" hint beside the Show events checkbox.
+- **Country vs world (2b-1b).** Inside Market cycles: the selected country and the World
+  for the selected visas, indexed to FY2019 = 100 (or the country's share of world visas),
+  y-axis from 0, no events. One generated sentence compares last year (latest complete FY vs
+  the year before) and the change since FY2019 with the world: "fell faster / fell less than
+  the market", "rose while the market fell", or "about in line with the market" within 2
+  percentage points (both halves); "still" only when the halves contrast; the number of
+  years comes from the data. Minimum base 100: a base year under 100 gives "— (low volume)"
+  for that comparison, and an FY2019 base under 100 also hides the index line and the share
+  view. A note under the world chart gives mainland China's share of world visas in the
+  world's peak year and how far the rest of the world came back (F1: 42.6% in FY2015; 97% by
+  FY2023), computed from the data for the selected visas.
 
 ## Choices the data forced
 

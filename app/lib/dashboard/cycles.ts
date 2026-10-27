@@ -279,3 +279,144 @@ export function countryDownturnView(country: string, series: readonly YearValue[
       .map((d) => ({ ...d, reboundLowVolume: d.trough < MIN_BASE })),
   };
 }
+
+/* ---- 2b-1b: the selected country compared with the world ---- */
+
+/** The pre-pandemic year both lines are indexed to. */
+export const INDEX_BASE_YEAR = 2019;
+/** Within this many percentage points of the world: "about in line with the market". */
+export const IN_LINE_POINTS = 2;
+
+const valueAt = (series: readonly YearValue[], year: number): number => series.find((p) => p.year === year)?.value ?? 0;
+const change = (now: number, before: number): number => ((now - before) / before) * 100;
+
+export interface CountryVsWorld {
+  latestYear: number;
+  /** Years from FY2019 to the latest year (6 today). */
+  years: number;
+  /** FY2019 under 100: no "since FY2019" comparison, index line or share view. */
+  baseLow: boolean;
+  /** The year before the latest under 100: no "last year" comparison. */
+  lastLow: boolean;
+  countryLast: number | null;
+  worldLast: number;
+  countrySince: number | null;
+  worldSince: number;
+  /** Indexed to FY2019 = 100; null when the FY2019 base is under 100. */
+  countryIndex: YearValue[] | null;
+  worldIndex: YearValue[];
+  /** % of world visas each year; null when the FY2019 base is under 100. */
+  share: YearValue[] | null;
+  sentence: string;
+}
+
+/** "fell 53.4%", "rose 12.0%", "was unchanged". */
+const moved = (pct: number) => (pct < 0 ? `fell ${Math.abs(pct).toFixed(1)}%` : pct > 0 ? `rose ${pct.toFixed(1)}%` : "was unchanged");
+/** "down 8.3%", "up 283.0%", "unchanged". */
+const level = (pct: number) => (pct < 0 ? `down ${Math.abs(pct).toFixed(1)}%` : pct > 0 ? `up ${pct.toFixed(1)}%` : "unchanged");
+
+/**
+ * The country against the world, both for the selected visas, over complete
+ * fiscal years: last year's change, the change since FY2019, the FY2019 index,
+ * the share of world visas, and one plain sentence. The shared minimum base
+ * (100) applies to FY2019 and to the year before the latest.
+ */
+export function countryVsWorld(
+  country: string,
+  countrySeries: readonly YearValue[],
+  world: readonly YearValue[],
+  opts: { visaWords: string; latestProvisional: boolean },
+): CountryVsWorld {
+  const latestYear = world[world.length - 1].year;
+  const prevYear = latestYear - 1;
+  const years = latestYear - INDEX_BASE_YEAR;
+  const c = (y: number) => valueAt(countrySeries, y);
+  const w = (y: number) => valueAt(world, y);
+  const baseLow = c(INDEX_BASE_YEAR) < MIN_BASE;
+  const lastLow = c(prevYear) < MIN_BASE;
+  const countryLast = lastLow ? null : change(c(latestYear), c(prevYear));
+  const countrySince = baseLow ? null : change(c(latestYear), c(INDEX_BASE_YEAR));
+  const worldLast = change(w(latestYear), w(prevYear));
+  const worldSince = change(w(latestYear), w(INDEX_BASE_YEAR));
+  const indexOf = (series: readonly YearValue[], base: number) => series.map((p) => ({ year: p.year, value: (p.value / base) * 100 }));
+
+  // Last year: faster / less / in line, and whether it was worse or better than the world.
+  let first: string;
+  let firstTone: "worse" | "better" | "same" | null = null;
+  if (countryLast === null) {
+    first = `Last year: — (low volume) (${country}'s FY${prevYear} base is under ${MIN_BASE}).`;
+  } else {
+    const gap = countryLast - worldLast;
+    firstTone = Math.abs(gap) <= IN_LINE_POINTS ? "same" : gap < 0 ? "worse" : "better";
+    const phrase =
+      firstTone === "same"
+        ? "about in line with the market"
+        : countryLast < 0 && worldLast < 0
+          ? `${country} fell ${gap < 0 ? "faster" : "less"} than the market`
+          : countryLast >= 0 && worldLast < 0
+            ? `${country} rose while the market fell`
+            : countryLast < 0
+              ? `${country} fell while the market grew`
+              : `${country} grew ${gap > 0 ? "faster" : "slower"} than the market`;
+    first = `Last year ${country} ${moved(countryLast)} (FY${latestYear} vs FY${prevYear}${opts.latestProvisional ? ", provisional" : ""}) while the world ${moved(worldLast)} — ${phrase}.`;
+  }
+
+  // Since FY2019: ahead / behind / in line; "still" when it contrasts with last year.
+  let second: string;
+  if (countrySince === null) {
+    second = `Since FY${INDEX_BASE_YEAR}: — (low volume) (${country}'s FY${INDEX_BASE_YEAR} base is under ${MIN_BASE}).`;
+  } else {
+    const gap = countrySince - worldSince;
+    const tone = Math.abs(gap) <= IN_LINE_POINTS ? "same" : gap > 0 ? "better" : "worse";
+    const still = (tone === "better" && firstTone === "worse") || (tone === "worse" && firstTone === "better") ? "still " : "";
+    const verdict = tone === "same" ? "about in line with the market" : `${still}${tone === "better" ? "ahead of" : "behind"} the market`;
+    const versus =
+      Math.sign(countrySince) === Math.sign(worldSince)
+        ? `${level(countrySince)} vs the world's ${Math.abs(worldSince).toFixed(1)}%`
+        : `${level(countrySince)} while the world is ${level(worldSince)}`;
+    second = `Since FY${INDEX_BASE_YEAR}, ${country} is ${versus} — ${verdict} over ${years} years.`;
+  }
+
+  const sentence =
+    countryLast === null && countrySince === null
+      ? `Too few ${opts.visaWords} visas to compare ${country} with the world (FY${INDEX_BASE_YEAR}: ${c(INDEX_BASE_YEAR).toLocaleString("en-US")}, FY${prevYear}: ${c(prevYear).toLocaleString("en-US")} — both under ${MIN_BASE}).`
+      : `${first} ${second}`;
+
+  return {
+    latestYear,
+    years,
+    baseLow,
+    lastLow,
+    countryLast,
+    worldLast,
+    countrySince,
+    worldSince,
+    countryIndex: baseLow ? null : indexOf(countrySeries, c(INDEX_BASE_YEAR)),
+    worldIndex: indexOf(world, w(INDEX_BASE_YEAR)),
+    share: baseLow ? null : countrySeries.map((p) => ({ year: p.year, value: w(p.year) > 0 ? (p.value / w(p.year)) * 100 : 0 })),
+    sentence,
+  };
+}
+
+/**
+ * The "World excluding mainland China" note, from the data: mainland China's
+ * share of world visas in the world's peak year, and the best later year of the
+ * rest of the world as a % of its own level in that peak year.
+ */
+export function chinaNote(
+  world: readonly YearValue[],
+  excludingChina: readonly YearValue[],
+): { peakYear: number; chinaSharePct: number; bestYear: number; restPctOfPeak: number } | null {
+  if (world.length === 0) return null;
+  const peak = world.reduce((a, b) => (b.value > a.value ? b : a));
+  const restAtPeak = valueAt(excludingChina, peak.year);
+  const later = excludingChina.filter((p) => p.year > peak.year);
+  if (peak.value <= 0 || restAtPeak <= 0 || later.length === 0) return null;
+  const best = later.reduce((a, b) => (b.value > a.value ? b : a));
+  return {
+    peakYear: peak.year,
+    chinaSharePct: ((peak.value - restAtPeak) / peak.value) * 100,
+    bestYear: best.year,
+    restPctOfPeak: (best.value / restAtPeak) * 100,
+  };
+}

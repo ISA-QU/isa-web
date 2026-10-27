@@ -1244,6 +1244,59 @@ async function main() {
     `${chartPlan("India", ["F1"])} | ${chartPlan("Moldova", ["F1"])} | ${chartPlan("Moldova", ["F1", "J1"])}`,
     "F1: peak F1 FY2023 130730, axis max 130730 | F1: peak F1 FY2008 296, axis max 296 | F1+J1: peak F1 FY2008 296, axis max 6099",
   );
+  // 2b-1b: the selected country compared with the world (expected values recounted with pandas).
+  const countryF1 = (c, visas = ["F1"]) => cy.fiscalYearSeries(annualCountry.filter((r) => r.country === c), visas, fyFirst, latestComplete);
+  const vs = (c, visas = ["F1"]) =>
+    cy.countryVsWorld(c, countryF1(c, visas), lines(visas).world, { visaWords: visas.length === 2 ? "F1 or J1" : visas[0], latestProvisional: true });
+  const r1 = (n) => Math.round(n);
+  const pct1 = (n) => (n === null ? "low volume" : n.toFixed(1));
+  const indiaVs = vs("India");
+  const shareAt = (v, y) => v.share.find((p) => p.year === y).value.toFixed(1);
+  check(
+    "India vs world, F1: index FY2015 / 2023 / 2024 / 2025 | world index | India share FY1997 / 2015 / 2019 / 2023 / 2024 / 2025",
+    `${[2015, 2023, 2024, 2025].map((y) => r1(indiaVs.countryIndex.find((p) => p.year === y).value)).join(" / ")} | ${[2015, 2023, 2024, 2025].map((y) => r1(indiaVs.worldIndex.find((p) => p.year === y).value)).join(" / ")} | ${[1997, 2015, 2019, 2023, 2024, 2025].map((y) => shareAt(indiaVs, y)).join(" / ")}`,
+    "171 / 299 / 197 / 92 | 177 / 122 / 110 / 79 | 4.0 / 11.6 / 12.0 / 29.4 / 21.5 / 13.9",
+  );
+  check("India vs world, F1: sentence", indiaVs.sentence, "Last year India fell 53.4% (FY2025 vs FY2024, provisional) while the world fell 28.2% — India fell faster than the market. Since FY2019, India is down 8.3% vs the world's 21.0% — still ahead of the market over 6 years.");
+  check(
+    "vs world, F1 (last year / since FY2019 / FY2025 share): Nepal; Vietnam; Ghana",
+    ["Nepal", "Vietnam", "Ghana"].map((c) => { const v = vs(c); return `${pct1(v.countryLast)} / ${pct1(v.countrySince)} / ${v.share.at(-1).value.toFixed(2)}`; }).join("; "),
+    "-51.8 / 283.0 / 2.21; -14.3 / -4.7 / 5.50; -48.2 / 78.0 / 0.94",
+  );
+  check(
+    "vs world, low bases: Malta (both) / Mali (FY2024 only) / Benin (FY2019 only): last year, since FY2019, index line drawn",
+    ["Malta", "Mali", "Benin"].map((c) => { const v = vs(c); return `${pct1(v.countryLast)}, ${pct1(v.countrySince)}, ${v.countryIndex !== null}`; }).join(" / "),
+    "low volume, low volume, false / low volume, -14.4, true / -63.7, low volume, false",
+  );
+  const inLine = (pick) => countryNames.filter((c) => { const s = countryF1(c); if (!s.some((p) => p.value > 0) || cy.COUNTRY_SPLITS[c]) return false; const v = vs(c); return pick(v); });
+  const lastIn = inLine((v) => v.countryLast !== null && Math.abs(v.countryLast - v.worldLast) <= cy.IN_LINE_POINTS);
+  const sinceIn = inLine((v) => v.countrySince !== null && Math.abs(v.countrySince - v.worldSince) <= cy.IN_LINE_POINTS);
+  check(
+    "\"about in line with the market\" (within 2 points), F1: last year | since FY2019",
+    `${lastIn.length} ${lastIn.join(", ")} | ${sinceIn.length} ${sinceIn.join(", ")}`,
+    "8 Angola, Chile, China, Cote d'Ivoire, Qatar, Russia, Rwanda, Senegal | 3 Bulgaria, Croatia, Democratic Republic of the Congo",
+  );
+  const lastCats = {};
+  for (const c of countryNames) {
+    if (cy.COUNTRY_SPLITS[c] || !countryF1(c).some((p) => p.value > 0)) continue;
+    const v = vs(c);
+    if (v.countryLast === null) continue;
+    const k = Math.abs(v.countryLast - v.worldLast) <= 2 ? "in line" : v.countryLast >= 0 ? "rose" : v.countryLast < v.worldLast ? "faster" : "less";
+    lastCats[k] = (lastCats[k] ?? 0) + 1;
+  }
+  check(
+    "last year vs world, F1, countries with FY2024 100+: fell faster / fell less / rose / in line",
+    `${lastCats.faster} / ${lastCats.less} / ${lastCats.rose} / ${lastCats["in line"]}`,
+    "38 / 75 / 22 / 8",
+  );
+  const facts = (visas) => { const f = cy.chinaNote(lines(visas).world, lines(visas).excludingChina); return `FY${f.peakYear} ${f.chinaSharePct.toFixed(1)}%, rest of world ${f.restPctOfPeak.toFixed(1)}% by FY${f.bestYear}`; };
+  check("China note: F1 | F1 + J1", `${facts(["F1"])} | ${facts(["F1", "J1"])}`, "FY2015 42.6%, rest of world 97.2% by FY2023 | FY2015 32.1%, rest of world 100.3% by FY2023");
+  const indiaBoth = vs("India", ["F1", "J1"]);
+  check(
+    "India vs world, F1 + J1 (follows the Visa control): last year / world / since FY2019 / world",
+    `${pct1(indiaBoth.countryLast)} / ${pct1(indiaBoth.worldLast)} / ${pct1(indiaBoth.countrySince)} / ${pct1(indiaBoth.worldSince)}`,
+    "-50.4 / -19.8 / -9.1 / -19.1",
+  );
   const styled = ev.eventOverlay({ axis: { kind: "fiscalYear", start: 1997, end: 2025 }, dataEnd: coverage.end, country: "India", globalDetail: false });
   check(
     "event lines are purple (labelled / hover-only)",

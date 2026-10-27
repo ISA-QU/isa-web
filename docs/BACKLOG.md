@@ -1,0 +1,157 @@
+# Dashboard backlog
+
+Remaining work on the Recruitment Intelligence dashboard, grouped by planned feature.
+Work happens on `dev/dashboard-improvements`, one feature at a time; see
+[dashboard.md](dashboard.md) for how the dashboard and its data work.
+
+Done so far: 7 post renames (Feature 0), broken tabs removed (1), honest header (2),
+12-month comparisons and fixed tab labels (3), periods/provisional FY2025/seasonality (4),
+one shared country and F1 defaults (5a).
+
+## 5b · Shared control bar
+
+- [x] One control bar shared by every tab: Country, Visa (F1 / J1 / F1 + J1, default F1) and Period.
+- [x] Keep the bar's state, and the active tab, in the URL.
+- [x] Period presets for monthly consulate data: last 12 months vs previous 12 (default), last 24 months, a calendar year (partial years labelled), custom months anywhere in Mar 2017 – Feb 2026.
+- [x] Fiscal-year range for nationality data: FY1997 – latest complete, FY2025 marked provisional.
+- [x] Replace the sidebar Years filter with the Period control, built from the full monthly data.
+- [x] Replace Country 360's "Recent Timeframe" and Historical Consulates' "Quick Range" with the shared Period (with a "Pre-pandemic 2019–2022" preset).
+- [x] Replace the per-tab Visa controls with the shared Visa.
+- [x] Move Compare Countries into Country Intelligence and Top-N into Consulate Intelligence; remove the sidebar.
+- [ ] Decide whether to keep the fiscal-year range in the web address too (currently country, visa, period and tab only).
+- [ ] State the period of every remaining number (from the checkpoint audit):
+  - [x] Executive: treemap and monthly trend name the Period.
+  - [ ] Executive: the focus card's Top Consulate and Peak Visa Month cover Jan 2024 – Feb 2026 without saying so on the card.
+  - [x] Country Intelligence: Top F1 Consulates chart and monthly trend name the Period.
+  - [x] Consulate Intelligence: Top-N chart, all-consulates table and its CSV name the Period.
+  - [x] Country 360: Operational F1/J1 now follow the Period; Primary KPI cards each name their period; the leading-consulate line names the full history.
+  - [ ] Country 360: Secondary KPI details (5-Year F1 Growth, Latest 12-Month F1/J1, shares, volatility), risk/concentration table, average/median-month chart, Key Risk and driver text, top-posts "Issuances" column.
+  - [ ] Historical Consulates: Insights bullets and the Market Momentum / Recovery Status cards now use the full history, but don't name the months or recovery year.
+- [x] Remove the remaining "Legacy" wording.
+
+## 5c · Quick fixes from the full audit
+
+- [x] Seasonality charts use a typical year (complete years except 2020–2021), tagged, with the Period as a gold line on Country Intelligence's chart; heatmap rows are the top 20 by typical-year volume.
+- [x] Country 360: Period values replace the "Operational" figures; FY2025 marked provisional on its trajectory chart; recommended action shown once.
+- [x] Globe follows the Period; Rotate button label fixed.
+- [x] Historical Consulates: only the selected visa's cards; summary names the visa and period; annual view defaults to calendar-year totals.
+- [x] One methodology panel ("How this is calculated") on every tab and a one-line footer; repeated "ignores the Period" captions removed.
+- [x] Executive monthly trend as one continuous line.
+- [x] Charts: axis labels no longer clipped; straight lines; month names on seasonality axes; readable date axis on Historical Consulates; Executive annual legend shows solid colors.
+
+## 6 · Command Center
+
+**Command Center will be rebuilt as the "Markets" page in the 5-page redesign (Feature 8), absorbing this feature.**
+
+- [x] Country 360 recommendation still uses the Jan 2024 – Feb 2026 operational inputs (shared with Command Center); rebuild with the Markets page. (Done in 8-2b/8-3.)
+- [ ] Flags fire for almost every market (e.g. 161 high-concentration, 160 highly seasonal); recalibrate the thresholds so flags discriminate.
+- [ ] Review the market categories (Core, Growth, Emerging, Recovery, Watch, Declining) and the recommendation rules.
+- [ ] Make the action queue's sort key visible, and rename the "Latest Comparable Period" view (it sorts by last-12-month volume).
+- [ ] Label "Current Volume" and the "Minimum Current Volume" slider with their period (Jan 2024 – Feb 2026), or move them to the shared Period.
+- [ ] Name the years in "Long-Term Growth" / "10-Year Growth" (FY2015 → FY2025), "Recovery Status" (2025 vs 2019), and the months in "Latest 12-Month" columns.
+- [ ] Add years to the generated Evidence, Primary Driver and Counter-Signal text (`evidenceText`, `recommendationProfile` in `metrics.ts`).
+- [ ] State the period (Mar 2017 – Feb 2026) on the Risk and Concentration Alerts metrics.
+- [ ] Keep the action-queue idea; it is one of the parts worth keeping from V1.
+
+## 4b · Events timeline
+
+Sourced event markers on the existing charts ("may have affected", never "caused").
+
+- [x] 2a: `lib/dashboard/events.ts` (25 events: 14 global, 9 country, plus the Ebola pause and Turkmenistan restored built from `restrictions.ts`) drawn on Historical Trends, Country 360 (monthly trend, long-term trajectory, recovery) and Consulates (monthly, This country), with a shared "Show events" checkbox (`events=off` in the link) and a collapsed "Events on this chart" list.
+- [x] 2b-1: Market cycles at the top of Historical Trends (`lib/dashboard/cycles.ts`, `MarketCycles.tsx`): world and world-excluding-mainland-China lines FY1997–FY2025 with downturn bands, the recovery summary (always F1), the latest signal, and world and country downturn tables; event lines purple with a "hover ◆" hint.
+- [ ] 2b-2: market history labels (Structural / Gradual / Cyclical / Too early to tell, always F1) on Markets, Country 360 "What to do" and Historical Trends. Counts with the dashboard's merged names: 43 Cyclical, 39 Structural, 19 Gradual, 102 Too early (203 countries with F1); the raw annual workbook gives 104 Too early (205), because it lists both Congos under old and new names.
+- [ ] Markets' "10-year trend" column still shows a % from tiny FY bases (e.g. North Korea ▼ 100.0% from 1); apply the shared minimum-base rule there as fix pack 9 did on Country 360 (display only).
+- [ ] Replace the Wikipedia sources (G1 9/11, G3 financial crisis, G5 Executive Order 13769, C9 Embassy Kyiv) with official or academic sources before launch.
+- [ ] Review `events.ts` with `restrictions.ts` and update `EVENTS_LAST_CHECKED`.
+- [ ] Consulates' calendar-year trend modes don't show events yet (monthly mode only).
+- [ ] Label spacing assumes a desktop-width chart; on phones some labels may crowd (hover still works). Check with Feature 9 mobile.
+- [ ] Polish: on yearly charts the existing "2020 disruption" label sits close to the 2020 event marker; nudge one of them.
+- [ ] Possible event for Sudan: U.S. Embassy Khartoum suspended operations in April 2023 (would add a `consulate` note on Consulates, like C8 Kabul). Needs a verified source before adding.
+
+## 7 · Monthly nationality data
+
+- [x] Add monthly nationality rows to the snapshot (`nationalityMonthly`, local build and verify checks). Deploying the Lambda is in the handoff notes in dashboard.md.
+- [ ] Montserrat and Western Sahara appear in the monthly nationality data but not in the annual table; handle them when a page first uses the table.
+- [ ] Offer nationality-based 12-month figures alongside the consulate-based ones; the audit benchmark is F1 last 12 months 252,159 vs prior 385,674 by nationality (the consulate basis gives 252,282 vs 386,264).
+- [ ] Coverage states instead of zero-fill: reported / reported-zero / absent / stopped (e.g. Burma, Iran, Afghanistan, Venezuela after Jun 2025). Missing rows are not zero.
+- [ ] Compare FY2026 only on equivalent months (Oct–Feb: F1 −44.7%, J1 −10.8% vs FY2025).
+- [ ] Never mix nationality (who received visas) and consulate (where they were issued) in one metric; label each.
+
+## 8 · Five-page structure
+
+**A page blueprint will be approved before building the 5 pages.**
+
+- [ ] Draft and approve the page blueprint.
+- [x] 8-1: merge Consulate Intelligence and Historical Consulates into one Consulates page.
+- [x] Remove the two unused tab files (`ResearchCountryTab.tsx`, `HistoricalConsulatesTab.tsx`) once 8-1 is accepted.
+- [ ] With them, remove `postPeriodMetrics()` (marked old in A2; the tab that used it is removed, only a verify check still calls it) and the context's unused `focus` rollup and summary `peakMonth`/`topPost`.
+- [x] 8-2a: merge Country Intelligence into Country 360 (layout only, numbers unchanged).
+- [x] Remove the unused `ConsulatesTab.tsx` (Country Intelligence) once 8-2a is accepted.
+- [x] Fix Pack A1: shared number rules (data end, minimum base of 100, link checks, one "What to do"); see "Shared number rules" in docs/dashboard.md.
+- [x] Fix Pack A2: missing months count as 0 everywhere (totals, averages, volatility, seasonality, trend lines) and one typical-year peak-month calculation.
+  - [x] When a country had 0 visas issued locally in the last 12 months, hide the "Timing" line in "What to do" (e.g. Venezuela's "March–May outreach before July peak"), since timing advice doesn't apply.
+- [x] 8-2b: switch Country 360 to the monthly nationality data ("Issued in [country]" alongside; small and collapsing market rules in `nationalitySignals()`).
+- [ ] Montserrat and Western Sahara have nationality rows but no consulate or annual rows, so they're left out of the Country control and Country 360's compare options; decide whether to add them.
+- [x] 8-3: Command Center rebuilt as Markets, by nationality (agrees with Country 360); 12-month thresholds replace the 26-month "Current Volume"; flags recalibrated; travel-ban and visa-pause restrictions (`restrictions.ts`).
+- [ ] Next for Markets: a "cyclical vs structural" label per declining country (shown beside Declining in the Action column).
+- [ ] Review `restrictions.ts` against the State Department pages regularly and update `LAST_CHECKED`; temporary pauses may lift without notice.
+- [x] Remove the unused `CommandCenterTab.tsx` (replaced by `MarketsTab.tsx`) with the other unused tab files.
+- [ ] Historical Trends measures each country from its own last fiscal-year row, so a country with no recent rows shows an old year as "latest" (North Korea FY2022, Marshall Islands and Nauru FY2024); use the latest complete fiscal year for every country.
+- [ ] Restructure into five experiences: Overview, Markets, Country 360, Consulates, Explore & Methodology.
+- [ ] Carry over what works: Historical Consulates (best page), the Country 360 narrative, the Historical Trends 30-year chart, the Command Center action queue.
+- [ ] Use the shared control bar (5b) on every page.
+
+## 9 · Polish
+
+- [ ] Mobile (~640px wide): on Historical Trends and Country 360's long-term chart the fiscal-year labels overlap and the axis range stretches; fix the tick spacing and range at narrow widths.
+
+- [ ] % rounding differs between pages: Uganda's 10-year trend shows ▲ 75.1% on Markets but +75.0% on Historical Trends (exact 75.05%). Use one shared percent formatter everywhere.
+- [ ] Complete the region mapping for all 205 countries so region presets include every country.
+- [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
+- [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).
+- [ ] Globe improvements: it now follows the Period and the Rotate label is fixed (5c); review what else it should show.
+- [ ] Card tooltips are native browser tooltips (slow to appear, not keyboard or touch accessible); consider an accessible tooltip.
+- [ ] Remove code no longer shown: `growthLabel` / `summaryGrowthLabel`, `yoyGrowth` displays, `opportunityScore` / `marketTier`, the unused `includeOpportunity` methodology note, and `COUNTRY_COORDS` / the summary's `lat`/`lon` (kept so far because they feed shared calculations).
+- [ ] If the Years/Period range grows, Country Intelligence's monthly trend (one line per year) will get crowded; redesign it.
+
+## Data follow-ups
+
+- [ ] Deploy `POST_ALIASES` (the 7 post renames) and the `"Korea, North": "North Korea"` nationality alias (8-2b) to the `rebuild-dashboard` Lambda. Source only so far; deploying needs approval and AWS access. Until then the live snapshot still says "Korea, North".
+- [ ] Pending label decisions: St Lucia, Palau, Micronesia, Congo, Kuwait posts (Kuwait → Kuwait City), Astana / Nur-Sultan.
+- [ ] Keep Serbia & Montenegro and Sudan as splits; never merge them.
+- [ ] Keep special categories (including Palestinian Authority Travel Document) out of country rankings.
+- [ ] Replace FY2025's provisional monthly-summed figures with the official annual table when available; known bridge-year exceptions: FY2019 F1 −1.47%, FY2020 J1 +1.07%.
+- [ ] Avoid FY2020 as a comparison base; note that FY2015 (the 10-year base) is near the all-time peak.
+- [ ] Curacao has a consulate but no nationality rows (its nationals are counted under the Netherlands); decide how to present it.
+
+## Later projects
+
+After launch.
+
+- [ ] **News panel:** per-country and US visa-policy news from reliable sources (State Department, embassies, major outlets), clearly labelled as context.
+  - [ ] Needs a small secure backend to hold the news-service key.
+- [ ] **Slate integration:** aggregated Quinnipiac counts (applications, admits, deposits by country and term) compared with market visa trends.
+  - [ ] Needs university IT and data-governance approval; start that conversation early.
+  - [ ] Aggregated data only, behind sign-in.
+
+## Future: automated monthly data updates
+
+After launch; for Koushik (AWS).
+
+- [ ] Weekly check of the State Department's monthly nonimmigrant visa (NIV) statistics page for a new month.
+- [ ] When one appears, download both PDFs (by Nationality and by Post) and run the existing parser.
+- [ ] Quality checks before anything is published:
+  - [ ] every page of both PDFs parsed;
+  - [ ] nationality totals vs post totals within ±5 for each month and visa class;
+  - [ ] no abnormal month-to-month jumps;
+  - [ ] flag for human review any nationality or consulate name not seen before, or containing a comma.
+- [ ] Rebuild the snapshot and run `npm run dashboard:verify`.
+- [ ] Email a person for one-click approval; publish only if approved and every check passes, otherwise keep the current data.
+- [ ] Once a year, replace the provisional fiscal-year figures with the official Report of the Visa Office.
+- [ ] Fallback: a manual upload page.
+
+## Later ideas
+
+- [ ] Monthly "what changed" email digest.
+- [ ] One-click country briefing PDF.
+- [ ] Upload new monthly data from the dashboard.

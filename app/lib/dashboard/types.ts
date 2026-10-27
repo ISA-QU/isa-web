@@ -21,6 +21,23 @@ export interface AnnualCountryRow {
   issuances: number;
 }
 
+/**
+ * Monthly issuance by nationality: who received the visas (not where they were
+ * issued). Special reporting categories such as "Unknown" or "Palestinian
+ * Authority Travel Document" have `isCountry: false`.
+ */
+export interface NationalityMonthlyRow {
+  year: number;
+  month: number;
+  fiscalYear: number;
+  /** year * 12 + (month - 1). */
+  monthIndex: number;
+  country: string;
+  visa: Visa;
+  issuances: number;
+  isCountry: boolean;
+}
+
 /** Monthly issuance by consulate/post. */
 export interface PostMonthlyRow {
   year: number;
@@ -79,11 +96,22 @@ export interface SnapshotMeta {
       f1: number;
       j1: number;
       unmappedPosts: Record<string, number>;
+      /** Old post label -> the current name it was merged into (POST_ALIASES). */
+      renamedPosts?: Record<string, { to: string; rows: number; issuances: number }>;
     };
     annual: {
       rows?: number;
       countries?: number;
       excludedSpecialCategories?: Record<string, number>;
+    };
+    /** Present when the snapshot carries the monthly nationality table. */
+    nationalityMonthly?: {
+      rows: number;
+      months: number;
+      countries: number;
+      f1: number;
+      j1: number;
+      specialCategories: Record<string, number>;
     };
   };
   sources: Array<{
@@ -136,8 +164,14 @@ export interface CommandCenterRow {
   cagr10yr: number | null;
   latest12Total: number;
   prior12Total: number;
+  /** null when the previous 12 months are below 100 issuances ("— (low volume)"). */
   latest12Momentum: number | null;
+  /** null when 2019 is below 100 issuances ("— (low volume)") or there is no consulate data. */
   recoveryIndex: number | null;
+  /** Issuances in 2019, the recovery base. */
+  baseline2019: number;
+  /** Whether the country has any monthly consulate rows for the selected visas. */
+  hasConsulateData: boolean;
   peakMonth: number | null;
   peakMonthName: string;
   seasonalityRatio: number | null;
@@ -177,6 +211,11 @@ export interface DashboardData {
   operational: OperationalRow[];
   annualCountry: AnnualCountryRow[];
   postsMonthly: PostMonthlyRow[];
+  /**
+   * Monthly nationality rows, or null when the snapshot has no such table (e.g.
+   * one built before the table was added). Nothing displays it yet.
+   */
+  nationalityMonthly: NationalityMonthlyRow[] | null;
   countryCoords: Record<string, Coord>;
   meta: SnapshotMeta;
 }

@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ChartFrame, ChartLayout, Trace } from "../Chart";
 
-import { MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
-import { growthText, int } from "../../../lib/dashboard/format";
-import { groupSum } from "../../../lib/dashboard/metrics";
-import type { CountrySummaryRow } from "../../../lib/dashboard/types";
+import { calendarYearLabel, yearListLabel } from "../../../lib/dashboard/periods";
+import { int, monthDisplay } from "../../../lib/dashboard/format";
+import { changeText, changeVsBase, typicalYear, typicalYearsOf } from "../../../lib/dashboard/measures";
+import { groupSum, idxMaxString, peakMonthLabel } from "../../../lib/dashboard/metrics";
+import {
+  arrowPct,
+  monthRangeLabel,
+  rollingTotals,
+  type RollingGroup,
+} from "../../../lib/dashboard/rolling";
+import { restrictionLines } from "../../../lib/dashboard/restrictions";
+import type { CountrySummaryRow, PostMonthlyRow } from "../../../lib/dashboard/types";
 import Chart from "../Chart";
 import { useDashboard } from "../DashboardContext";
-import { Panel, RadioGroup, SectionTitle } from "../ui";
+import { FixedTag, Panel } from "../ui";
 
 const BLUE_GOLD_SCALE: Array<[number, string]> = [
   [0, "#0D3B7A"],
@@ -17,19 +25,34 @@ const BLUE_GOLD_SCALE: Array<[number, string]> = [
   [1, "#FFB81C"],
 ];
 
-const peakLabel = (peakMonth: number): string =>
-  peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A";
+/** F1 change vs the previous 12 months; "— (low volume)" when that period had fewer than 100. */
+const groupChange = (group: RollingGroup | undefined): string =>
+  changeText(group ? changeVsBase(group.current, group.prior) : null, group?.prior ?? 0, arrowPct);
 
 /** `country_card_html` — the focus-market card beside the globe. */
-function CountryCard({ row }: { row: CountrySummaryRow }) {
-  const { summaryGrowthLabel } = useDashboard();
+function CountryCard({
+  row,
+  f1,
+  j1,
+  period,
+  topPost,
+  peak,
+}: {
+  row: CountrySummaryRow;
+  f1: RollingGroup | undefined;
+  j1: RollingGroup | undefined;
+  period: string;
+  /** Most F1 in the last 12 months. */
+  topPost: string;
+  /** F1 peak month in a typical year. */
+  peak: string;
+}) {
   const stats: Array<[string, string]> = [
-    ["F1 Total", int(row.f1Total)],
-    ["J1 Total", int(row.j1Total)],
-    [summaryGrowthLabel, growthText(row.growthPct)],
-    ["Market Tier", row.tier],
-    ["Top Consulate", row.topPost],
-    ["Peak Visa Month", peakLabel(row.peakMonth)],
+    ["F1, last 12 months", int(f1?.current ?? 0)],
+    ["J1, last 12 months", int(j1?.current ?? 0)],
+    ["F1 vs previous 12 months", groupChange(f1)],
+    ["Top Consulate", topPost],
+    ["Peak month (typical year)", peak],
   ];
 
   return (
@@ -38,8 +61,16 @@ function CountryCard({ row }: { row: CountrySummaryRow }) {
         Focus Market
       </div>
       <div className="mt-1 text-2xl font-extrabold text-white">{row.country}</div>
+      {restrictionLines(row.country).map((line) => (
+        <p key={line} className="mt-1 text-xs font-semibold leading-relaxed text-amber-200">
+          {line}
+        </p>
+      ))}
       <p className="mt-2 text-xs leading-relaxed text-slate-400">
         Hover over the globe for the same country-level intelligence in context.
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+        Last 12 months = {period}, by the country where the visa was issued.
       </p>
       <dl className="mt-4 grid grid-cols-2 gap-3">
         {stats.map(([label, value]) => (
@@ -56,34 +87,109 @@ function CountryCard({ row }: { row: CountrySummaryRow }) {
 }
 
 export default function ExecutiveTab() {
-  const { data: dashboardData, summary, summaryGrowthLabel, focusCountry, f1Filtered, j1Filtered } =
-    useDashboard();
-  const [globeColor, setGlobeColor] = useState<"F1 Volume" | "Opportunity Score">("F1 Volume");
+  const {
+    data,
+    summary,
+    focusCountry,
+    consulateCountries,
+    visaFiltered,
+    dfFiltered,
+    visaLabel,
+    periodRange,
+  } = useDashboard();
 
-  const focusRow =
-    summary.find((row) => row.country === focusCountry) ?? summary[0] ?? null;
+  /* ---- Latest 12 months vs the 12 before, by issuing country (ignores the Years filter) ---- */
+  const end = data.meta.coverage.postsMonthly.end;
+  const last12 = useMemo(() => {
+    const f1 = rollingTotals(data.postsMonthly, end, (r) => (r.visa === "F1" ? r.country : null));
+    const j1 = rollingTotals(data.postsMonthly, end, (r) => (r.visa === "J1" ? r.country : null));
+    return { f1: f1.groups, j1: j1.groups, period: monthRangeLabel(f1.current) };
+  }, [data.postsMonthly, end]);
+  const operationalPeriod = monthRangeLabel(data.meta.coverage.operational);
+
+  // No fallback to another country: a country without rows gets a message instead.
+  const focusRow = summary.find((row) => row.country === focusCountry) ?? null;
+  const focusMissingText = consulateCountries.has(focusCountry)
+    ? `No consulate data for ${focusCountry} in ${operationalPeriod}.`
+    : `No consulate data for ${focusCountry} in this view.`;
+
+  // F1 peak month in a typical year for every country (the shared calculation),
+  // and the top F1 consulate in the last 12 months for the focus card.
+  const typicalLabel = useMemo(() => {
+    const years = typicalYearsOf(data.meta.coverage.postsMonthly);
+    return { years, text: yearListLabel(years) };
+  }, [data.meta.coverage.postsMonthly]);
+  const f1Peaks = useMemo(() => {
+    const byCountry = new Map<string, PostMonthlyRow[]>();
+    for (const row of data.postsMonthly) {
+      if (row.visa !== "F1") continue;
+      const list = byCountry.get(row.country);
+      if (list) list.push(row);
+      else byCountry.set(row.country, [row]);
+    }
+    return new Map([...byCountry].map(([c, rows]) => [c, peakMonthLabel(typicalYear(rows, typicalLabel.years))]));
+  }, [data.postsMonthly, typicalLabel.years]);
+  const focusTopPost = useMemo(() => {
+    const posts = rollingTotals(data.postsMonthly, end, (r) =>
+      r.visa === "F1" && r.country === focusCountry ? r.post : null,
+    );
+    const totals = new Map([...posts.groups].filter(([, g]) => g.current > 0).map(([p, g]) => [p, g.current]));
+    return idxMaxString(totals) ?? "N/A";
+  }, [data.postsMonthly, end, focusCountry]);
 
   /* ---- Globe: choropleth by country name, with orthographic rotation ---- */
+  // Totals and top consulate follow the control bar's Period; the peak month is
+  // the typical year; the change line is always the last 12 months.
+  const globeRows = useMemo(() => {
+    const byCountry = new Map<
+      string,
+      { f1: number; j1: number; posts: Map<string, number> }
+    >();
+    for (const row of dfFiltered) {
+      let entry = byCountry.get(row.country);
+      if (!entry) {
+        entry = { f1: 0, j1: 0, posts: new Map() };
+        byCountry.set(row.country, entry);
+      }
+      if (row.visa === "J1") {
+        entry.j1 += row.issuances;
+        continue;
+      }
+      entry.f1 += row.issuances;
+      entry.posts.set(row.post, (entry.posts.get(row.post) ?? 0) + row.issuances);
+    }
+    return [...byCountry.entries()]
+      .filter(([, e]) => e.f1 > 0)
+      .map(([country, e]) => ({
+        country,
+        f1: e.f1,
+        j1: e.j1,
+        topPost: idxMaxString(e.posts) ?? "N/A",
+        peak: f1Peaks.get(country) ?? "N/A",
+      }))
+      .sort((a, b) => b.f1 - a.f1);
+  }, [dfFiltered, f1Peaks]);
+
   const globe = useMemo(() => {
-    const colorTitle = globeColor === "Opportunity Score" ? "Opportunity Score" : "F1 Issuances";
-    const z = summary.map((row) =>
-      globeColor === "Opportunity Score" ? row.opportunityScore : row.f1Total,
-    );
+    const colorTitle = `F1 Issuances, ${periodRange.label}`;
+    const z = globeRows.map((row) => row.f1);
 
     const data: Trace[] = [
       {
         type: "choropleth",
-        locations: summary.map((row) => row.country),
+        locations: globeRows.map((row) => row.country),
         locationmode: "country names",
         z,
-        text: summary.map((row) => row.country),
-        customdata: summary.map((row) => [
-          int(row.f1Total),
-          int(row.j1Total),
-          growthText(row.growthPct),
-          row.tier,
+        text: globeRows.map((row) => row.country),
+        customdata: globeRows.map((row) => [
+          int(row.f1),
+          int(row.j1),
+          groupChange(last12.f1.get(row.country)),
           row.topPost,
-          peakLabel(row.peakMonth),
+          row.peak,
+          restrictionLines(row.country)
+            .map((line) => `<br>${line}`)
+            .join(""),
         ]),
         colorscale: BLUE_GOLD_SCALE,
         marker: { line: { color: "rgba(255,255,255,0.24)", width: 0.45 } },
@@ -95,19 +201,19 @@ export default function ExecutiveTab() {
         },
         hovertemplate:
           "<b>%{text}</b><br>" +
-          "F1 Total: %{customdata[0]}<br>" +
-          "J1 Total: %{customdata[1]}<br>" +
-          `${summaryGrowthLabel}: %{customdata[2]}<br>` +
-          "Market Tier: %{customdata[3]}<br>" +
-          "Top Consulate/Post: %{customdata[4]}<br>" +
-          "Peak Visa Month: %{customdata[5]}" +
+          `F1, ${periodRange.label}: %{customdata[0]}<br>` +
+          `J1, ${periodRange.label}: %{customdata[1]}<br>` +
+          `F1 vs previous 12 months (${last12.period}): %{customdata[2]}<br>` +
+          `Top consulate (F1, ${periodRange.label}): %{customdata[3]}<br>` +
+          `Peak F1 month (typical year: ${typicalLabel.text}): %{customdata[4]}` +
+          "%{customdata[5]}" +
           "<extra></extra>",
       } as Trace,
     ];
 
     const layout: ChartLayout = {
       height: 540,
-      title: { text: `Interactive Global Recruitment Globe - Colored by ${colorTitle}` },
+      title: { text: "Interactive Global Recruitment Globe - Colored by F1 Issuances" },
       margin: { l: 0, r: 0, t: 58, b: 0 },
       geo: {
         projection: { type: "orthographic", rotation: { lon: -70, lat: 22, roll: 0 } },
@@ -134,6 +240,10 @@ export default function ExecutiveTab() {
           bgcolor: "rgba(7, 21, 46, 0.8)",
           bordercolor: "rgba(255, 184, 28, 0.28)",
           font: { color: "#FFFFFF", size: 11 },
+          // Plotly paints the "active" button light grey, which hid the white
+          // "Rotate" label. No active highlight keeps both labels readable.
+          showactive: false,
+          active: -1,
           buttons: [
             {
               label: "Rotate",
@@ -167,121 +277,90 @@ export default function ExecutiveTab() {
     }
 
     return { data, layout, frames };
-  }, [summary, globeColor, summaryGrowthLabel]);
+  }, [globeRows, last12, periodRange.label, typicalLabel.text]);
 
-  /* ---- Country rollup shared by the signal map and the treemap ---- */
+  /* ---- Country rollup for the treemap (control bar's visa) ---- */
   const countryRollup = useMemo(() => {
-    const totals = groupSum(f1Filtered, (r) => r.country, (r) => r.issuances);
+    const totals = groupSum(visaFiltered, (r) => r.country, (r) => r.issuances);
     return [...totals.entries()]
       .map(([country, issuances]) => ({ country, issuances }))
       .sort((a, b) => b.issuances - a.issuances);
-  }, [f1Filtered]);
+  }, [visaFiltered]);
 
-  /* ---- Signal map: only countries with coordinates, matching app.py ---- */
-  const signalMap = useMemo(() => {
-    const { countryCoords } = dashboardData;
-    const max = countryRollup[0]?.issuances ?? 0;
-    const points = countryRollup
-      .map((row) => ({ ...row, coord: countryCoords[row.country] }))
-      .filter((row) => row.coord !== undefined);
-
-    const data: Trace[] = [
-      {
-        type: "scatter",
-        x: points.map((p) => p.coord.lon),
-        y: points.map((p) => p.coord.lat),
-        mode: "markers+text",
-        text: points.map((p) => p.country),
-        textposition: "top center",
-        textfont: { size: 9, color: "rgba(255,255,255,0.72)" },
-        marker: {
-          size: points.map((p) => (max ? (p.issuances / max) * 60 + 10 : 10)),
-          color: points.map((p) => p.issuances),
-          colorscale: BLUE_GOLD_SCALE,
-          showscale: true,
-          colorbar: { title: { text: "F1 Issuances" }, tickfont: { color: "#CBD5E1" } },
-          line: { width: 1.5, color: "rgba(255,255,255,0.4)" },
-          opacity: 0.88,
-        },
-        hovertemplate: "<b>%{text}</b><br>F1 Issuances: %{marker.color:,.0f}<extra></extra>",
-      } as Trace,
-    ];
-
-    const focus = points.find((p) => p.country === focusCountry);
-    if (focus) {
-      data.push({
-        type: "scatter",
-        x: [focus.coord.lon],
-        y: [focus.coord.lat],
-        mode: "markers+text",
-        text: [focusCountry],
-        textposition: "bottom center",
-        textfont: { size: 12, color: "#FFB81C" },
-        marker: {
-          size: 30,
-          color: "#FFB81C",
-          symbol: "star",
-          line: { width: 3, color: "white" },
-        },
-        hovertemplate: `<b>${focusCountry}</b> - Focus Country<extra></extra>`,
-      } as Trace);
+  /* ---- Annual F1 vs J1: always every calendar year, whatever the Period ---- */
+  // The first and last years are usually partial (e.g. "2017 (Mar–Dec)",
+  // "2026 (Jan–Feb)"): labelled and drawn lighter and hatched so they aren't
+  // read as full years. Labels come from the data's coverage.
+  const coverage = data.meta.coverage.postsMonthly;
+  const partialYearLabels = useMemo(() => {
+    const labels: string[] = [];
+    for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+      const label = calendarYearLabel(year, coverage);
+      if (label !== String(year)) labels.push(label);
     }
-
-    const layout: ChartLayout = {
-      height: 680,
-      title: { text: "Global F1 Student Visa Issuance Signals" },
-      xaxis: {
-        title: { text: "" },
-        range: [-175, 175],
-        showgrid: true,
-        gridcolor: "rgba(255,255,255,0.06)",
-        zeroline: false,
-      },
-      yaxis: {
-        title: { text: "" },
-        range: [-55, 80],
-        showgrid: true,
-        gridcolor: "rgba(255,255,255,0.06)",
-        zeroline: false,
-      },
-      margin: { l: 10, r: 10, t: 60, b: 10 },
-      showlegend: false,
-    };
-
-    return { data, layout, plotted: points.length, total: countryRollup.length };
-  }, [countryRollup, focusCountry, dashboardData]);
-
-  /* ---- Annual F1 vs J1 ---- */
+    return labels;
+  }, [coverage]);
   const annual = useMemo(() => {
-    const f1Annual = [...groupSum(f1Filtered, (r) => r.year, (r) => r.issuances).entries()].sort(
-      (a, b) => a[0] - b[0],
-    );
-    const j1Annual = [...groupSum(j1Filtered, (r) => r.year, (r) => r.issuances).entries()].sort(
-      (a, b) => a[0] - b[0],
-    );
-    const data: Trace[] = [
-      {
+    const yearLabel = (year: number) => calendarYearLabel(year, coverage);
+    // Each visa is two traces sharing one bar slot: full years (solid, in the
+    // legend) and partial years (lighter, hatched, not in the legend), so the
+    // legend shows the plain F1 and J1 colors.
+    const bars = (
+      rows: readonly { year: number; issuances: number }[],
+      name: string,
+      color: string,
+    ): Trace[] => {
+      const totals = [...groupSum(rows, (r) => r.year, (r) => r.issuances).entries()].sort(
+        (a, b) => a[0] - b[0],
+      );
+      const isPartial = ([year]: [number, number]) => yearLabel(year) !== String(year);
+      const full = totals.filter((t) => !isPartial(t));
+      const partial = totals.filter(isPartial);
+      const base = {
         type: "bar",
-        name: "F1",
-        x: f1Annual.map(([year]) => year),
-        y: f1Annual.map(([, value]) => value),
-        marker: { color: "#FFB81C" },
-      },
-      {
-        type: "bar",
-        name: "J1",
-        x: j1Annual.map(([year]) => year),
-        y: j1Annual.map(([, value]) => value),
-        marker: { color: "#3D8DDE" },
-      },
+        legendgroup: name,
+        offsetgroup: name,
+        hovertemplate: `<b>%{x}</b><br>${name}: %{y:,.0f}<extra></extra>`,
+      };
+      return [
+        {
+          ...base,
+          name,
+          x: full.map(([year]) => yearLabel(year)),
+          y: full.map(([, value]) => value),
+          marker: { color },
+        },
+        {
+          ...base,
+          name: `${name} (partial year)`,
+          showlegend: false,
+          x: partial.map(([year]) => yearLabel(year)),
+          y: partial.map(([, value]) => value),
+          marker: {
+            color,
+            opacity: 0.45,
+            pattern: { shape: "/", fgcolor: "#FFFFFF", solidity: 0.25 },
+          },
+        },
+      ];
+    };
+    const all = data.postsMonthly;
+    const traces: Trace[] = [
+      ...bars(all.filter((r) => r.visa === "F1"), "F1", "#FFB81C"),
+      ...bars(all.filter((r) => r.visa === "J1"), "J1", "#3D8DDE"),
     ];
+    const years: string[] = [];
+    for (let year = Math.floor(coverage.start / 12); year <= Math.floor(coverage.end / 12); year += 1) {
+      years.push(yearLabel(year));
+    }
     const layout: ChartLayout = {
       barmode: "group",
       height: 380,
-      title: { text: "Annual F1 vs J1 Issuances" },
+      title: { text: "Annual F1 vs J1 Issuances (calendar years)" },
+      xaxis: { type: "category", categoryorder: "array", categoryarray: years },
     };
-    return { data, layout };
-  }, [f1Filtered, j1Filtered]);
+    return { data: traces, layout };
+  }, [data.postsMonthly, coverage]);
 
   /* ---- Top 20 treemap ---- */
   const treemap = useMemo(() => {
@@ -298,74 +377,65 @@ export default function ExecutiveTab() {
           showscale: false,
         },
         textinfo: "label+value",
-        hovertemplate: "<b>%{label}</b><br>F1 Issuances: %{value:,.0f}<extra></extra>",
+        hovertemplate: `<b>%{label}</b><br>${visaLabel} Issuances: %{value:,.0f}<extra></extra>`,
       } as Trace,
     ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: "Top 20 F1 Markets" },
+      title: { text: `Top 20 ${visaLabel} Markets, ${periodRange.label}` },
       margin: { l: 0, r: 0, t: 50, b: 0 },
     };
     return { data, layout };
-  }, [countryRollup]);
+  }, [countryRollup, visaLabel, periodRange.label]);
 
-  /* ---- Monthly trend, one line per year ---- */
+  /* ---- Monthly trend: one continuous line across the Period ---- */
   const monthlyTrend = useMemo(() => {
-    const palette = ["#3D8DDE", "#FFB81C", "#86EFAC"];
-    const years = [...new Set(f1Filtered.map((r) => r.year))].sort((a, b) => a - b);
-    const byYearMonth = groupSum(
-      f1Filtered,
-      (r) => `${r.year}-${String(r.month).padStart(2, "0")}`,
-      (r) => r.issuances,
-    );
-    const periods = [...byYearMonth.keys()].sort();
-
-    const data: Trace[] = years.map((year, index) => {
-      const yearPeriods = periods.filter((period) => period.startsWith(`${year}-`));
-      return {
+    const byMonth = groupSum(visaFiltered, (r) => r.year * 12 + (r.month - 1), (r) => r.issuances);
+    const months = [...byMonth.keys()].sort((a, b) => a - b);
+    const data: Trace[] = [
+      {
         type: "scatter",
         mode: "lines+markers",
-        name: String(year),
-        x: yearPeriods,
-        y: yearPeriods.map((period) => byYearMonth.get(period)!),
-        line: { shape: "spline", color: palette[index % palette.length] },
-        marker: { color: palette[index % palette.length] },
-      } as Trace;
-    });
-
+        name: visaLabel,
+        x: months.map((index) => monthDisplay(index)),
+        y: months.map((index) => byMonth.get(index)!),
+        line: { color: "#FFB81C", width: 3 },
+        marker: { color: "#FFB81C", size: 6 },
+        hovertemplate: `<b>%{x}</b><br>${visaLabel}: %{y:,.0f}<extra></extra>`,
+      } as Trace,
+    ];
     const layout: ChartLayout = {
       height: 380,
-      title: { text: "Global Monthly F1 Issuance Trend by Year" },
-      xaxis: { tickangle: -45, categoryorder: "category ascending" },
-      hovermode: "x unified",
+      title: { text: `Global Monthly ${visaLabel} Issuances, ${periodRange.label}` },
+      xaxis: { tickangle: -45, type: "category" },
+      showlegend: false,
     };
     return { data, layout };
-  }, [f1Filtered]);
+  }, [visaFiltered, visaLabel, periodRange.label]);
 
-  if (!focusRow) return null;
+  if (summary.length === 0) return null;
 
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-[rgba(61,141,222,0.24)] bg-[radial-gradient(circle_at_72%_32%,rgba(61,141,222,0.18),transparent_22rem),linear-gradient(180deg,rgba(6,24,52,0.92),rgba(3,12,28,0.9))] p-[22px]">
         <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#ffdf87]">
           Visual Intelligence Layer
+          <FixedTag title="The globe's totals and top consulate follow the Period; its peak month is the typical year; its change line and the focus card always use the last 12 months (the focus card's peak month is the typical year).">
+            Change line and focus card: always last 12 months
+          </FixedTag>
         </div>
         <div className="mt-1 text-xl font-extrabold text-white">
           Interactive Global Recruitment Globe
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
           Drag to rotate the orthographic globe, use Rotate/Pause for motion, and hover countries for
-          F1/J1 totals, growth, tier, consulate, and peak-month intelligence. This layer is visual
+          F1/J1 totals and top consulate in {periodRange.inSentence}, the peak month in a typical
+          year, plus the F1 change vs the previous 12 months.
+          Country means where the visa was issued. This layer is visual
           only and does not control dashboard filters.
         </p>
       </div>
 
-      <RadioGroup
-        label="Color globe by"
-        value={globeColor}
-        options={["F1 Volume", "Opportunity Score"] as const}
-        onChange={setGlobeColor}
-      />
 
       <div className="grid gap-4 lg:grid-cols-[2.4fr_1fr]">
         <Chart
@@ -375,27 +445,36 @@ export default function ExecutiveTab() {
           height={540}
           ariaLabel="Interactive global recruitment globe"
         />
-        <CountryCard row={focusRow} />
-      </div>
-
-      <div>
-        <SectionTitle>Global F1 Recruitment Signal Map</SectionTitle>
-        <Chart
-          data={signalMap.data}
-          layout={signalMap.layout}
-          height={680}
-          ariaLabel="Global F1 student visa issuance signal map"
-        />
-        {signalMap.plotted < signalMap.total && (
-          <p className="mt-2 text-xs text-slate-500">
-            Showing {signalMap.plotted} of {signalMap.total} countries — this map plots only
-            countries present in the dashboard&apos;s coordinate reference table.
-          </p>
+        {focusRow ? (
+          <CountryCard
+            row={focusRow}
+            f1={last12.f1.get(focusRow.country)}
+            j1={last12.j1.get(focusRow.country)}
+            period={last12.period}
+            topPost={focusTopPost}
+            peak={f1Peaks.get(focusRow.country) ?? "N/A"}
+          />
+        ) : (
+          <Panel accent="gold" className="h-full">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#FFB81C]">
+              Focus Market
+            </div>
+            <div className="mt-1 text-2xl font-extrabold text-white">{focusCountry}</div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">{focusMissingText}</p>
+          </Panel>
         )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Chart data={annual.data} layout={annual.layout} height={380} />
+        <div>
+          <Chart data={annual.data} layout={annual.layout} height={380} />
+          <p className="mt-2 text-xs text-slate-400">
+            <FixedTag title="This chart ignores the Period control.">All calendar years</FixedTag>{" "}
+            Calendar years by issuing consulate, {monthRangeLabel(coverage)}.
+            {partialYearLabels.length > 0 &&
+              ` Partial years (${partialYearLabels.join(", ")}) aren't comparable with full years.`}
+          </p>
+        </div>
         <Chart data={treemap.data} layout={treemap.layout} height={380} />
       </div>
 

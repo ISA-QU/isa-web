@@ -133,6 +133,8 @@ export const MARKET_CATEGORIES = [
   "Recovery",
   "Watch",
   "Declining",
+  // Student and exchange visas blocked by a travel ban or visa-services pause (8-3; see restrictions.ts).
+  "Restricted",
 ] as const;
 
 /** QU brand palette, matching utils/theme.py. */

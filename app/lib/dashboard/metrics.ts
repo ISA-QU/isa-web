@@ -18,12 +18,35 @@ import {
   MONTHLY_COUNTRY_ALIASES,
   REGION_MAP,
 } from "./constants";
+import {
+  LOW_VOLUME,
+  MIN_BASE,
+  NO_LOCAL_VISAS,
+  changeVsBase,
+  lastTwelve,
+  latestCompleteYearOf,
+  recoveryVs2019,
+  typicalYear,
+  typicalYearsOf,
+  volatilityIn,
+  type TypicalYear,
+} from "./measures";
+import {
+  restrictedAction,
+  restoredAction,
+  restoredRestriction,
+  restrictionBadgeText,
+  studentRestriction,
+  type Restriction,
+} from "./restrictions";
 import type {
   AnnualCountryRow,
   CommandCenterRow,
   CountrySummaryRow,
   Coord,
   HistoricalMetricRow,
+  MonthRange,
+  NationalityMonthlyRow,
   OperationalRow,
   PostMonthlyRow,
   PostPeriodMetrics,
@@ -521,7 +544,30 @@ export function latestCompleteYear(rows: readonly PostMonthlyRow[]): number | nu
   return complete.length > 0 ? Math.max(...complete) : null;
 }
 
-export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMetrics {
+/** "July", "— (low volume)" when there are too few visas for a peak, or "N/A" with none. */
+export const peakMonthLabel = (typical: TypicalYear): string =>
+  typical.peakMonth !== null
+    ? (MONTH_NAMES_FULL[typical.peakMonth] ?? "N/A")
+    : typical.lowVolume
+      ? LOW_VOLUME
+      : "N/A";
+
+/**
+ * OLD: no page uses this since Fix Pack A2 (the old Historical Consulates tab
+ * that used it has been removed); only a verify check still calls it. Its peak
+ * month, seasonality and volatility skip months with no rows; use typicalYear()
+ * and volatilityIn() in measures.ts instead.
+ *
+ * One post's or country's monthly consulate rows, summarised. The last-12-month
+ * window and the recovery year come from `window` (the data's coverage), never
+ * from the rows' own last month: a consulate that stopped reporting must not
+ * be measured over a different period. Without `window` those three figures are
+ * left empty (0 / null).
+ */
+export function postPeriodMetrics(
+  rows: readonly PostMonthlyRow[],
+  window?: { dataEnd: number; recoveryYear: number | null },
+): PostPeriodMetrics {
   if (rows.length === 0) {
     return {
       total: 0,
@@ -539,17 +585,7 @@ export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMe
   }
 
   const monthly = groupSum(rows, (r) => r.monthIndex, (r) => r.issuances);
-  const latestIndex = Math.max(...monthly.keys());
-  const latest12Start = latestIndex - 11;
-  const prior12Start = latestIndex - 23;
-
-  let latest12 = 0;
-  let prior12 = 0;
-  for (const [index, value] of monthly) {
-    if (index >= latest12Start) latest12 += value;
-    else if (index >= prior12Start) prior12 += value;
-  }
-  const latest12Change = prior12 > 0 ? pctGrowth(latest12, prior12) : null;
+  const twelve = window ? lastTwelve(rows, window.dataEnd) : null;
 
   const monthAvg = groupMean(rows, (r) => r.month, (r) => r.issuances);
   const monthAvgValues = [...monthAvg.values()];
@@ -565,30 +601,21 @@ export function postPeriodMetrics(rows: readonly PostMonthlyRow[]): PostPeriodMe
       ? stdPopulation(monthlyValues) / monthlyMean
       : null;
 
-  const annual = groupSum(rows, (r) => r.year, (r) => r.issuances);
-  const baseline2019 = annual.get(2019) ?? 0;
-
-  // Latest complete calendar year against 2019, so both sides are full years.
-  let recoveryIndex: number | null = null;
-  if (baseline2019 > 0) {
-    const completeYear = latestCompleteYear(rows);
-    if (completeYear !== null && annual.has(completeYear)) {
-      recoveryIndex = (annual.get(completeYear)! / baseline2019) * 100;
-    }
-  }
+  // The data's latest complete year against 2019; shown only when 2019 has MIN_BASE issuances.
+  const recovery = window ? recoveryVs2019(rows, window.recoveryYear) : null;
 
   return {
     total: sumBy(rows, (r) => r.issuances),
-    latest12,
+    latest12: twelve?.current ?? 0,
     peakMonth,
     peakMonthName: peakMonth !== null ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A",
     seasonalityRatio,
     seasonalityStrength: seasonalityStrengthLabel(seasonalityRatio),
     volatilityCv: cv,
     volatility: volatilityLabel(cv),
-    baseline2019: baseline2019 > 0 ? baseline2019 : null,
-    recoveryIndex,
-    latest12Change,
+    baseline2019: recovery && recovery.base2019 > 0 ? recovery.base2019 : null,
+    recoveryIndex: recovery?.index ?? null,
+    latest12Change: twelve?.change ?? null,
   };
 }
 
@@ -630,42 +657,84 @@ type ClassificationInput = Omit<
 >;
 
 /**
- * Primary market category. Rules are mutually exclusive and evaluated in order;
- * see docs/command_center_classification_audit.md in the original project.
+ * Market thresholds, calibrated in 8-3 for one measure: issuances in the last
+ * 12 months (nationals on Markets and Country 360). One set for F1, J1 and Both.
+ */
+export const MARKET_THRESHOLDS = {
+  /** Core: at least this many in the last 12 months, and not structurally declining. */
+  core: 5_000,
+  /** Declining: 10-year growth at or below this… */
+  structuralGrowth: -35,
+  /** …and last-12-month change at or below this… */
+  structuralMomentum: -20,
+  /** …with at least this many in the previous 12 months (its size before the fall). */
+  declineMinPrior: 250,
+  /** Emerging: change at or above this, with emergingMin to core - 1 in the last 12 months. */
+  emergingMomentum: 25,
+  emergingMin: 250,
+  /** Growth: 10-year growth at or above this, with growthMin+ in the last 12 months. */
+  growthTenYear: 50,
+  growthMin: 500,
+  /** Recovery: latest complete year vs 2019 at or above this, with recoveryMin+. */
+  recoveryIndex: 115,
+  recoveryMin: 500,
+  /** Flags apply only from this many in the last 12 months; below it, "Low Confidence". */
+  flagMin: 100,
+  strongGrowth: 35,
+  /** Weak momentum: falling faster than all F1 nationals did (−34.6%, Mar 2025 – Feb 2026). */
+  weakMomentum: -35,
+  /** Highly Seasonal, and the "Begin Outreach Earlier" action: typical-year peak ÷ mean month. */
+  seasonalRatio: 3.0,
+  volatileCv: 1.2,
+} as const;
+
+/**
+ * Primary market category. Rules are mutually exclusive and evaluated in order.
+ * ("Restricted" is set by nationalitySignals before any of these.)
  */
 export function marketCategory(row: ClassificationInput): string {
-  const currentVolume = row.currentVolume || 0;
+  const T = MARKET_THRESHOLDS;
   const latest12 = row.latest12Total || 0;
   const momentum = row.latest12Momentum;
   const growth10yr = row.growth10yr;
   const recovery = row.recoveryIndex;
 
   const structurallyDeclining =
-    notNa(growth10yr) && growth10yr <= -35 && notNa(momentum) && momentum <= -20;
+    notNa(growth10yr) &&
+    growth10yr <= T.structuralGrowth &&
+    notNa(momentum) &&
+    momentum <= T.structuralMomentum;
 
-  if ((currentVolume >= 50_000 || latest12 >= 20_000) && !structurallyDeclining) return "Core";
-  if (structurallyDeclining && currentVolume >= 500) return "Declining";
-  if (notNa(momentum) && momentum >= 25 && latest12 >= 250 && currentVolume < 25_000) {
+  if (latest12 >= T.core && !structurallyDeclining) return "Core";
+  if (structurallyDeclining && (row.prior12Total || 0) >= T.declineMinPrior) return "Declining";
+  if (notNa(momentum) && momentum >= T.emergingMomentum && latest12 >= T.emergingMin && latest12 < T.core) {
     return "Emerging";
   }
-  if (notNa(growth10yr) && growth10yr >= 50 && latest12 >= 500) return "Growth";
-  if (notNa(recovery) && recovery >= 115 && latest12 >= 500) return "Recovery";
+  if (notNa(growth10yr) && growth10yr >= T.growthTenYear && latest12 >= T.growthMin) return "Growth";
+  if (notNa(recovery) && recovery >= T.recoveryIndex && latest12 >= T.recoveryMin) return "Recovery";
   return "Watch";
 }
 
+/**
+ * Flags that mean something: thresholds set so each picks out a minority of
+ * markets (8-3). Consulate concentration and the every-row partial-year caution
+ * are no longer flags. Below flagMin, only "Low Confidence".
+ */
 export function secondaryFlags(row: ClassificationInput & { marketCategory: string }): string[] {
+  const T = MARKET_THRESHOLDS;
   const flags: string[] = [];
-  if (notNa(row.growth10yr) && row.growth10yr >= 35) flags.push("Strong Long-Term Growth");
-  if (notNa(row.latest12Momentum) && row.latest12Momentum <= -20) flags.push("Weak Recent Momentum");
-  if (notNa(row.recoveryIndex) && row.recoveryIndex >= 115) flags.push("Recovery Leader");
-  if (notNa(row.seasonalityRatio) && row.seasonalityRatio >= 1.7) flags.push("Highly Seasonal");
-  if (notNa(row.topOneShare) && row.topOneShare >= 0.45) flags.push("High Concentration");
-  if (notNa(row.volatilityCv) && row.volatilityCv >= 0.85) flags.push("Volatile");
-  if (["Core", "Growth", "Recovery"].includes(row.marketCategory) && notNa(row.peakMonth)) {
-    flags.push("Travel Opportunity");
+  const small = (row.latest12Total || 0) < T.flagMin;
+  if (!small) {
+    if (notNa(row.growth10yr) && row.growth10yr >= T.strongGrowth) flags.push("Strong Long-Term Growth");
+    if (notNa(row.latest12Momentum) && row.latest12Momentum <= T.weakMomentum) flags.push("Weak Recent Momentum");
+    if (notNa(row.recoveryIndex) && row.recoveryIndex >= T.recoveryIndex) flags.push("Recovery Leader");
+    if (notNa(row.seasonalityRatio) && row.seasonalityRatio >= T.seasonalRatio) flags.push("Highly Seasonal");
+    if (notNa(row.volatilityCv) && row.volatilityCv >= T.volatileCv) flags.push("Volatile");
+    if (["Core", "Growth", "Recovery"].includes(row.marketCategory) && notNa(row.peakMonth)) {
+      flags.push("Travel Opportunity");
+    }
   }
-  if ((row.latest12Total || 0) < 100 || !notNa(row.growth10yr)) flags.push("Low Confidence");
-  flags.push("Partial-Year Caution");
+  if (small || !notNa(row.growth10yr)) flags.push("Low Confidence");
   return flags;
 }
 
@@ -685,6 +754,10 @@ export function recommendedAction(
 ): string {
   const { marketCategory: category, secondaryFlags: flags } = row;
   const seasonality = row.seasonalityRatio;
+
+  // No visas issued in the country in the last 12 months (e.g. a closed consulate):
+  // nothing current to act on, whatever its history says.
+  if (row.latest12Total === 0) return "Insufficient Evidence";
   const momentum = row.latest12Momentum;
   const growth10yr = row.growth10yr;
 
@@ -696,8 +769,7 @@ export function recommendedAction(
   if (category === "Emerging") return "Increase Digital Outreach";
   if (category === "Growth") return "Expand Recruitment";
   if (category === "Recovery") return "Consider Travel";
-  if (flags.includes("High Concentration")) return "Monitor Specific Consulate";
-  if (notNa(seasonality) && seasonality >= 1.7) return "Begin Outreach Earlier";
+  if (notNa(seasonality) && seasonality >= MARKET_THRESHOLDS.seasonalRatio) return "Begin Outreach Earlier";
   if (notNa(momentum) && momentum <= -20) return "Monitor Current Slowdown";
   if ((row.latest12Total || 0) < 100) return "Insufficient Evidence";
   return "Maintain Strategic Priority";
@@ -740,6 +812,7 @@ export function recommendationProfile(
   if (action === "Begin Outreach Earlier" && row.peakMonthName) {
     primaryDriver = `Peak issuance month is ${row.peakMonthName}`;
   }
+  if (row.latest12Total === 0) primaryDriver = NO_LOCAL_VISAS;
 
   if (
     notNa(row.growth10yr) &&
@@ -769,6 +842,8 @@ export function recommendationProfile(
   if (action === "Prepare for Peak Support Workload") {
     timing = `Prepare support capacity before ${row.peakMonthName || "the peak month"}`;
   }
+  // Timing advice doesn't apply with no visas issued locally in the last 12 months.
+  if (row.latest12Total === 0) timing = "";
 
   return { primaryDriver, counterSignal, timing, caveat };
 }
@@ -782,7 +857,7 @@ export function evidenceText(row: ClassificationInput): string {
   if (notNa(row.recoveryIndex)) {
     pieces.push(`recovery index ${row.recoveryIndex.toFixed(0)}`);
   }
-  if (row.peakMonthName) pieces.push(`peak month ${row.peakMonthName}`);
+  if (row.peakMonth) pieces.push(`peak month (typical year) ${row.peakMonthName}`);
   return pieces.length > 0 ? pieces.join("; ") : "Insufficient comparable evidence";
 }
 
@@ -797,6 +872,10 @@ export function buildCommandCenterFrame(
   consulate: readonly PostMonthlyRow[],
   visaSelection: VisaSelection,
   latestCompleteFiscalYear: number | null,
+  /** The monthly consulate data's coverage: the last 12 months and the recovery year come from it. */
+  coverage: MonthRange,
+  /** Only these countries (monthly-data names); Country 360 passes its one country. */
+  onlyCountries?: readonly string[],
 ): CommandCenterRow[] {
   const visaClasses = selectedVisaClasses(visaSelection);
   if (annualCountry.length === 0 || latestCompleteFiscalYear === null) return [];
@@ -809,7 +888,9 @@ export function buildCommandCenterFrame(
       ...consulate.map((r) => r.country),
       ...annualCountry.map((r) => monthlyCountryName(r.country)),
     ]),
-  ].sort();
+  ]
+    .filter((country) => !onlyCountries || onlyCountries.includes(country))
+    .sort();
 
   const opTotals = groupSum(
     operational.filter((r) => visaClasses.includes(r.visa)),
@@ -832,11 +913,9 @@ export function buildCommandCenterFrame(
     else consulateByCountry.set(row.country, [row]);
   }
 
-  const latestIndex = consulate.length > 0 ? Math.max(...consulate.map((r) => r.monthIndex)) : null;
-  const latest12Start = latestIndex !== null ? latestIndex - 11 : null;
-  const prior12Start = latestIndex !== null ? latestIndex - 23 : null;
-  // Recovery compares the latest complete calendar year with 2019, both full years.
-  const recoveryYear = latestCompleteYear(consulate);
+  // The same windows for every country: the data's last month and latest complete year.
+  const recoveryYear = latestCompleteYearOf(coverage);
+  const typicalYears = typicalYearsOf(coverage);
 
   const rows = countries.map((country) => {
     const annualRows = annualByCountry.get(historicalCountryName(country)) ?? [];
@@ -846,45 +925,31 @@ export function buildCommandCenterFrame(
     let latest12Total = 0;
     let prior12Total = 0;
     let recoveryIndex: number | null = null;
+    let baseline2019 = 0;
     let seasonalityRatio: number | null = null;
     let volatilityCv: number | null = null;
     let peakMonth: number | null = null;
+    let typical: TypicalYear | null = null;
     let topOneShare: number | null = null;
     let topThreeShare: number | null = null;
 
-    if (consulateRows.length > 0 && latest12Start !== null && prior12Start !== null) {
-      for (const row of consulateRows) {
-        if (row.monthIndex >= latest12Start) latest12Total += row.issuances;
-        else if (row.monthIndex >= prior12Start) prior12Total += row.issuances;
-      }
+    if (consulateRows.length > 0) {
+      const twelve = lastTwelve(consulateRows, coverage.end);
+      latest12Total = twelve.current;
+      prior12Total = twelve.prior;
 
-      if (recoveryYear !== null) {
-        const current = sumBy(
-          consulateRows.filter((r) => r.year === recoveryYear),
-          (r) => r.issuances,
-        );
-        const baseline = sumBy(
-          consulateRows.filter((r) => r.year === 2019),
-          (r) => r.issuances,
-        );
-        recoveryIndex = baseline > 0 ? (current / baseline) * 100 : null;
-      }
+      // Shown only when 2019 had MIN_BASE issuances, so tiny bases can't top the list.
+      const recovery = recoveryVs2019(consulateRows, recoveryYear);
+      recoveryIndex = recovery.index;
+      baseline2019 = recovery.base2019;
 
-      const monthly = groupSum(consulateRows, (r) => r.monthIndex, (r) => r.issuances);
-      const monthlyValues = [...monthly.values()];
-      const monthlyMean = mean(monthlyValues);
-      volatilityCv =
-        monthlyValues.length > 1 && monthlyMean
-          ? stdPopulation(monthlyValues) / monthlyMean
-          : null;
+      // Every month of the coverage, missing months as 0.
+      volatilityCv = volatilityIn(consulateRows, coverage);
 
-      const monthAvg = groupMean(consulateRows, (r) => r.month, (r) => r.issuances);
-      const monthAvgValues = [...monthAvg.values()];
-      const monthAvgMean = mean(monthAvgValues);
-      if (monthAvg.size > 0 && monthAvgMean) {
-        peakMonth = idxMaxNumeric(monthAvg);
-        seasonalityRatio = Math.max(...monthAvgValues) / monthAvgMean;
-      }
+      // The typical-year peak every page uses; none below PEAK_MIN_BASE a year.
+      typical = typicalYear(consulateRows, typicalYears);
+      peakMonth = typical.peakMonth;
+      seasonalityRatio = typical.seasonalityRatio;
 
       const postTotals = [...groupSum(consulateRows, (r) => r.post, (r) => r.issuances).values()].sort(
         (a, b) => b - a,
@@ -919,7 +984,8 @@ export function buildCommandCenterFrame(
       cagr10yr = calcCagr(current, baseline, 10);
     }
 
-    const momentum = prior12Total > 0 ? pctGrowth(latest12Total, prior12Total) : null;
+    // null ("— (low volume)") when the previous 12 months are below MIN_BASE.
+    const momentum = changeVsBase(latest12Total, prior12Total);
 
     const base: ClassificationInput = {
       country,
@@ -932,8 +998,10 @@ export function buildCommandCenterFrame(
       prior12Total,
       latest12Momentum: momentum,
       recoveryIndex,
+      baseline2019,
+      hasConsulateData: consulateRows.length > 0,
       peakMonth,
-      peakMonthName: peakMonth ? (MONTH_NAMES_FULL[peakMonth] ?? "N/A") : "N/A",
+      peakMonthName: typical ? peakMonthLabel(typical) : "N/A",
       seasonalityRatio,
       volatilityCv,
       topOneShare,
@@ -967,4 +1035,174 @@ export function buildCommandCenterFrame(
   return rows.sort(
     (a, b) => b.currentVolume - a.currentVolume || b.latest12Total - a.latest12Total,
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Country 360 by nationality (8-2b)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Which rule decided the advice before the shared ones: "restricted" = student
+ * and exchange visas blocked by a travel ban or a visa-services pause (checked
+ * first); "restored" = student and exchange visas suspended earlier and since
+ * restored (Turkmenistan: the recent fall reflects the suspension); "fell" = under 100 nationals in the last 12 months after 100+ in the 12
+ * before; "small" = under 100 in both. null = the shared rules decided.
+ */
+export type NationalityRule = "restricted" | "restored" | "fell" | "small" | null;
+
+export interface NationalitySignals extends CommandCenterRow {
+  rule: NationalityRule;
+  /** The restriction blocking student and exchange visas ("restricted"), or the restored one ("restored"). */
+  restriction: Restriction | null;
+  /** Timing and timing-based advice don't apply: either rule above, or a fall of 75% or more. */
+  hideTiming: boolean;
+}
+
+/** A fall this large (or larger) hides timing advice. */
+const STEEP_FALL_PCT = -75;
+
+/**
+ * Country 360's "What to do" inputs from the monthly nationality data: the same
+ * classifier and shared rules as the Command Center (data end, minimum base,
+ * typical-year peak, missing months as 0), but counting the country's
+ * nationals wherever their visas were issued, and without consulate
+ * concentration. Two rules come first for small or collapsing markets (see
+ * NationalityRule). Null when the table is missing or has no rows for the
+ * country, so the page falls back to the issued-in row.
+ *
+ * The Command Center keeps its issued-in rules until the Markets page.
+ */
+export function nationalitySignals(
+  nationality: readonly NationalityMonthlyRow[] | null,
+  annualCountry: readonly AnnualCountryRow[],
+  country: string,
+  visaSelection: VisaSelection,
+  latestCompleteFiscalYear: number | null,
+  /** The monthly data's coverage: the last 12 months and the recovery year come from it. */
+  coverage: MonthRange,
+  /** The window "Current Volume" covers, the same as the Command Center's (Jan 2024 – Feb 2026 today). */
+  volumeWindow: MonthRange,
+): NationalitySignals | null {
+  if (!nationality) return null;
+  const all = nationality.filter((r) => r.isCountry && r.country === country);
+  if (all.length === 0) return null;
+
+  const visaClasses = selectedVisaClasses(visaSelection);
+  const visaLabel = visaSelection === "Both" ? "F1 + J1" : visaSelection;
+  const rows = all.filter((r) => visaClasses.includes(r.visa));
+  const annualRows = annualCountry.filter((r) => r.country === historicalCountryName(country));
+  const latestHistYear = latestCompleteFiscalYear;
+
+  const twelve = lastTwelve(rows, coverage.end);
+  const recovery = recoveryVs2019(rows, latestCompleteYearOf(coverage));
+  const typical = typicalYear(rows, typicalYearsOf(coverage));
+  const growth = (years: number) =>
+    annualRows.length > 0 && latestHistYear !== null
+      ? fiscalYearGrowth(annualRows, visaClasses, latestHistYear, latestHistYear - years)
+      : null;
+  let cagr10yr: number | null = null;
+  if (annualRows.length > 0 && latestHistYear !== null) {
+    const scoped = annualRows.filter((r) => visaClasses.includes(r.visa));
+    cagr10yr = calcCagr(
+      sumBy(scoped.filter((r) => r.fiscalYear === latestHistYear), (r) => r.issuances),
+      sumBy(scoped.filter((r) => r.fiscalYear === latestHistYear - 10), (r) => r.issuances),
+      10,
+    );
+  }
+
+  const base: ClassificationInput = {
+    country,
+    region: regionForCountry(country),
+    currentVolume: sumBy(
+      rows.filter((r) => r.monthIndex >= volumeWindow.start && r.monthIndex <= volumeWindow.end),
+      (r) => r.issuances,
+    ),
+    growth5yr: growth(5),
+    growth10yr: growth(10),
+    cagr10yr,
+    latest12Total: twelve.current,
+    prior12Total: twelve.prior,
+    latest12Momentum: twelve.change,
+    recoveryIndex: recovery.index,
+    baseline2019: recovery.base2019,
+    // Here: whether the country has any nationality rows for the selected visas.
+    hasConsulateData: rows.length > 0,
+    peakMonth: typical.peakMonth,
+    peakMonthName: peakMonthLabel(typical),
+    seasonalityRatio: typical.seasonalityRatio,
+    volatilityCv: volatilityIn(rows, coverage),
+    // Consulate concentration stays out of the nationality-based advice.
+    topOneShare: null,
+    topThreeShare: null,
+    concentrationRisk: "N/A",
+  };
+
+  // First: student and exchange visas blocked by a travel ban or a visa-services
+  // pause, or restored after a suspension. Then small or collapsing markets,
+  // before any seasonality or timing rule.
+  const blocking = studentRestriction(country);
+  const restored = blocking ? null : restoredRestriction(country);
+  const restriction = blocking ?? restored;
+  const rule: NationalityRule = blocking
+    ? "restricted"
+    : restored
+      ? "restored"
+      : twelve.current < MIN_BASE
+        ? twelve.prior >= MIN_BASE
+          ? "fell"
+          : "small"
+        : null;
+  const hideTiming =
+    rule !== null || (twelve.change !== null && twelve.change <= STEEP_FALL_PCT);
+  const category =
+    rule === "restricted"
+      ? "Restricted"
+      : rule === "restored"
+        ? "Watch"
+        : rule === "fell"
+          ? "Declining"
+          : marketCategory(base);
+  // A market where timing doesn't apply is no travel opportunity.
+  const flags = secondaryFlags({ ...base, marketCategory: category }).filter(
+    (flag) => !(hideTiming && flag === "Travel Opportunity"),
+  );
+  const confidence = dataConfidenceLabel({ ...base, secondaryFlags: flags });
+  let action =
+    rule === "restricted" && restriction
+      ? restrictedAction(restriction)
+      : rule === "restored" && restriction
+        ? restoredAction(restriction)
+        : rule === "fell"
+          ? "Review Structural Decline"
+          : rule === "small"
+            ? "Insufficient Evidence"
+            : recommendedAction({ ...base, marketCategory: category, secondaryFlags: flags });
+  if (hideTiming && action === "Begin Outreach Earlier") {
+    action = notNa(twelve.change) && twelve.change <= -20 ? "Monitor Current Slowdown" : "Maintain Strategic Priority";
+  }
+  const profile = recommendationProfile({ ...base, recommendedAction: action, confidence });
+  const count = (value: number) => value.toLocaleString("en-US");
+  if ((rule === "restricted" || rule === "restored") && restriction) {
+    profile.primaryDriver =
+      rule === "restored" ? restriction.history.replace(/\.$/, "") : restrictionBadgeText(restriction);
+  } else if (rule === "fell") {
+    profile.primaryDriver = `Fell from ${count(twelve.prior)} to ${count(twelve.current)} visas to nationals of ${country} (${visaLabel}, last 12 months)`;
+  } else if (rule === "small") {
+    profile.primaryDriver = `Fewer than ${MIN_BASE} visas to nationals of ${country} in the last 12 months`;
+  }
+  if (hideTiming) profile.timing = "";
+
+  return {
+    ...base,
+    marketCategory: category,
+    secondaryFlags: flags,
+    secondaryFlagsText: flags.join(", "),
+    confidence,
+    recommendedAction: action,
+    ...profile,
+    evidence: evidenceText(base),
+    rule,
+    restriction,
+    hideTiming,
+  };
 }

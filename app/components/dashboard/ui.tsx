@@ -27,6 +27,7 @@ export function KpiCard({
   deltaTone = "neutral",
   accent = "default",
   valueClassName = "",
+  title,
 }: {
   label: string;
   value: ReactNode;
@@ -34,12 +35,15 @@ export function KpiCard({
   deltaTone?: "pos" | "neg" | "neutral";
   accent?: Accent;
   valueClassName?: string;
+  /** Hover tooltip with the exact figures behind the card. */
+  title?: string;
 }) {
   const deltaColor =
     deltaTone === "pos" ? "text-[#4ade80]" : deltaTone === "neg" ? "text-[#f87171]" : "text-slate-300";
 
   return (
     <div
+      title={title}
       className={`group relative min-h-[118px] overflow-visible p-5 transition duration-150 hover:-translate-y-0.5 hover:border-[rgba(255,184,28,0.44)] ${CARD_SURFACE} ${ACCENT_BORDER[accent]}`}
     >
       <span
@@ -121,18 +125,6 @@ export function ScopeNote({ label, children }: { label: string; children: ReactN
   );
 }
 
-export function InsightChip({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "gold" }) {
-  const styles =
-    tone === "gold"
-      ? "border-[rgba(255,184,28,0.4)] bg-[rgba(255,184,28,0.12)] text-[#ffdf87]"
-      : "border-[rgba(61,141,222,0.4)] bg-[rgba(61,141,222,0.12)] text-[#bfdcff]";
-  return (
-    <span className={`mr-2 mb-2 inline-flex items-center rounded-full border px-2.5 py-1.5 text-xs font-extrabold ${styles}`}>
-      {children}
-    </span>
-  );
-}
-
 /** Section heading with the `###`-level weight Streamlit used. */
 export function SectionTitle({ children }: { children: ReactNode }) {
   return <h3 className="mb-3 text-lg font-bold text-white">{children}</h3>;
@@ -177,12 +169,18 @@ export function DataTable<T>({
   height,
   rowKey,
   empty = "No rows match the selected filters.",
+  onRowClick,
+  isSelected,
 }: {
   rows: readonly T[];
   columns: readonly Column<T>[];
   height: number;
   rowKey: (row: T, index: number) => string;
   empty?: string;
+  /** Optional: makes rows clickable (pair it with a picker for keyboard users). */
+  onRowClick?: (row: T) => void;
+  /** Optional: highlights the selected row. */
+  isSelected?: (row: T) => boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -216,7 +214,14 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={rowKey(row, index)} className="border-t border-slate-400/[0.18] text-[#E5EDF7]">
+            <tr
+              key={rowKey(row, index)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              aria-selected={isSelected ? isSelected(row) : undefined}
+              className={`border-t border-slate-400/[0.18] text-[#E5EDF7] ${
+                onRowClick ? "cursor-pointer hover:bg-white/[0.04]" : ""
+              } ${isSelected?.(row) ? "bg-[rgba(255,184,28,0.12)]" : ""}`}
+            >
               {columns.map((column) => (
                 <td
                   key={column.key}
@@ -384,5 +389,20 @@ export function MultiSelect({
         ))}
       </div>
     </Field>
+  );
+}
+
+/**
+ * A small pill marking a section that does not follow the control bar's
+ * Period, e.g. "Always last 12 months" or "All calendar years".
+ */
+export function FixedTag({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <span
+      title={title}
+      className="ml-2 inline-flex items-center rounded-full border border-slate-400/30 bg-white/[0.04] px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-[0.06em] text-slate-300"
+    >
+      {children}
+    </span>
   );
 }

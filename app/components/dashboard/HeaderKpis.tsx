@@ -1,51 +1,131 @@
 "use client";
 
-import { int, metricPct } from "../../lib/dashboard/format";
-import { groupSum, idxMaxString, sumBy, yoyGrowth } from "../../lib/dashboard/metrics";
+import { useMemo } from "react";
+
+import { int, metricPct, monthDisplay, monthLongDisplay } from "../../lib/dashboard/format";
+import { LOW_VOLUME, changeVsBase } from "../../lib/dashboard/measures";
+import { idxMaxString } from "../../lib/dashboard/metrics";
+import { arrowPct, monthRangeLabel, rollingTwelveMonths } from "../../lib/dashboard/rolling";
 import { useDashboard } from "./DashboardContext";
-import { KpiCard, KpiRow } from "./ui";
+import { FixedTag, KpiCard, KpiRow } from "./ui";
 
-/** The six-card KPI strip above the tabs (app.py lines 1177-1201). */
+const toneOf = (change: number | null) =>
+  change === null ? "neutral" : change > 0 ? "pos" : change < 0 ? "neg" : "neutral";
+
+/**
+ * The header strip: the latest 12 months of consulate data against the 12
+ * months before. It ignores the sidebar's Years filter on purpose, so these
+ * figures never change meaning with the filters. Exact figures are in each
+ * card's hover tooltip.
+ */
 export default function HeaderKpis() {
-  const { f1Filtered, j1Filtered, focusCountry, focus, growthLabel } = useDashboard();
+  const { data, focusCountry, consulateCountries } = useDashboard();
+  const end = data.meta.coverage.postsMonthly.end;
+  const firstMonth = data.meta.coverage.postsMonthly.start;
 
-  const totalF1 = sumBy(f1Filtered, (r) => r.issuances);
-  const totalJ1 = sumBy(j1Filtered, (r) => r.issuances);
-  const topCountry =
-    idxMaxString(groupSum(f1Filtered, (r) => r.country, (r) => r.issuances)) ?? "N/A";
-  const topPost = idxMaxString(groupSum(f1Filtered, (r) => r.post, (r) => r.issuances)) ?? "N/A";
-  const globalGrowth = yoyGrowth(f1Filtered);
+  const rolling = useMemo(() => rollingTwelveMonths(data.postsMonthly, end), [data.postsMonthly, end]);
+  const { current, prior } = rolling;
+  const period = monthRangeLabel(current);
+  const priorPeriod = monthRangeLabel(prior);
+  const comparable = current.complete && prior.complete;
 
-  // app.py treats a null growth as non-positive, so the delta reads "neg".
-  const globalTone = (globalGrowth ?? 0) > 0 ? "pos" : "neg";
-  const focusTone = (focus.growth ?? 0) > 0 ? "pos" : "neg";
+  /** A change that needs both complete windows and 100+ in the previous 12 months. */
+  const changeOf = (now: number, before: number): number | null =>
+    comparable ? changeVsBase(now, before) : null;
 
-  const globalDelta =
-    globalGrowth !== null ? `${metricPct(globalGrowth)} ${growthLabel}` : "N/A";
-  const focusDelta = focus.growth !== null ? `${metricPct(focus.growth)} ${growthLabel}` : "N/A";
-  const tierShort = focus.tier.split("—")[0].trim();
+  /** The short line under a value; "— (low volume)" when the previous 12 months had fewer than 100. */
+  const changeLine = (change: number | null, suffix = "") => {
+    if (!comparable) return "No comparison: needs 24 complete months of data";
+    if (change === null) return LOW_VOLUME;
+    return `${arrowPct(change)}${suffix}`;
+  };
+
+  /** The hover tooltip: both periods, both totals, exact change. */
+  const detail = (what: string, now: number, before: number, change: number | null) =>
+    [
+      `${what}, ${period}: ${int(now)}`,
+      `${what}, ${priorPeriod}: ${int(before)}`,
+      `Change: ${!comparable ? "not available" : change !== null ? metricPct(change) : `${LOW_VOLUME}, fewer than 100 in ${priorPeriod}`}`,
+    ].join("\n");
+
+  const topCountry = idxMaxString(current.f1ByCountry);
+  const topF1 = topCountry ? (current.f1ByCountry.get(topCountry) ?? 0) : 0;
+  const topPrior = topCountry ? (prior.f1ByCountry.get(topCountry) ?? 0) : 0;
+  const topShare = current.f1 > 0 ? (topF1 / current.f1) * 100 : null;
+
+  const focusF1 = current.f1ByCountry.get(focusCountry) ?? 0;
+  const focusPrior = prior.f1ByCountry.get(focusCountry) ?? 0;
+  const focusChange = changeOf(focusF1, focusPrior);
 
   return (
-    <KpiRow>
-      <KpiCard
-        accent="gold"
-        label="Total F1 Issuances"
-        value={int(totalF1)}
-        delta={globalDelta}
-        deltaTone={globalTone}
-      />
-      <KpiCard accent="navy" label="Total J1 Issuances" value={int(totalJ1)} />
-      <KpiCard label="#1 F1 Country" value={topCountry} valueClassName="!text-[18px]" />
-      <KpiCard label="#1 F1 Consulate" value={topPost} valueClassName="!text-[18px]" />
-      <KpiCard
-        accent="gold"
-        label="Focus Country"
-        value={focusCountry}
-        valueClassName="!text-[18px]"
-        delta={`${focusDelta} · ${tierShort}`}
-        deltaTone={focusTone}
-      />
-      <KpiCard accent="navy" label="Opp. Score /100" value={focus.opportunity} />
-    </KpiRow>
+    <>
+      <h2 className="mb-3 text-sm font-semibold text-slate-200">
+        Last 12 months · {period}, compared with the previous 12 months
+        <FixedTag title="These cards ignore the Period control.">Always last 12 months</FixedTag>
+      </h2>
+      <KpiRow>
+        <KpiCard
+          accent="gold"
+          label="Student visas (F1)"
+          value={int(current.f1)}
+          delta={changeLine(rolling.f1Change, " vs previous 12 months")}
+          deltaTone={toneOf(rolling.f1Change)}
+          title={detail("F1 issuances", current.f1, prior.f1, rolling.f1Change)}
+        />
+        <KpiCard
+          accent="navy"
+          label="Exchange visas (J1)"
+          value={int(current.j1)}
+          delta={changeLine(rolling.j1Change, " vs previous 12 months")}
+          deltaTone={toneOf(rolling.j1Change)}
+          title={detail("J1 issuances", current.j1, prior.j1, rolling.j1Change)}
+        />
+        <KpiCard
+          label="Most F1 visas issued in"
+          value={topCountry ?? "N/A"}
+          valueClassName="!text-[18px]"
+          delta={
+            topCountry
+              ? `${int(topF1)}${topShare !== null ? ` · ${Math.round(topShare)}% of all F1` : ""}`
+              : "No F1 issuances in this period"
+          }
+          title={
+            topCountry
+              ? [
+                  detail(`F1 issued in ${topCountry}`, topF1, topPrior, changeOf(topF1, topPrior)),
+                  `Share of all F1, ${period}: ${topShare !== null ? `${topShare.toFixed(1)}%` : "N/A"}`,
+                ].join("\n")
+              : undefined
+          }
+        />
+        <KpiCard
+          accent="gold"
+          label={`Issued in ${focusCountry}`}
+          value={consulateCountries.has(focusCountry) ? int(focusF1) : "—"}
+          delta={
+            consulateCountries.has(focusCountry)
+              ? `F1 · ${changeLine(focusChange)}`
+              : `No consulate data for ${focusCountry}`
+          }
+          deltaTone={toneOf(focusChange)}
+          title={detail(`F1 issued in ${focusCountry}`, focusF1, focusPrior, focusChange)}
+        />
+        <KpiCard
+          accent="navy"
+          label="Data through"
+          value={monthLongDisplay(end)}
+          valueClassName="!text-[18px]"
+          delta={`Updated monthly · since ${monthDisplay(firstMonth)}`}
+          title={[
+            `Monthly consulate data, ${monthRangeLabel({ start: firstMonth, end })}`,
+            `Latest 12 months: ${period}`,
+            `Previous 12 months: ${priorPeriod}`,
+          ].join("\n")}
+        />
+      </KpiRow>
+      <p className="-mt-4 mb-7 text-xs text-slate-400">
+        Header country card = where the visa was issued (not the visa holder&apos;s nationality).
+      </p>
+    </>
   );
 }

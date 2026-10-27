@@ -266,6 +266,9 @@ def build_snapshot(files):
     annual, fiscal_years, annual_meta = _build_annual(
         by_period["historical"], by_period["nationality"], warnings
     )
+    nationality_monthly, nationality_meta = _build_nationality_monthly(
+        by_period["nationality"], warnings
+    )
 
     end = post_meta["end"]
     end_year = end // 12
@@ -283,25 +286,104 @@ def build_snapshot(files):
             ),
             "annual": annual_meta,
         },
-        "validation": {"postsMonthly": post_meta["validation"], "annual": annual_meta["validation"]},
+        "validation": {
+            "postsMonthly": post_meta["validation"],
+            "annual": annual_meta["validation"],
+            "nationalityMonthly": nationality_meta,
+        },
         "warnings": warnings,
         "sources": sources,
         "fiscalYears": fiscal_years,
         "postsMonthly": posts,
         "annualCountry": annual,
+        "nationalityMonthly": nationality_monthly,
     }
+
+
+def _build_nationality_monthly(months, warnings):
+    """Monthly F1/J1 issuances by nationality (who received the visas).
+
+    Country names are unified with NATIONALITY_ALIASES, as in the annual table,
+    so they match the post data. Special reporting categories (e.g. Palestinian
+    Authority Travel Document, Unknown) keep their own names and are listed in
+    dims.nonCountry: identifiable, but outside the country market universe.
+    Rows that unify to the same country, month and visa are added together.
+    """
+    totals = Counter()
+    non_country, country_names = set(), set()
+    for (year, month), records in months.items():
+        for r in records:
+            if r["isCountry"]:
+                name = _canonical(r["name"])
+                country_names.add(name)
+            else:
+                name = r["name"]
+                non_country.add(name)
+            totals[(year, month, name, r["visa"])] += r["issuances"]
+
+    both = sorted(non_country & country_names)
+    if both:
+        warnings.append(
+            f"nationality names reported both as a country and as a special category: {', '.join(both)}"
+        )
+
+    rows = sorted(totals.items(), key=lambda item: (item[0][0], item[0][1], item[0][2], VISA_CODES[item[0][3]]))
+    country_dim = Dim()
+    cols = {"year": [], "month": [], "country": [], "visa": [], "issuances": []}
+    visa_totals, special_totals = Counter(), Counter()
+    for (year, month, name, visa), issuances in rows:
+        cols["year"].append(year)
+        cols["month"].append(month)
+        cols["country"].append(country_dim.id(name))
+        cols["visa"].append(VISA_CODES[visa])
+        cols["issuances"].append(issuances)
+        visa_totals[visa] += issuances
+        if name in non_country:
+            special_totals[name] += issuances
+
+    table = {
+        "rowCount": len(rows),
+        "dims": {"country": country_dim.values, "nonCountry": sorted(non_country)},
+        "cols": cols,
+    }
+    meta = {
+        "rows": len(rows),
+        "months": len(months),
+        "countries": len(country_names),
+        "f1": visa_totals["F1"],
+        "j1": visa_totals["J1"],
+        "specialCategories": dict(sorted(special_totals.items())),
+    }
+    return table, meta
 
 
 def _build_posts(months, warnings):
     rows = []
     unmapped = Counter()
+    renamed = defaultdict(lambda: {"to": None, "rows": 0, "issuances": 0})
+    seen = {}
     for (year, month), records in months.items():
         for r in records:
-            country = POST_COUNTRY.get(r["name"])
+            post = POST_ALIASES.get(r["name"], r["name"])
+            # An old and a current label for the same month and visa would
+            # merge into one row, which could count the same visas twice.
+            key = (year, month, post, r["visa"])
+            if key in seen:
+                raise DataError(
+                    f"post data has both '{seen[key]}' and '{r['name']}' for {post}, "
+                    f"{r['visa']}, {year}-{month:02d}; merging them could double count"
+                )
+            seen[key] = r["name"]
+            if post != r["name"]:
+                entry = renamed[r["name"]]
+                entry["to"] = post
+                entry["rows"] += 1
+                entry["issuances"] += r["issuances"]
+            country = POST_COUNTRY.get(post)
             if country is None:
-                unmapped[r["name"]] += r["issuances"]
+                unmapped[post] += r["issuances"]
                 continue
-            rows.append((year, month, country, r["name"], r["visa"], r["issuances"]))
+            rows.append((year, month, country, post, r["visa"], r["issuances"]))
 
     if unmapped:
         listed = ", ".join(f"{post} ({count:,})" for post, count in unmapped.most_common())
@@ -352,6 +434,7 @@ def _build_posts(months, warnings):
                 "f1": totals["F1"],
                 "j1": totals["J1"],
                 "unmappedPosts": dict(unmapped),
+                "renamedPosts": dict(sorted(renamed.items())),
             },
         },
     )
@@ -437,6 +520,16 @@ def summarise(snapshot, seconds):
         "annualCountry": f"{snapshot['annualCountry']['rowCount']} rows, FY{annual['first']} to FY{annual['latest']}"
         f" (latest complete FY{annual['latestComplete']}, FY{annual['latest']} has {annual['latestMonths']} months)",
         "files": [f"{s['kind']}: {s['file']} ({s['rows']} rows, replaced {s['replacedPeriods']} periods)" for s in snapshot["sources"]],
+        "renamed": [
+            f"{old} -> {v['to']} ({v['rows']} rows, {v['issuances']:,})"
+            for old, v in snapshot["validation"]["postsMonthly"]["renamedPosts"].items()
+        ],
+        "nationalityMonthly": (
+            f"{snapshot['nationalityMonthly']['rowCount']} rows, "
+            f"{month(coverage['nationalityMonthly']['start'])} to {month(coverage['nationalityMonthly']['end'])}"
+            if coverage["nationalityMonthly"]
+            else "no monthly nationality file"
+        ),
         "warnings": snapshot["warnings"],
     }
 
@@ -737,6 +830,21 @@ POST_COUNTRY = {
     "Zagreb": "Croatia"
 }
 
+# Older post labels in the State Dept reports -> the current post name, so a
+# post's history is one series. The original labels are kept in the snapshot
+# (validation.postsMonthly.renamedPosts) for tracing. Only renames whose old and
+# new labels never report the same month and visa belong here; _build_posts
+# stops the build if they do.
+POST_ALIASES = {
+    "Chennai ( Madras)": "Chennai",
+    "Chennai (Madras)": "Chennai",
+    "Dar Es Salaam": "Dar es Salaam",
+    "Mumbai (Bombay)": "Mumbai",
+    "Port Au Prince": "Port-au-Prince",
+    "Port Of Spain": "Port of Spain",
+    "Rio De Janeiro": "Rio de Janeiro",
+}
+
 # Nationality-file spelling -> the country name the post data uses, so the two
 # layers join on one name. Names absent here pass through unchanged.
 NATIONALITY_ALIASES = {
@@ -751,6 +859,7 @@ NATIONALITY_ALIASES = {
     "Gambia, The": "Gambia",
     "Great Britain and Northern Ireland": "United Kingdom",
     "Hong Kong S.A.R.": "Hong Kong",
+    "Korea, North": "North Korea",
     "Korea, South": "South Korea",
     "Macau S.A.R.": "Macau",
     "Marshall Islands, Republic of the": "Marshall Islands",

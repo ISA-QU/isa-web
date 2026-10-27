@@ -577,41 +577,67 @@ Country 360, top to bottom:
 
 ## Handoff notes for deployment (Koushik)
 
-The branch `dev/dashboard-improvements` changes the **`rebuild-dashboard` Lambda**. Nothing
-in AWS has been changed yet; these are the steps when it is deployed.
+The branch `dev/dashboard-improvements` changes the **dashboard pages** and the
+**`rebuild-dashboard` Lambda**. Nothing in AWS has been changed and nothing has been deployed
+yet; these are the steps when it goes live.
 
-**What changed in the Lambda** (`backend/lambdas/rebuild-dashboard/lambda_function.py`):
-1. **Feature 0, post renames.** `POST_ALIASES` maps 7 older consulate labels to current
-   names (`Mumbai (Bombay)` → `Mumbai`, `Chennai ( Madras)` and `Chennai (Madras)` →
+**What changed in the Lambda** (`backend/lambdas/rebuild-dashboard/lambda_function.py`; this
+is the only backend file that changed, see `git diff main...HEAD -- backend`):
+1. **Post renames (Feature 0).** `POST_ALIASES` maps 7 older consulate labels to the current
+   names: `Mumbai (Bombay)` → `Mumbai`, `Chennai ( Madras)` and `Chennai (Madras)` →
    `Chennai`, `Rio De Janeiro` → `Rio de Janeiro`, `Dar Es Salaam` → `Dar es Salaam`,
-   `Port Of Spain` → `Port of Spain`, `Port Au Prince` → `Port-au-Prince`). The rebuild
-   output gains a `renamed` line, and the build stops if an old and a current label report
-   the same month and visa.
-2. **Feature 7, monthly nationality table.** The snapshot gains `nationalityMonthly` and
-   `validation.nationalityMonthly`; the rebuild output gains a `nationalityMonthly` line.
+   `Port Of Spain` → `Port of Spain`, `Port Au Prince` → `Port-au-Prince`. The original
+   labels are kept in `validation.postsMonthly.renamedPosts`, the Test output gains a
+   `renamed` list, and the build stops if an old and a current label report the same month
+   and visa (so nothing is counted twice).
+2. **Monthly nationality table (Feature 7).** The snapshot gains `nationalityMonthly`
+   (monthly F1/J1 visas by nationality), `validation.nationalityMonthly` and a
+   `nationalityMonthly` line in the Test output. Special categories (e.g. Palestinian
+   Authority Travel Document) keep their own names, listed in `dims.nonCountry`.
+3. **North Korea alias.** `NATIONALITY_ALIASES` gains `"Korea, North"` → `"North Korea"`, so
+   the nationality files join the post data on one name (as `"Korea, South"` already did).
+4. The committed `__pycache__/*.pyc` is no longer tracked, and `.gitignore` now ignores
+   `__pycache__/` and `*.pyc`. Upload only `lambda_function.py`.
 
-**Steps**
-1. Open the `rebuild-dashboard` function in the console (us-east-1), replace the code with the
-   branch's `lambda_function.py`, and **Deploy**. Keep the `BUCKET` line as it is in AWS if it
-   differs from the file.
-2. No new permissions, raw files, environment variables or layers are needed. Memory
-   (1024 MB) and timeout (1 min) are fine: the local build takes about 3 seconds.
-3. Run the **Test** event (`{}`). Expect `"ok": true`, `"warnings": []`,
-   `"postsMonthly": "41965 rows, ..."` (up from 41,524 before the renames) and
-   `"nationalityMonthly": "35967 rows, 2017-03 to 2026-02"` with the current raw files.
-   `snapshot/snapshot.json.gz` grows to about 145 KB.
-4. Optional check: download the snapshot, gunzip it to `public/dashboard-data/snapshot.json`
-   and run `npm run dashboard:verify` (70 checks).
+**What changed in the site:** dashboard pages only (Markets, Country 360, Consulates,
+Historical Trends with Market cycles and Country vs World, the control bar, events). The
+calculator, transcript tool, login and `api.ts` are unchanged.
 
-**Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito
-and the S3 bucket layout. The served response (about 190 KB base64) is far below Lambda's
-6 MB limit.
+**Expected Test output** with the current raw files (Mar 2017–Feb 2026 monthly; FY1997–FY2026
+annual). Run the Test event `{}` and expect:
+- `"ok": true` and `"warnings": []`
+- `"postsMonthly": "41965 rows, 2017-03 to 2026-02"` (41,524 before the renames)
+- `"annualCountry": "11367 rows, FY1997 to FY2026 (latest complete FY2025, FY2026 has 5 months)"`
+- `"nationalityMonthly": "35967 rows, 2017-03 to 2026-02"`
+- `"renamed"`: 7 lines, e.g. `"Mumbai (Bombay) -> Mumbai (62 rows, 48,332)"`
+- `"gzipBytes"` about 144,000 (`snapshot/snapshot.json.gz` about 145 KB); the served
+  response is about 190 KB base64, far below Lambda's 6 MB limit.
 
-**Repository clean-up:** `backend/lambdas/rebuild-dashboard/__pycache__/lambda_function.cpython-314.pyc`
-is committed on main; consider removing it and adding `__pycache__/` to `.gitignore`.
+The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
+from `generatedAt`, and `npm run dashboard:verify` passes **216/216** on it.
 
-**Order doesn't matter.** The site reads snapshots with or without `nationalityMonthly`, and
-the current site ignores the new table, so the Lambda and the site (`npm run deploy`) can be
-deployed in either order. Until the Lambda is redeployed, the live snapshot keeps the 7 old
-post labels unmapped (as warnings) and has no monthly nationality table.
+**How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
+branch is merged. It builds the static site (`next build`; the `postbuild` step removes
+`out/dashboard-data`, so no data is published) and pushes `out/` to the `gh-pages` branch,
+which GitHub Pages serves. Nothing deploys on push or merge.
 
+**Deploy order: Lambda first, then the site.** The new pages read `nationalityMonthly` and
+the renamed posts. On the old snapshot they still load, but Markets and Country 360 fall back
+to visas issued in each country (with a banner) and the 7 old post labels stay separate. The
+old site ignores the new table, so updating the Lambda first is safe.
+
+**Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito,
+the S3 layout and raw-file names, the transcript tool and its Lambdas, and the calculator. No
+new permissions, environment variables, layers or raw files; memory and timeout are fine (the
+build takes about 3 seconds).
+
+**Checklist**
+1. [ ] Merge `dev/dashboard-improvements` into `main`.
+2. [ ] In the AWS console, open `rebuild-dashboard`, replace the code with `main`'s
+   `lambda_function.py` (keep the bucket setting as it is in AWS if it differs), **Deploy**.
+3. [ ] Run the Test event `{}`; compare with "Expected Test output" above.
+4. [ ] Optional: download the new snapshot, gunzip it to `public/dashboard-data/snapshot.json`
+   and run `npm run dashboard:verify` (expect 216/216).
+5. [ ] From `main`: `npm ci`, then `npm run deploy`.
+6. [ ] Sign in to the live site and spot-check: header 252,282 / 284,306 / 27,258 (F1, India selected);
+   Country 360 India 30,292 ▼ 59.6%; Consulates Mumbai 162,287; no fallback banner on Markets.

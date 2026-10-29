@@ -530,20 +530,6 @@ export const selectedVisaClasses = (selection: VisaSelection): Visa[] =>
  * Consulate-history metrics
  * ------------------------------------------------------------------ */
 
-/** Most recent calendar year with all 12 months present. */
-export function latestCompleteYear(rows: readonly PostMonthlyRow[]): number | null {
-  const monthsByYear = new Map<number, Set<number>>();
-  for (const row of rows) {
-    const set = monthsByYear.get(row.year) ?? new Set<number>();
-    set.add(row.month);
-    monthsByYear.set(row.year, set);
-  }
-  const complete = [...monthsByYear.entries()]
-    .filter(([, months]) => months.size === 12)
-    .map(([year]) => year);
-  return complete.length > 0 ? Math.max(...complete) : null;
-}
-
 /** "July", "— (low volume)" when there are too few visas for a peak, or "N/A" with none. */
 export const peakMonthLabel = (typical: TypicalYear): string =>
   typical.peakMonth !== null

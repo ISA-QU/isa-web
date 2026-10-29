@@ -4,10 +4,6 @@ import { MONTH_NAMES, MONTH_NAMES_FULL } from "./constants";
 import { notNa } from "./metrics";
 
 const GROUPED = new Intl.NumberFormat("en-US");
-const GROUPED_1DP = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
 
 /** `f"{value:+.1f}%"` — `growth_text` / `metric_pct`. */
 export const metricPct = (value: number | null | undefined): string =>
@@ -18,10 +14,6 @@ export const growthText = metricPct;
 /** `f"{int(value):,}"` — `metric_number`. */
 export const metricNumber = (value: number | null | undefined): string =>
   notNa(value) ? GROUPED.format(Math.trunc(value)) : "N/A";
-
-/** `f"{float(value):,.1f}"` — `metric_decimal`. */
-export const metricDecimal = (value: number | null | undefined): string =>
-  notNa(value) ? GROUPED_1DP.format(value) : "N/A";
 
 /** Plain thousands separators, no null handling. */
 export const int = (value: number): string => GROUPED.format(Math.trunc(value));
@@ -56,13 +48,6 @@ export function monthValueDisplay(
   if (monthIndex === null || monthIndex === undefined || !notNa(value)) return "N/A";
   return `${monthDisplay(monthIndex)} · ${int(value)}`;
 }
-
-/** `compact_month_range` — "Mar 2017 to Sep 2025". */
-export const compactMonthRange = (start: number, end: number): string =>
-  `${monthDisplay(start)} to ${monthDisplay(end)}`;
-
-/** `month_count_between` — inclusive month count. */
-export const monthCountBetween = (start: number, end: number): number => end - start + 1;
 
 /** Percentage with a fixed number of decimals, no forced sign. */
 export const pct = (value: number | null | undefined, places = 1): string =>

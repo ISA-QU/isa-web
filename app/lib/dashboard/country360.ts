@@ -80,3 +80,20 @@ export function pctCardText(change: number | null, base: number | null | undefin
   if (isLowVolume(base)) return LOW_VOLUME;
   return arrowPct(change);
 }
+
+/**
+ * Markets' "10-year trend" cell (Fix pack 10): "— (low volume)" when the
+ * earlier fiscal year is under 100, otherwise "▲ 12.3%" (or "N/A" with none).
+ * Display only: categories and the sort keep the raw value.
+ */
+export function tenYearTrendText(
+  growth: number | null,
+  annualRows: readonly AnnualCountryRow[],
+  visas: readonly Visa[],
+  latestYear: number | null,
+): string {
+  if (growth !== null && latestYear !== null && annualRows.length > 0 && growthBaseIsLow(annualRows, visas, latestYear - 10)) {
+    return LOW_VOLUME;
+  }
+  return arrowPct(growth);
+}

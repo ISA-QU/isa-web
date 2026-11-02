@@ -33,6 +33,8 @@ export interface DashboardEvent {
   description: string;
   /** "global", or the dashboard country names it applies to. */
   scope: "global" | readonly string[];
+  /** A country-scoped event also drawn on world charts (the travel bans, which moved world totals). */
+  world?: boolean;
   importance: EventImportance;
   source: string;
   lastChecked: string;
@@ -214,14 +216,15 @@ function restrictionEvents(): DashboardEvent[] {
 
   const out: DashboardEvent[] = [
     event({
-      id: "G10", start: P10949, precision: "day", importance: "major", scope: "global",
+      // Only on the charts of the countries each proclamation covers, and on world charts.
+      id: "G10", start: P10949, precision: "day", importance: "major", scope: p10949, world: true,
       label: "Travel ban (Proclamation 10949)",
       description: `Proclamation 10949 suspended student and exchange visas for nationals of ${p10949.length} countries.`,
       source: sourceOf(anyBan, /10949/),
       derivedFrom: "proclamation-10949",
     }),
     event({
-      id: "G13", start: P10998, precision: "day", importance: "major", scope: "global",
+      id: "G13", start: P10998, precision: "day", importance: "major", scope: proclamation10998Countries(), world: true,
       label: "Expanded travel ban (Proclamation 10998)",
       description: `Proclamation 10998 suspends student and exchange visas for nationals of ${p10998.length} countries (${full} full, ${partial} partial) and ${nonCountry.join(", ")}${immigrantOnly.length > 0 ? `, and restricts only immigrant visas for ${immigrantOnly.join(", ")}` : ""}.`,
       source: sourceOf(anyBan, /10998/),
@@ -262,11 +265,11 @@ export const EVENTS: readonly DashboardEvent[] = [...MANUAL_EVENTS, ...restricti
   (a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id),
 );
 
-/** A country's own line on a global restriction event, e.g. Nigeria on Proclamation 10998. */
 /** Events about a consulate in `country` that stopped issuing visas (C6 Caracas, C7 Moscow, C8 Kabul). */
 export const consulateEventsFor = (country: string): DashboardEvent[] =>
   EVENTS.filter((e) => e.consulate !== undefined && e.scope !== "global" && e.scope.includes(country));
 
+/** A country's own line on a travel-ban event, e.g. Nigeria on Proclamation 10998. */
 export function countryNote(e: DashboardEvent, country: string | null): string | null {
   if (!country) return null;
   const ban = restrictionsFor(country).find((r) => r.type === "travel-ban");
@@ -335,10 +338,10 @@ export const sourceSite = (url: string): string => {
 /* ---- Which events a chart shows ---- */
 
 export const appliesTo = (e: DashboardEvent, country: string | null): boolean =>
-  e.scope === "global" || (country !== null && e.scope.includes(country));
+  e.scope === "global" || (country === null ? e.world === true : e.scope.includes(country));
 
 export interface EventSelection {
-  /** The chart's country, for its own events; null = global events only. */
+  /** The chart's country, for its own events; null = a world chart (global events and the travel bans). */
   country: string | null;
   /** Include global "detail" events (Country 360) or only "major" ones (Historical Trends, Consulates). */
   globalDetail: boolean;

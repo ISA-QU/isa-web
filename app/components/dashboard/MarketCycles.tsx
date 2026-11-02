@@ -7,6 +7,7 @@ import {
   DOWNTURN_SHARE,
   COUNTRY_SPLITS,
   INDEX_BASE_YEAR,
+  INDEX_NOTE,
   chinaNote,
   countryDownturnView,
   countryVsWorld,
@@ -355,6 +356,10 @@ export default function MarketCycles() {
         </h4>
         {vsWorld && compareChart ? (
           <>
+            {/* Fix pack 10: how to read the index (Index view only). */}
+            {(compareView === "index" || vsWorld.share === null) && (
+              <p className="mb-2 text-xs text-slate-400">{INDEX_NOTE}</p>
+            )}
             {vsWorld.share !== null && (
               <div role="radiogroup" aria-label="Comparison view" className="mb-2 inline-flex rounded-md border border-slate-400/25 bg-[#07152E] p-0.5">
                 {(

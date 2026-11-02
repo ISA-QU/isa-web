@@ -6,7 +6,7 @@
 
 import { MONTH_NAMES } from "./constants";
 import { typicalYearsOf } from "./measures";
-import { pctGrowth } from "./metrics";
+import { pctGrowth, type AnnualPivotRow } from "./metrics";
 import type { AnnualCountryRow, FiscalYearInfo, MonthRange, Visa } from "./types";
 
 /**
@@ -22,6 +22,29 @@ export function provisionalFiscalYears(fiscalYears: readonly FiscalYearInfo[]): 
 /** "FY2025 (provisional)" or "FY2024". */
 export const fyLabel = (year: number, provisional: ReadonlySet<number>): string =>
   `FY${year}${provisional.has(year) ? " (provisional)" : ""}`;
+
+/**
+ * A country's annual pivot with every fiscal year from its first row to `end`,
+ * missing years as 0 (the Fix Pack A2 rule), so the latest year is the same for
+ * every country (North Korea's last row is FY2022; it shows FY2025: 0).
+ */
+export function filledAnnualPivot(pivot: readonly AnnualPivotRow[], end: number): AnnualPivotRow[] {
+  if (pivot.length === 0) return [];
+  const byYear = new Map(pivot.map((r) => [r.fiscalYear, r]));
+  const out: AnnualPivotRow[] = [];
+  for (let year = pivot[0].fiscalYear; year <= Math.max(end, pivot[pivot.length - 1].fiscalYear); year += 1) {
+    out.push(byYear.get(year) ?? { fiscalYear: year, F1: 0, J1: 0 });
+  }
+  return out;
+}
+
+/** The same for a by-year map: years from `start` (the country's first row, any visa) to `end` with no rows are 0. */
+export function withMissingYearsAsZero(byYear: ReadonlyMap<number, number>, start: number | null, end: number): Map<number, number> {
+  const out = new Map(byYear);
+  if (start === null) return out;
+  for (let year = start; year <= end; year += 1) if (!out.has(year)) out.set(year, 0);
+  return out;
+}
 
 /** One country's issuances for one visa class, by fiscal year. */
 export function annualByYear(

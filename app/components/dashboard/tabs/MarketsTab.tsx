@@ -9,14 +9,22 @@ import { LOW_VOLUME, MIN_BASE, changeText, changeVsBase, latestCompleteYearOf } 
 import {
   MARKET_THRESHOLDS,
   buildCommandCenterFrame,
+  historicalCountryName,
   nationalitySignals,
   notNa,
   recommendedOutreachWindow,
 } from "../../../lib/dashboard/metrics";
+import { tenYearTrendText } from "../../../lib/dashboard/country360";
+import {
+  DECLINE_HISTORY_NOTE,
+  STRUCTURAL_DECLINE_ACTION,
+  declineHistories,
+  shownAction,
+} from "../../../lib/dashboard/cycles";
 import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { sortBy } from "../../../lib/dashboard/sort";
-import type { CommandCenterRow } from "../../../lib/dashboard/types";
+import type { AnnualCountryRow, CommandCenterRow, Visa } from "../../../lib/dashboard/types";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
 import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
@@ -139,6 +147,27 @@ export default function MarketsTab() {
   const last12 = monthRangeLabel({ start: end - 11, end });
   const latestFy = coverage.annual.latestComplete;
   const tenYear = latestFy !== null ? `FY${latestFy - 10} → FY${latestFy}` : "10-year";
+
+  // Fix pack 10: the 10-year trend with the shared minimum base (FY base under 100 → low volume).
+  // Display only: the categories and the sort keep the raw value, as the Change column does.
+  const annualByCountry = useMemo(() => {
+    const byCountry = new Map<string, AnnualCountryRow[]>();
+    for (const r of data.annualCountry) {
+      const list = byCountry.get(r.country);
+      if (list) list.push(r);
+      else byCountry.set(r.country, [r]);
+    }
+    return byCountry;
+  }, [data.annualCountry]);
+  const tenYearText = (r: MarketRow) =>
+    tenYearTrendText(r.growth10yr, annualByCountry.get(historicalCountryName(r.country)) ?? [], visas as Visa[], latestFy);
+
+  // Fix pack 10: "Review Structural Decline" worded by each country's F1 history (Market cycles' rule).
+  const histories = useMemo(
+    () => declineHistories(data.annualCountry, coverage.annual.first ?? 1997, latestFy ?? coverage.annual.first ?? 1997),
+    [data.annualCountry, coverage.annual.first, latestFy],
+  );
+  const actionText = (r: MarketRow) => shownAction(r.recommendedAction, histories.get(historicalCountryName(r.country)) ?? null);
   const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
   const measure = byNationality ? "nationals" : "issued";
   const changeHeader = priorRange ? `Change vs ${monthRangeLabel(priorRange)}` : "Change vs previous period";
@@ -159,7 +188,7 @@ export default function MarketsTab() {
     { key: "country", header: "Country", render: countryCell },
     { key: "nationals", header: `${byNationality ? "Nationals" : "Issued"}, ${periodRange.label}`, numeric: true, render: (r) => int(r.periodTotal) },
     { key: "change", header: changeHeader, numeric: true, render: periodChangeText },
-    { key: "trend", header: `10-year trend, ${tenYear}`, numeric: true, render: (r) => arrowPct(r.growth10yr) },
+    { key: "trend", header: `10-year trend, ${tenYear}`, numeric: true, render: tenYearText },
     {
       key: "action",
       header: "Action (category)",
@@ -169,7 +198,7 @@ export default function MarketsTab() {
           r.recommendedAction
         ) : (
           <>
-            {r.recommendedAction} <span className="text-slate-400">({r.marketCategory})</span>
+            {actionText(r)} <span className="text-slate-400">({r.marketCategory})</span>
           </>
         ),
     },
@@ -208,7 +237,7 @@ export default function MarketsTab() {
   const csvRows = filtered.map((r) => [
     r.country,
     r.marketCategory,
-    r.recommendedAction,
+    actionText(r),
     timingText(r),
     String(r.periodTotal),
     r.periodPrior === null ? "" : String(r.periodPrior),
@@ -260,7 +289,7 @@ export default function MarketsTab() {
     { key: "change", header: "Change vs previous 12 months", numeric: true, render: (r) => arrowPct(r.latest12Momentum) },
     { key: "latest", header: "Last 12 months", numeric: true, render: (r) => int(r.latest12Total) },
     { key: "prior", header: "Previous 12 months", numeric: true, render: (r) => int(r.prior12Total) },
-    { key: "action", header: "Action", render: (r) => r.recommendedAction },
+    { key: "action", header: "Action", render: actionText },
   ];
 
   const countCard = (name: string) => {
@@ -331,6 +360,12 @@ export default function MarketsTab() {
           headers={csvHeaders}
           rows={csvRows}
         />
+        {filtered.some((r) => r.recommendedAction === STRUCTURAL_DECLINE_ACTION) && (
+          <p className="mt-2 text-xs text-slate-400">
+            Declining markets: the action&apos;s wording (structural, gradual long decline, has recovered before) follows
+            each country&apos;s downturn history in Historical Trends → Market cycles; {DECLINE_HISTORY_NOTE}.
+          </p>
+        )}
         <div className="mt-2">
           <RestrictionSmallPrint />
         </div>

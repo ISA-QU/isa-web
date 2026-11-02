@@ -2,7 +2,8 @@
  * Market cycles (2b-1): 30 years of annual visas by nationality, downturns from
  * a running peak to a trough, and whether each one regained its peak. Pure
  * functions, so the verify script can check them. Information only: nothing
- * here feeds a market category, action or any existing figure.
+ * here feeds a market category or any existing figure; declineHistory() only
+ * rewords the "Review Structural Decline" action (display).
  *
  * Downturn rule: a downturn starts when a year is 20%+ below the highest year
  * so far (since the data starts, FY1997) and ends when that peak is regained.
@@ -284,6 +285,9 @@ export function countryDownturnView(country: string, series: readonly YearValue[
 
 /** The pre-pandemic year both lines are indexed to. */
 export const INDEX_BASE_YEAR = 2019;
+
+/** How to read the index, under the chart's title (Index view only). */
+export const INDEX_NOTE = `Both lines are set to 100 in FY${INDEX_BASE_YEAR}, the last year before COVID. 92 means 8% below FY${INDEX_BASE_YEAR}; 200 means double.`;
 /** Within this many percentage points of the world: "about in line with the market". */
 export const IN_LINE_POINTS = 2;
 
@@ -419,4 +423,88 @@ export function chinaNote(
     bestYear: best.year,
     restPctOfPeak: (best.value / restAtPeak) * 100,
   };
+}
+
+/* ---- Fix pack 10: a country's decline history (shared with the 2b-2 history labels) ---- */
+
+/** A long decline: the peak (best year) is at least this many fiscal years before the latest. */
+export const LONG_DECLINE_YEARS = 8;
+/** Under this share of the peak after a long decline: structural. */
+export const STRUCTURAL_SHARE = 0.5;
+/** Up to this share of the peak after a long decline: gradual (20%+ below, as in the downturn rule). */
+export const GRADUAL_SHARE = DOWNTURN_SHARE;
+
+export type DeclineHistoryKind = "structural" | "gradual" | "recovered" | "none";
+
+export interface DeclineHistory {
+  kind: DeclineHistoryKind;
+  /** The best year (ties go to the earliest); null without a series of 100+. */
+  peakYear: number | null;
+  peak: number | null;
+  latestYear: number | null;
+  latest: number | null;
+  /** The latest year as a % of the peak. */
+  pctOfPeak: number | null;
+  /** Earlier downturns (peak 100+) that regained their peak. */
+  recovered: number;
+}
+
+/**
+ * A country's decline history from its yearly series (F1 for the actions),
+ * first match wins:
+ * 1. structural: peak 8+ years before the latest year, latest under 50% of it;
+ * 2. gradual: peak 8+ years before, latest at 50–80% of it;
+ * 3. recovered: at least one 20%+ downturn (peak 100+) that regained its peak;
+ * 4. none. Also "none" for a split country or a best year under 100.
+ */
+export function declineHistory(country: string, series: readonly YearValue[]): DeclineHistory {
+  const view = countryDownturnView(country, series);
+  const empty: DeclineHistory = { kind: "none", peakYear: null, peak: null, latestYear: null, latest: null, pctOfPeak: null, recovered: 0 };
+  if (view.kind !== "rows" || series.length === 0) return empty;
+  const best = series.reduce((a, b) => (b.value > a.value ? b : a));
+  const last = series[series.length - 1];
+  const share = last.value / best.value;
+  const recovered = view.rows.filter((d) => d.regainedYear !== null).length;
+  const long = last.year - best.year >= LONG_DECLINE_YEARS;
+  const kind: DeclineHistoryKind =
+    long && share < STRUCTURAL_SHARE
+      ? "structural"
+      : long && share <= GRADUAL_SHARE
+        ? "gradual"
+        : recovered > 0
+          ? "recovered"
+          : "none";
+  return { kind, peakYear: best.year, peak: best.value, latestYear: last.year, latest: last.value, pctOfPeak: share * 100, recovered };
+}
+
+/** The action the classifier gives a declining market; only its wording follows the history. */
+export const STRUCTURAL_DECLINE_ACTION = "Review Structural Decline";
+
+const DECLINE_WORDING: Record<DeclineHistoryKind, string> = {
+  structural: STRUCTURAL_DECLINE_ACTION,
+  gradual: "Review Decline — gradual long decline",
+  recovered: "Review Decline — has recovered before",
+  none: "Review Decline",
+};
+
+/**
+ * The action as shown: "Review Structural Decline" reworded by the country's
+ * F1 history; every other action unchanged. Display only: the category, the
+ * stored action and the advice text stay as the classifier set them.
+ */
+export const shownAction = (action: string, history: DeclineHistory | null): string =>
+  action === STRUCTURAL_DECLINE_ACTION && history ? DECLINE_WORDING[history.kind] : action;
+
+/** Shown wherever the reworded action appears. */
+export const DECLINE_HISTORY_NOTE = "history based on F1 (students)";
+
+/** Each country's F1 decline history, FY`first`–FY`last` (the Market cycles series). */
+export function declineHistories(
+  rows: readonly AnnualCountryRow[],
+  first: number,
+  last: number,
+): Map<string, DeclineHistory> {
+  return new Map(
+    [...seriesByCountry(rows, ["F1"], first, last)].map(([country, series]) => [country, declineHistory(country, series)]),
+  );
 }

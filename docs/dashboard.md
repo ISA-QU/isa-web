@@ -429,6 +429,29 @@ has its own version:
   view. A note under the world chart gives mainland China's share of world visas in the
   world's peak year and how far the rest of the world came back (F1: 42.6% in FY2015; 97% by
   FY2023), computed from the data for the selected visas.
+- **Fix pack 10.**
+  - Travel-ban events: Proclamation 10949 (G10) shows only on the charts of its 19 countries
+    and Proclamation 10998 (G13) on its 39 (both lists from `restrictions.ts`), plus world
+    charts (Market cycles), since the bans moved world totals. The interview pause and other
+    global events stay on every chart.
+  - Country 360's travel-ban small print shows only for a country with a restriction (41 today);
+    Markets keeps it.
+  - Country vs world, Index view: "Both lines are set to 100 in FY2019, the last year before
+    COVID. 92 means 8% below FY2019; 200 means double."
+  - Markets' "10-year trend": "— (low volume)" when the FY base is under 100 (54 rows F1, 41
+    F1 + J1). Categories, the sort and the CSV keep the raw value, as the Change column does.
+  - Historical Trends' cards and chart end at the range's last year (the latest complete FY by
+    default) for every country, missing years as 0 (North Korea: FY2025 0, not FY2022 1).
+    Serbia and Montenegro (split in 2006) keeps its own last year.
+  - "Review Structural Decline" is worded by the country's F1 history (`declineHistory()` in
+    `cycles.ts`, the Market cycles downturn rule; shared with the 2b-2 history labels), first
+    match wins: peak 8+ years ago and latest under 50% of it → "Review Structural Decline";
+    peak 8+ years ago and latest at 50–80% → "Review Decline — gradual long decline"; an
+    earlier 20%+ downturn that regained its peak → "Review Decline — has recovered before";
+    otherwise "Review Decline". Always F1 history, whatever the Visa control, with the note
+    "history based on F1 (students)". Display only: the category (Declining), the stored
+    action, the advice text and the advice fingerprints are unchanged. F1, default view: 13
+    structural, 1 gradual (Egypt), 3 recovered before (India, Colombia, Albania).
 
 ## Choices the data forced
 
@@ -614,7 +637,7 @@ annual). Run the Test event `{}` and expect:
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **216/216** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes **223/223** on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes
@@ -637,7 +660,7 @@ build takes about 3 seconds).
    `lambda_function.py` (keep the bucket setting as it is in AWS if it differs), **Deploy**.
 3. [ ] Run the Test event `{}`; compare with "Expected Test output" above.
 4. [ ] Optional: download the new snapshot, gunzip it to `public/dashboard-data/snapshot.json`
-   and run `npm run dashboard:verify` (expect 216/216).
+   and run `npm run dashboard:verify` (expect 223/223).
 5. [ ] From `main`: `npm ci`, then `npm run deploy`.
 6. [ ] Sign in to the live site and spot-check: header 252,282 / 284,306 / 27,258 (F1, India selected);
    Country 360 India 30,292 ▼ 59.6%; Consulates Mumbai 162,287; no fallback banner on Markets.

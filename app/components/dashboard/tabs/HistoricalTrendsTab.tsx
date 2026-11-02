@@ -15,10 +15,13 @@ import {
 import {
   annualByYear,
   annualChartPlan,
+  filledAnnualPivot,
   fyChange,
   fyLabel,
   provisionalFiscalYears,
+  withMissingYearsAsZero,
 } from "../../../lib/dashboard/periods";
+import { COUNTRY_SPLITS } from "../../../lib/dashboard/cycles";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
@@ -84,14 +87,21 @@ export default function HistoricalTrendsTab() {
     [data.annualCountry, country, startYear, endYear],
   );
 
-  const pivot = useMemo(() => buildAnnualPivot(selectedRange), [selectedRange]);
+  // Every country ends at the range's last year (the latest complete one by default),
+  // missing years as 0. A country that split (Serbia and Montenegro) keeps its own last year.
+  const split = COUNTRY_SPLITS[country] !== undefined;
+  const pivot = useMemo(
+    () => (split ? buildAnnualPivot(selectedRange) : filledAnnualPivot(buildAnnualPivot(selectedRange), endYear)),
+    [selectedRange, split, endYear],
+  );
   const metrics = useMemo(() => calculateHistoricalRangeMetrics(pivot), [pivot]);
 
   /* ---- KPI comparisons, each naming its fiscal years ---- */
-  const countryF1 = useMemo(
-    () => annualByYear(data.annualCountry, country, "F1"),
-    [data.annualCountry, country],
-  );
+  const countryF1 = useMemo(() => {
+    const byYear = annualByYear(data.annualCountry, country, "F1");
+    const years = data.annualCountry.filter((r) => r.country === country).map((r) => r.fiscalYear);
+    return split ? byYear : withMissingYearsAsZero(byYear, years.length > 0 ? Math.min(...years) : null, latestFy);
+  }, [data.annualCountry, country, split, latestFy]);
   const shownYear = pivot.length > 0 ? pivot[pivot.length - 1].fiscalYear : null;
   const shownLabel = shownYear !== null ? fyLabel(shownYear, provisional) : "N/A";
   const vsPriorYear = shownYear !== null ? fyChange(countryF1, shownYear, shownYear - 1) : null;

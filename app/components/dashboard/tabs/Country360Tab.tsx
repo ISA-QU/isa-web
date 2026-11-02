@@ -51,7 +51,14 @@ import {
   profileForDisplay,
   shownConfidence,
 } from "../../../lib/dashboard/country360";
-import { restrictionCsv } from "../../../lib/dashboard/restrictions";
+import { restrictionCsv, restrictionsFor } from "../../../lib/dashboard/restrictions";
+import {
+  DECLINE_HISTORY_NOTE,
+  STRUCTURAL_DECLINE_ACTION,
+  declineHistory,
+  fiscalYearSeries,
+  shownAction,
+} from "../../../lib/dashboard/cycles";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { MonthRange, Visa } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents, type EventAxis } from "../../../lib/dashboard/events";
@@ -130,6 +137,11 @@ export default function Country360Tab() {
   const histCountryAll = useMemo(
     () => data.annualCountry.filter((r) => r.country === histCountry),
     [data.annualCountry, histCountry],
+  );
+  // The F1 history that words a declining market's action (Fix pack 10; same rule as Market cycles).
+  const declineHist = useMemo(
+    () => declineHistory(country, fiscalYearSeries(histCountryAll, ["F1"], firstFy, latestFy)),
+    [country, histCountryAll, firstFy, latestFy],
   );
   const hcCountryAll = useMemo(
     () => data.postsMonthly.filter((r) => r.country === monthCountry),
@@ -1157,7 +1169,12 @@ export default function Country360Tab() {
               </FixedTag>
             </SubHeading>
             <Panel accent="gold">
-              <p className="text-lg font-extrabold text-white">{metrics.action}</p>
+              <p className="text-lg font-extrabold text-white">{shownAction(metrics.action, declineHist)}</p>
+              {metrics.action === STRUCTURAL_DECLINE_ACTION && (
+                <p className="text-xs text-slate-400">
+                  {DECLINE_HISTORY_NOTE.charAt(0).toUpperCase() + DECLINE_HISTORY_NOTE.slice(1)}.
+                </p>
+              )}
               <p className="mt-1 text-sm text-slate-300">
                 {metrics.category} market · momentum: {momentumLabel} · confidence:{" "}
                 {shownConfidence(metrics.confidence, metrics.twelve, hasLeadRows)}
@@ -1184,9 +1201,12 @@ export default function Country360Tab() {
                 ))}
               </ul>
             </Panel>
-            <div className="mt-2">
-              <RestrictionSmallPrint />
-            </div>
+            {/* The travel-ban small print, only for a country with a restriction (Fix pack 10). */}
+            {restrictionsFor(country).length > 0 && (
+              <div className="mt-2">
+                <RestrictionSmallPrint />
+              </div>
+            )}
           </section>
 
           {/* 7. More details */}

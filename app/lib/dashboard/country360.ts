@@ -82,18 +82,28 @@ export function pctCardText(change: number | null, base: number | null | undefin
 }
 
 /**
- * Markets' "10-year trend" cell (Fix pack 10): "— (low volume)" when the
- * earlier fiscal year is under 100, otherwise "▲ 12.3%" (or "N/A" with none).
- * Display only: categories and the sort keep the raw value.
+ * Markets' trend cells: "— (low volume)" when the earlier fiscal year
+ * (`years` before the latest) is under 100, otherwise "▲ 12.3%" (or "N/A"
+ * with none). 10-year in Fix pack 10, 5-year in Fix pack 11. Display only:
+ * categories and the sort keep the raw value.
  */
-export function tenYearTrendText(
+export function trendCellText(
   growth: number | null,
   annualRows: readonly AnnualCountryRow[],
   visas: readonly Visa[],
   latestYear: number | null,
+  years: number,
 ): string {
-  if (growth !== null && latestYear !== null && annualRows.length > 0 && growthBaseIsLow(annualRows, visas, latestYear - 10)) {
+  if (growth !== null && latestYear !== null && annualRows.length > 0 && growthBaseIsLow(annualRows, visas, latestYear - years)) {
     return LOW_VOLUME;
   }
   return arrowPct(growth);
 }
+
+/** Markets' "10-year trend" cell. */
+export const tenYearTrendText = (
+  growth: number | null,
+  annualRows: readonly AnnualCountryRow[],
+  visas: readonly Visa[],
+  latestYear: number | null,
+): string => trendCellText(growth, annualRows, visas, latestYear, 10);

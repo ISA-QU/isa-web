@@ -7,6 +7,7 @@
  * Wording: events "may have affected" trends; never say they caused them.
  */
 
+import { EVENT_LABEL_NAME } from "./chartLayout";
 import {
   PAUSED_POSTS,
   RESTRICTED_NON_COUNTRY,
@@ -549,6 +550,8 @@ export function eventOverlay(opts: OverlayOptions): EventOverlay {
       font: { color: "#DDD6FE", size: 10 },
       bgcolor: "rgba(7, 21, 46, 0.85)",
       hovertext: group.map((p) => p.event.label).join("; "),
+      // Lets a narrow chart leave event labels hover-only (chartLayout.ts).
+      name: EVENT_LABEL_NAME,
     });
   }
 

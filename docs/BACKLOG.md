@@ -64,7 +64,7 @@ Sourced event markers on the existing charts ("may have affected", never "caused
 - [ ] Replace the Wikipedia sources (G1 9/11, G3 financial crisis, G5 Executive Order 13769, C9 Embassy Kyiv) with official or academic sources before launch.
 - [ ] Review `events.ts` with `restrictions.ts` and update `EVENTS_LAST_CHECKED`.
 - [ ] Consulates' calendar-year trend modes don't show events yet (monthly mode only).
-- [ ] Label spacing assumes a desktop-width chart; on phones some labels may crowd (hover still works). Check with Feature 9 mobile.
+- [x] Label spacing assumes a desktop-width chart; on phones some labels may crowd (hover still works). Check with Feature 9 mobile. Fix pack 11: event labels are hover-only below 640 px.
 - [ ] Polish: on yearly charts the existing "2020 disruption" label sits close to the 2020 event marker; nudge one of them.
 - [ ] Possible event for Sudan: U.S. Embassy Khartoum suspended operations in April 2023 (would add a `consulate` note on Consulates, like C8 Kabul). Needs a verified source before adding.
 
@@ -103,9 +103,9 @@ Sourced event markers on the existing charts ("may have affected", never "caused
 
 ## 9 · Polish
 
-- [ ] Mobile (~640px wide): on Historical Trends and Country 360's long-term chart the fiscal-year labels overlap and the axis range stretches; fix the tick spacing and range at narrow widths.
+- [ ] Mobile (~640px wide): on Historical Trends and Country 360's long-term chart the fiscal-year labels overlap and the axis range stretches; fix the tick spacing and range at narrow widths. Fix pack 11 did the ticks (every 5 years below 640 px); the range stretching is still to be checked in the browser.
 
-- [ ] % rounding differs between pages: Uganda's 10-year trend shows ▲ 75.1% on Markets but +75.0% on Historical Trends (exact 75.05%). Use one shared percent formatter everywhere.
+- [x] % rounding differs between pages: Uganda's 10-year trend shows ▲ 75.1% on Markets but +75.0% on Historical Trends (exact 75.05%). Use one shared percent formatter everywhere. Fix pack 11: `pct1()`.
 - [ ] Complete the region mapping for all 205 countries so region presets include every country.
 - [ ] Country flags: small flag icons next to country names in tables, cards and pickers, using a free flag set.
 - [ ] Decide how flags show for non-country entries (e.g. Hong Kong, Macau, special categories).

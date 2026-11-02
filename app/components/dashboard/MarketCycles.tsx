@@ -29,6 +29,7 @@ import { selectedVisaClasses } from "../../lib/dashboard/metrics";
 import { fyLabel, provisionalFiscalYears } from "../../lib/dashboard/periods";
 import { arrowPct } from "../../lib/dashboard/rolling";
 import { MONTH_NAMES } from "../../lib/dashboard/constants";
+import { pct1 } from "../../lib/dashboard/pct";
 import Chart from "./Chart";
 import { EventsList, EventsToggle } from "./EventsControls";
 import { useDashboard } from "./DashboardContext";
@@ -271,7 +272,7 @@ export default function MarketCycles() {
         {visaLabel} visas by nationality, all countries, over 30 years: downturns, and whether markets came back.
       </p>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div className="xl:col-span-2">
           <div className="mb-1 flex justify-end">
             <EventsToggle />
@@ -311,7 +312,7 @@ export default function MarketCycles() {
 
       {chinaFacts && (
         <p className="text-xs text-slate-400">
-          World excluding mainland China: shown because mainland China alone was {chinaFacts.chinaSharePct.toFixed(1)}% of
+          World excluding mainland China: shown because mainland China alone was {pct1(chinaFacts.chinaSharePct)}% of
           all {visaLabel} visas in FY{chinaFacts.peakYear}; without it, the rest of the world was back to{" "}
           {Math.round(chinaFacts.restPctOfPeak)}% of its FY{chinaFacts.peakYear} level by FY{chinaFacts.bestYear}.
         </p>

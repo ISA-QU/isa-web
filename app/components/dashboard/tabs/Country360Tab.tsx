@@ -62,6 +62,7 @@ import {
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
 import type { MonthRange, Visa } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents, type EventAxis } from "../../../lib/dashboard/events";
+import { pct1 } from "../../../lib/dashboard/pct";
 import Chart from "../Chart";
 import { EventsList, EventsToggle } from "../EventsControls";
 import ComparePicker from "../ComparePicker";
@@ -1033,13 +1034,13 @@ export default function Country360Tab() {
               {periodLeader && !periodIsFullHistory && (
                 <p>
                   Issued in {country}, in {periodRange.inSentence}, <b className="text-white">{periodLeader.post}</b>{" "}
-                  leads with {periodLeader.share.toFixed(1)}% of {visaLabelOf(visa)}.
+                  leads with {pct1(periodLeader.share)}% of {visaLabelOf(visa)}.
                 </p>
               )}
               {historyLeader && (
                 <p>
                   Issued in {country}, over the full history ({fullRangeText}), <b className="text-white">{historyLeader.post}</b>{" "}
-                  leads with {historyLeader.share.toFixed(1)}%
+                  leads with {pct1(historyLeader.share)}%
                   {periodIsFullHistory ? ` of ${visaLabelOf(visa)}` : ""}.
                 </p>
               )}
@@ -1362,7 +1363,7 @@ export default function Country360Tab() {
                   String(r.f1Last12),
                   String(r.j1Last12),
                   String(r.f1Prior),
-                  r.f1Change === null ? "" : r.f1Change.toFixed(1),
+                  r.f1Change === null ? "" : pct1(r.f1Change),
                   r.topPost,
                   r.peakName,
                   ...restrictionCsv(r.country),

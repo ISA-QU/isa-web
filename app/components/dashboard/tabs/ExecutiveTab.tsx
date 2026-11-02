@@ -437,7 +437,7 @@ export default function ExecutiveTab() {
       </div>
 
 
-      <div className="grid gap-4 lg:grid-cols-[2.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2.4fr_1fr]">
         <Chart
           data={globe.data}
           layout={globe.layout}
@@ -465,7 +465,7 @@ export default function ExecutiveTab() {
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
           <Chart data={annual.data} layout={annual.layout} height={380} />
           <p className="mt-2 text-xs text-slate-400">

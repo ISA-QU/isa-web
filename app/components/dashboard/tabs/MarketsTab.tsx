@@ -14,7 +14,7 @@ import {
   notNa,
   recommendedOutreachWindow,
 } from "../../../lib/dashboard/metrics";
-import { tenYearTrendText } from "../../../lib/dashboard/country360";
+import { tenYearTrendText, trendCellText } from "../../../lib/dashboard/country360";
 import {
   DECLINE_HISTORY_NOTE,
   STRUCTURAL_DECLINE_ACTION,
@@ -25,6 +25,7 @@ import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/das
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { AnnualCountryRow, CommandCenterRow, Visa } from "../../../lib/dashboard/types";
+import { pct1 } from "../../../lib/dashboard/pct";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
 import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
@@ -161,6 +162,9 @@ export default function MarketsTab() {
   }, [data.annualCountry]);
   const tenYearText = (r: MarketRow) =>
     tenYearTrendText(r.growth10yr, annualByCountry.get(historicalCountryName(r.country)) ?? [], visas as Visa[], latestFy);
+  // Fix pack 11: the same minimum base for the 5-year trend (FY2020 base today).
+  const fiveYearText = (r: MarketRow) =>
+    trendCellText(r.growth5yr, annualByCountry.get(historicalCountryName(r.country)) ?? [], visas as Visa[], latestFy, 5);
 
   // Fix pack 10: "Review Structural Decline" worded by each country's F1 history (Market cycles' rule).
   const histories = useMemo(
@@ -216,7 +220,7 @@ export default function MarketsTab() {
     { key: "p12", header: "Previous 12 months", numeric: true, render: (r) => int(r.prior12Total) },
     { key: "m12", header: "Change, last 12 months", numeric: true, render: (r) => changeText(r.latest12Momentum, r.prior12Total, arrowPct) },
     { key: "rec", header: `Recovery (${recoveryYear} vs 2019)`, numeric: true, render: recoveryText },
-    { key: "g5", header: "5-year trend", numeric: true, render: (r) => arrowPct(r.growth5yr) },
+    { key: "g5", header: "5-year trend", numeric: true, render: fiveYearText },
     { key: "peak", header: "Peak month (typical year)", render: peakText },
     { key: "season", header: "Seasonality ratio", numeric: true, render: (r) => (notNa(r.seasonalityRatio) ? `${r.seasonalityRatio.toFixed(1)}x` : "—") },
     { key: "cv", header: "Volatility CV", numeric: true, render: (r) => decimals(r.volatilityCv, 2) },
@@ -241,13 +245,13 @@ export default function MarketsTab() {
     timingText(r),
     String(r.periodTotal),
     r.periodPrior === null ? "" : String(r.periodPrior),
-    r.periodChange === null ? "" : r.periodChange.toFixed(1),
-    r.growth10yr === null ? "" : r.growth10yr.toFixed(1),
+    r.periodChange === null ? "" : pct1(r.periodChange),
+    r.growth10yr === null ? "" : pct1(r.growth10yr),
     String(r.latest12Total),
     String(r.prior12Total),
-    r.latest12Momentum === null ? "" : r.latest12Momentum.toFixed(1),
+    r.latest12Momentum === null ? "" : pct1(r.latest12Momentum),
     r.recoveryIndex === null ? "" : r.recoveryIndex.toFixed(1),
-    r.growth5yr === null ? "" : r.growth5yr.toFixed(1),
+    r.growth5yr === null ? "" : pct1(r.growth5yr),
     r.peakMonthName,
     r.seasonalityRatio === null ? "" : r.seasonalityRatio.toFixed(2),
     r.volatilityCv === null ? "" : r.volatilityCv.toFixed(3),
@@ -325,7 +329,7 @@ export default function MarketsTab() {
         category, action, flags and movers: last 12 months ({last12}) · timing: typical year.
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Select label="Region" value={region} options={regionOptions} onChange={setRegion} />
         <Select label="Category" value={category} options={["All", ...MARKET_CATEGORIES]} onChange={setCategory} />
         <Select label="Sort by" value={sort} options={SORTS} onChange={(v) => setSort(v as SortKey)} />
@@ -402,7 +406,7 @@ export default function MarketsTab() {
           months. Only countries with at least {MOVER_MIN_ISSUANCES} in both 12-month periods ({moverPool.length} match the
           current filters).
         </Caption>
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div>
             <h5 className="mb-2 text-sm font-bold text-[#4ade80]">Top risers</h5>
             <DataTable rows={risers} height={390} rowKey={rowKey} columns={moverColumns} empty="No qualifying country grew." />

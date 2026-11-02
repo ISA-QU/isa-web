@@ -14,6 +14,7 @@
 import { MONTH_NAMES } from "./constants";
 import { MIN_BASE } from "./measures";
 import { sumBy } from "./metrics";
+import { pct1Abs } from "./pct";
 import type { AnnualCountryRow, NationalityMonthlyRow, Visa } from "./types";
 
 /** A downturn starts at this fraction of the running peak or below (20%+ down). */
@@ -315,9 +316,9 @@ export interface CountryVsWorld {
 }
 
 /** "fell 53.4%", "rose 12.0%", "was unchanged". */
-const moved = (pct: number) => (pct < 0 ? `fell ${Math.abs(pct).toFixed(1)}%` : pct > 0 ? `rose ${pct.toFixed(1)}%` : "was unchanged");
+const moved = (pct: number) => (pct < 0 ? `fell ${pct1Abs(pct)}%` : pct > 0 ? `rose ${pct1Abs(pct)}%` : "was unchanged");
 /** "down 8.3%", "up 283.0%", "unchanged". */
-const level = (pct: number) => (pct < 0 ? `down ${Math.abs(pct).toFixed(1)}%` : pct > 0 ? `up ${pct.toFixed(1)}%` : "unchanged");
+const level = (pct: number) => (pct < 0 ? `down ${pct1Abs(pct)}%` : pct > 0 ? `up ${pct1Abs(pct)}%` : "unchanged");
 
 /**
  * The country against the world, both for the selected visas, over complete
@@ -376,7 +377,7 @@ export function countryVsWorld(
     const verdict = tone === "same" ? "about in line with the market" : `${still}${tone === "better" ? "ahead of" : "behind"} the market`;
     const versus =
       Math.sign(countrySince) === Math.sign(worldSince)
-        ? `${level(countrySince)} vs the world's ${Math.abs(worldSince).toFixed(1)}%`
+        ? `${level(countrySince)} vs the world's ${pct1Abs(worldSince)}%`
         : `${level(countrySince)} while the world is ${level(worldSince)}`;
     second = `Since FY${INDEX_BASE_YEAR}, ${country} is ${versus} — ${verdict} over ${years} years.`;
   }
@@ -455,7 +456,9 @@ export interface DeclineHistory {
  * 1. structural: peak 8+ years before the latest year, latest under 50% of it;
  * 2. gradual: peak 8+ years before, latest at 50–80% of it;
  * 3. recovered: at least one 20%+ downturn (peak 100+) that regained its peak;
- * 4. none. Also "none" for a split country or a best year under 100.
+ * 4. none. Also "none" for a split country, a best year under 100, or (Fix
+ *    pack 11, the history-label rule) a best year under MAJOR_MARKET_MIN (500):
+ *    too small a market for its history to say much.
  */
 export function declineHistory(country: string, series: readonly YearValue[]): DeclineHistory {
   const view = countryDownturnView(country, series);
@@ -467,13 +470,15 @@ export function declineHistory(country: string, series: readonly YearValue[]): D
   const recovered = view.rows.filter((d) => d.regainedYear !== null).length;
   const long = last.year - best.year >= LONG_DECLINE_YEARS;
   const kind: DeclineHistoryKind =
-    long && share < STRUCTURAL_SHARE
-      ? "structural"
-      : long && share <= GRADUAL_SHARE
-        ? "gradual"
-        : recovered > 0
-          ? "recovered"
-          : "none";
+    best.value < MAJOR_MARKET_MIN
+      ? "none"
+      : long && share < STRUCTURAL_SHARE
+        ? "structural"
+        : long && share <= GRADUAL_SHARE
+          ? "gradual"
+          : recovered > 0
+            ? "recovered"
+            : "none";
   return { kind, peakYear: best.year, peak: best.value, latestYear: last.year, latest: last.value, pctOfPeak: share * 100, recovered };
 }
 

@@ -452,6 +452,23 @@ has its own version:
     "history based on F1 (students)". Display only: the category (Declining), the stored
     action, the advice text and the advice fingerprints are unchanged. F1, default view: 13
     structural, 1 gradual (Egypt), 3 recovered before (India, Colombia, Albania).
+- **Fix pack 11.**
+  - Phone width: the 8 layout grids that only set columns from a breakpoint up (`sm:`,
+    `lg:`, `xl:`) get a base `grid-cols-1`, so below the breakpoint wide tables scroll inside
+    their own box instead of widening the page (Markets' movers and Historical Trends'
+    rankings made the page ~745 px wide at 375). Charts narrower than 640 px
+    (`chartLayout.ts`, applied in `Chart.tsx`): fiscal-year ticks every 5 years instead of
+    2, event labels hover-only (◆ markers stay), a 14 px title and the legend below the
+    plot. At 640 px and wider every chart is drawn exactly as before.
+  - Decline wording: a best F1 year under 500 (`MAJOR_MARKET_MIN`, the history-label rule)
+    gives plain "Review Decline". F1, default view: 12 structural, 1 gradual (Egypt), 3
+    recovered before (India, Colombia, Albania), 1 plain (El Salvador, best 499).
+  - Markets' "5-year trend": "— (low volume)" when the FY base (FY2020) is under 100.
+  - One percent formatter, `pct1()` in `pct.ts`: every 1-decimal percent on the pages and in
+    the CSVs rounds the raw value once, half away from zero. Historical Trends' rankings no
+    longer pre-round to 2 decimals, which made 14 values differ from the other pages (Uganda
+    +75.0% → +75.1%, as on Markets). Whole-number figures, ratios and 2-decimal CSV shares
+    are unchanged.
 
 ## Choices the data forced
 
@@ -637,7 +654,7 @@ annual). Run the Test event `{}` and expect:
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **223/223** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes **228/228** on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes
@@ -660,7 +677,7 @@ build takes about 3 seconds).
    `lambda_function.py` (keep the bucket setting as it is in AWS if it differs), **Deploy**.
 3. [ ] Run the Test event `{}`; compare with "Expected Test output" above.
 4. [ ] Optional: download the new snapshot, gunzip it to `public/dashboard-data/snapshot.json`
-   and run `npm run dashboard:verify` (expect 223/223).
+   and run `npm run dashboard:verify` (expect 228/228).
 5. [ ] From `main`: `npm ci`, then `npm run deploy`.
 6. [ ] Sign in to the live site and spot-check: header 252,282 / 284,306 / 27,258 (F1, India selected);
    Country 360 India 30,292 ▼ 59.6%; Consulates Mumbai 162,287; no fallback banner on Markets.

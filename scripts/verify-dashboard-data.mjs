@@ -1369,12 +1369,59 @@ async function main() {
   check(
     "declining markets worded by F1 history (default view, 100+): F1 | F1 + J1",
     `${reworded("F1", 100)} | ${reworded("Both", 100)}`,
-    "Review Decline — gradual long decline: 1 (Egypt) / Review Decline — has recovered before: 3 (Albania, Colombia, India) / Review Structural Decline: 13 | Review Decline — has recovered before: 2 (India, Tunisia) / Review Structural Decline: 12",
+    // Re-recorded in Fix pack 11: a best F1 year under 500 gives plain "Review Decline" (El Salvador 499, Iraq 419).
+    "Review Decline — gradual long decline: 1 (Egypt) / Review Decline — has recovered before: 3 (Albania, Colombia, India) / Review Decline: 1 (El Salvador) / Review Structural Decline: 12 | Review Decline — has recovered before: 2 (India, Tunisia) / Review Decline: 2 (El Salvador, Iraq) / Review Structural Decline: 10",
   );
   check(
     "decline wording outside the default view, F1: Guyana / Estonia / Papua New Guinea / Bhutan / Saint Kitts and Nevis / Liberia / Botswana | India stored action",
     `${["Guyana", "Estonia", "Papua New Guinea", "Bhutan", "Saint Kitts and Nevis", "Liberia", "Botswana"].map((c) => histories.get(c).kind).join(" / ")} | ${natRow("India").recommendedAction}`,
-    "gradual / gradual / none / none / recovered / structural / structural | Review Structural Decline",
+    // Re-recorded in Fix pack 11: all seven have a best F1 year under 500 (116–436).
+    "none / none / none / none / none / none / none | Review Structural Decline",
+  );
+
+  console.log("\n  Fix pack 11  (expected values recounted with pandas from the raw workbooks)");
+  const pctMod = await import(pathToFileURL(path.join(outDir, "pct.js")).href);
+  const chartLayout = await import(pathToFileURL(path.join(outDir, "chartLayout.js")).href);
+  check(
+    "one percent formatter, half away from zero: 75.0515 / 6.25 / -6.25 / 0.05 / 1.15 / -0.04 | arrowPct(-6.25) / metricPct(75.051546)",
+    `${[75.0515, 6.25, -6.25, 0.05, 1.15, -0.04].map(pctMod.pct1).join(" / ")} | ${rolling.arrowPct(-6.25)} / ${format.metricPct(75.051546)}`,
+    "75.1 / 6.3 / -6.3 / 0.1 / 1.2 / -0.0 | ▼ 6.3% / +75.1%",
+  );
+  const hist11 = new Map(metrics.buildHistoricalMetricsFromAnnual(annualCountry, latestComplete).map((r) => [r.country, r]));
+  check(
+    "Historical Trends rankings, rounded once (10-yr / CAGR): the 14 that changed",
+    ["Uganda", "India", "Singapore", "Kyrgyzstan", "Portugal", "Venezuela", "Republic of the Congo", "Laos", "Tonga", "Mongolia", "Azerbaijan", "United Arab Emirates", "Saint Kitts and Nevis", "Grenada"]
+      .map((c) => `${c} ${format.metricPct(hist11.get(c).f1Growth10yrPct)} / ${format.metricPct(hist11.get(c).f1Cagr10yrPct)}`)
+      .join("; "),
+    "Uganda +75.1% / +5.8%; India -46.4% / -6.1%; Singapore -32.8% / -3.9%; Kyrgyzstan +583.4% / +21.2%; Portugal +46.7% / +3.9%; Venezuela -93.4% / -23.9%; Republic of the Congo -77.6% / -13.9%; Laos -79.2% / -14.6%; Tonga -53.8% / -7.4%; Mongolia -9.1% / -1.0%; Azerbaijan +160.5% / +10.0%; United Arab Emirates -55.9% / -7.9%; Saint Kitts and Nevis +37.7% / +3.2%; Grenada +40.4% / +3.4%",
+  );
+  const fiveYearCells = (visa) => {
+    const vis = visa === "Both" ? ["F1", "J1"] : [visa];
+    const rows = natCountries.map((c) => natRow(c, visa));
+    const low = rows.filter((r) => c360.trendCellText(r.growth5yr, fp10AnnualOf(r.country), vis, latestComplete, 5) === "— (low volume)");
+    return `${low.length} (${low.filter((r) => r.latest12Total >= 100).length} in the default view)`;
+  };
+  check(
+    "Markets 5-year trend under the minimum base (FY2020 under 100): F1 | J1 | F1 + J1 | India F1",
+    `${fiveYearCells("F1")} | ${fiveYearCells("J1")} | ${fiveYearCells("Both")} | ${c360.trendCellText(natRow("India").growth5yr, fp10AnnualOf("India"), ["F1"], latestComplete, 5)}`,
+    `84 (24 in the default view) | 109 (28 in the default view) | 73 (23 in the default view) | ${rolling.arrowPct(natRow("India").growth5yr)}`,
+  );
+  check(
+    "decline history: best F1 year under 500 → none (El Salvador 499, Iraq 419, Guinea 349) | Albania 557 / Tunisia 545",
+    `${["El Salvador", "Iraq", "Guinea"].map((c) => `${histories.get(c).peak} ${histories.get(c).kind}`).join(", ")} | ${["Albania", "Tunisia"].map((c) => `${histories.get(c).peak} ${histories.get(c).kind}`).join(" / ")}`,
+    "499 none, 419 none, 349 none | 557 recovered / 545 recovered",
+  );
+  const narrow = chartLayout.narrowChartLayout({
+    xaxis: { dtick: 2, title: { text: "Fiscal Year" } },
+    title: { text: "T", font: { size: 18 } },
+    legend: { orientation: "v" },
+    annotations: [{ name: chartLayout.EVENT_LABEL_NAME, text: "event" }, { text: "keep" }],
+  });
+  const monthly = chartLayout.narrowChartLayout({ xaxis: { dtick: "M12" } });
+  check(
+    "phone-width charts (under 640 px): FY dtick / title size / legend / annotations kept | monthly dtick",
+    `${chartLayout.NARROW_CHART_PX}: ${narrow.xaxis.dtick} / ${narrow.title.font.size} / ${narrow.legend.orientation} y ${narrow.legend.y} / ${narrow.annotations.map((x) => x.text).join(",")} | ${monthly.xaxis.dtick}`,
+    "640: 5 / 14 / h y -0.25 / keep | M12",
   );
 
   await rm(outDir, { recursive: true, force: true });

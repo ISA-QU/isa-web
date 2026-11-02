@@ -2,12 +2,13 @@
 
 import { MONTH_NAMES, MONTH_NAMES_FULL } from "./constants";
 import { notNa } from "./metrics";
+import { pct1 } from "./pct";
 
 const GROUPED = new Intl.NumberFormat("en-US");
 
 /** `f"{value:+.1f}%"` — `growth_text` / `metric_pct`. */
 export const metricPct = (value: number | null | undefined): string =>
-  notNa(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(1)}%` : "N/A";
+  notNa(value) ? `${value >= 0 ? "+" : ""}${pct1(value)}%` : "N/A";
 
 export const growthText = metricPct;
 
@@ -51,11 +52,11 @@ export function monthValueDisplay(
 
 /** Percentage with a fixed number of decimals, no forced sign. */
 export const pct = (value: number | null | undefined, places = 1): string =>
-  notNa(value) ? `${value.toFixed(places)}%` : "N/A";
+  notNa(value) ? `${places === 1 ? pct1(value) : value.toFixed(places)}%` : "N/A";
 
 /** Share (0-1) rendered as a percentage. */
 export const share = (value: number | null | undefined, places = 1): string =>
-  notNa(value) ? `${(value * 100).toFixed(places)}%` : "N/A";
+  notNa(value) ? `${places === 1 ? pct1(value * 100) : (value * 100).toFixed(places)}%` : "N/A";
 
 /** An average per month: one decimal under 100 ("10.8"), whole numbers from 100 ("1,503"). */
 export const perMonthText = (value: number | null | undefined): string =>

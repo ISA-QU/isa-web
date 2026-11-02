@@ -10,6 +10,9 @@ import {
   INDEX_NOTE,
   chinaNote,
   countryDownturnView,
+  declineHistory,
+  historyLabel,
+  historyNote,
   countryVsWorld,
   MAJOR_MARKET_MIN,
   REBOUND_YEARS,
@@ -83,6 +86,15 @@ export default function MarketCycles() {
   );
   // Minimum base (100) and country splits: see countryDownturnView.
   const countryView = useMemo(() => countryDownturnView(focusCountry, countrySeries), [focusCountry, countrySeries]);
+  // 2b-2: the country's history label, always from F1 (the same declineHistory() as Markets' action wording).
+  const countryHistory = useMemo(
+    () =>
+      historyLabel(
+        declineHistory(focusCountry, fiscalYearSeries(data.annualCountry.filter((r) => r.country === focusCountry), ["F1"], first, last)),
+        provisional,
+      ),
+    [data.annualCountry, focusCountry, first, last, provisional],
+  );
 
   // 2b-1b: the selected country against the world (same visas), indexed to FY2019 = 100.
   const [compareView, setCompareView] = useState<"index" | "share">("index");
@@ -415,6 +427,12 @@ export default function MarketCycles() {
         <h4 className="mb-1 text-sm font-bold text-white">
           Downturns: {focusCountry} ({visaLabel})
         </h4>
+        <p className="mb-2 text-xs leading-relaxed text-slate-300">
+          <b className="text-slate-100">History (F1):</b> {countryHistory.label}
+          {countryHistory.label.endsWith(".") ? "" : "."}
+          {countryHistory.evidence ? ` ${countryHistory.evidence}` : ""}{" "}
+          <span className="text-slate-400">{historyNote(visas, provisional, last)}</span>
+        </p>
         {countryView.kind === "rows" ? (
           <DataTable<DownturnRow>
             rows={countryRows}

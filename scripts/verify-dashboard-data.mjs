@@ -1424,6 +1424,57 @@ async function main() {
     "640: 5 / 14 / h y -0.25 / keep | M12",
   );
 
+  console.log("\n  2b-2 history labels  (expected values recounted with pandas from the raw annual workbook)");
+  const prov2b2 = periods.provisionalFiscalYears(snapshot.fiscalYears);
+  const labelOf = (c) => cy.historyLabel(histories.get(c), prov2b2);
+  const labelCounts = {};
+  for (const c of histories.keys()) labelCounts[labelOf(c).kind] = (labelCounts[labelOf(c).kind] ?? 0) + 1;
+  check(
+    "history labels (F1, dashboard names): Cyclical / Structural / Gradual / Too early | split | no F1",
+    `${labelCounts.recovered} / ${labelCounts.structural} / ${labelCounts.gradual} / ${labelCounts.none} | ${labelCounts.split} (${[...histories.keys()].filter((c) => labelOf(c).kind === "split").join(", ")}) | ${labelCounts["no-visas"]} (${[...histories.keys()].filter((c) => labelOf(c).kind === "no-visas").join(", ")})`,
+    "43 / 38 / 19 / 102 | 1 (Serbia and Montenegro) | 1 (Palau)",
+  );
+  const twelve = ["India", "China", "Japan", "South Korea", "Saudi Arabia", "Vietnam", "Nigeria", "Ghana", "Nepal", "Brazil", "United Kingdom", "Germany"];
+  check(
+    "history labels: the 12 examples",
+    twelve.map((c) => `${c} ${labelOf(c).short}`).join(", "),
+    "India Cyclical, China Structural, Japan Structural, South Korea Structural, Saudi Arabia Structural, Vietnam Cyclical, Nigeria Cyclical, Ghana Cyclical, Nepal Cyclical, Brazil Structural, United Kingdom Gradual, Germany Gradual",
+  );
+  check(
+    "history evidence: India",
+    `${labelOf("India").label}. ${labelOf("India").evidence}`,
+    "Cyclical — has recovered before. Peak FY2023: 130,730 (2 years ago). FY2025 (provisional): 40,077, 30.7% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–04 (back FY2006), FY2008–12 (back FY2014), FY2015–20 (back FY2021). In a downturn since FY2023 (▼ 69.3% at its low).",
+  );
+  check(
+    "history evidence: China (structural that recovered earlier)",
+    `${labelOf("China").label}. ${labelOf("China").evidence}`,
+    "Structural — long decline. Peak FY2015: 274,460 (10 years ago). FY2025 (provisional): 58,897, 21.5% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–03 (back FY2006). In a downturn since FY2015 (▼ 94.7% at its low). Recovered from an earlier downturn, but hasn't regained its FY2015 peak since.",
+  );
+  const recoveredEarlier = [...histories.keys()].filter((c) => labelOf(c).evidence.includes("Recovered from an earlier downturn"));
+  const tooEarly = [...histories.keys()].filter((c) => labelOf(c).kind === "none");
+  check(
+    "structural/gradual that recovered earlier (downturns from a peak of 100+; Libya's FY1999 peak of 19 doesn't count) | Too early: best F1 year under 500",
+    `${recoveredEarlier.length} (Libya ${recoveredEarlier.includes("Libya")}) | ${tooEarly.filter((c) => (histories.get(c).peak ?? 0) < 500).length} of ${tooEarly.length}`,
+    "24 (Libya false) | 102 of 102",
+  );
+  const agree = (visa) => {
+    const rows = natCountries.map((c) => natRow(c, visa)).filter((r) => r.recommendedAction === cy.STRUCTURAL_DECLINE_ACTION);
+    const expected = { structural: "Review Structural Decline", gradual: "Review Decline — gradual long decline", recovered: "Review Decline — has recovered before", none: "Review Decline" };
+    const off = rows.filter((r) => cy.shownAction(r.recommendedAction, histories.get(r.country)) !== expected[labelOf(r.country).kind]);
+    return `${rows.length} rows, ${off.length} disagree`;
+  };
+  check("Markets action wording agrees with the history label: F1 | F1 + J1", `${agree("F1")} | ${agree("Both")}`, "24 rows, 0 disagree | 18 rows, 0 disagree");
+  check(
+    "history lines: Serbia and Montenegro / Palau / Liberia (small)",
+    `${labelOf("Serbia and Montenegro").label} / ${labelOf("Palau").label} / ${labelOf("Liberia").label}: ${labelOf("Liberia").evidence}`,
+    "Split in 2006 — see Serbia or Montenegro. / No F1 visas in the annual data. / Too early to tell: Best F1 year: FY2001, 330 — under 500, too small for its history to say much. FY2025 (provisional): 113.",
+  );
+  check(
+    "history note: F1 | F1 + J1",
+    `${cy.historyNote(["F1"], prov2b2, latestComplete)} | ${cy.historyNote(["F1", "J1"], prov2b2, latestComplete)}`,
+    "History based on F1 (students); FY2025 is provisional. | History based on F1 (students), whatever the Visa control; FY2025 is provisional.",
+  );
+
   await rm(outDir, { recursive: true, force: true });
 
   console.log(

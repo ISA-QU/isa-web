@@ -448,8 +448,9 @@ has its own version:
     match wins: peak 8+ years ago and latest under 50% of it → "Review Structural Decline";
     peak 8+ years ago and latest at 50–80% → "Review Decline — gradual long decline"; an
     earlier 20%+ downturn that regained its peak → "Review Decline — has recovered before";
-    otherwise "Review Decline". Always F1 history, whatever the Visa control, with the note
-    "history based on F1 (students)". Display only: the category (Declining), the stored
+    otherwise "Review Decline". Always F1 history, whatever the Visa control; the 2b-2 history line
+    under the advice says "History based on F1 (students)" (the separate note under the
+    action was removed in 2b-2 as a duplicate). Display only: the category (Declining), the stored
     action, the advice text and the advice fingerprints are unchanged. F1, default view: 13
     structural, 1 gradual (Egypt), 3 recovered before (India, Colombia, Albania).
 - **Fix pack 11.**
@@ -469,6 +470,23 @@ has its own version:
     longer pre-round to 2 decimals, which made 14 values differ from the other pages (Uganda
     +75.0% → +75.1%, as on Markets). Whole-number figures, ratios and 2-decimal CSV shares
     are unchanged.
+- **History labels (2b-2).** Background only, always F1 whatever the Visa control, from the
+  same `declineHistory()` as the declining-market action wording (`historyLabel()` in
+  `cycles.ts`), so the two can't disagree. First match wins: "Structural — long decline"
+  (peak 8+ years ago, latest under 50% of it); "Gradual long decline" (peak 8+ years ago,
+  50–80%); "Cyclical — has recovered before" (an earlier 20%+ downturn from a peak of 100+
+  regained its peak); "Too early to tell" (best F1 year under 500, or none of the above).
+  Structural/Gradual countries that recovered earlier add "Recovered from an earlier
+  downturn, but hasn't regained its FY[peak] peak since." Each label has an evidence line
+  (peak, latest as % of peak, earlier downturns that regained their peak, any current
+  downturn) and the note "History based on F1 (students); FY2025 is provisional."
+  Serbia and Montenegro gets "Split in 2006 — see Serbia or Montenegro." instead of a label;
+  Palau (no F1) gets "No F1 visas in the annual data." Counts: 43 Cyclical, 38 Structural,
+  19 Gradual, 102 Too early to tell, plus 1 split. Shown on Markets (a "History (F1)" column
+  with the evidence on hover, both in More details, and `history_f1` / `history_evidence` at
+  the end of the CSV), in Country 360's "What to do" (one line under the advice) and above
+  the country's downturn table in Historical Trends → Market cycles. No category, action,
+  number, advice text or fingerprint changes.
 
 ## Choices the data forced
 
@@ -654,7 +672,7 @@ annual). Run the Test event `{}` and expect:
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **228/228** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes **236/236** on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes
@@ -677,7 +695,7 @@ build takes about 3 seconds).
    `lambda_function.py` (keep the bucket setting as it is in AWS if it differs), **Deploy**.
 3. [ ] Run the Test event `{}`; compare with "Expected Test output" above.
 4. [ ] Optional: download the new snapshot, gunzip it to `public/dashboard-data/snapshot.json`
-   and run `npm run dashboard:verify` (expect 228/228).
+   and run `npm run dashboard:verify` (expect 236/236).
 5. [ ] From `main`: `npm ci`, then `npm run deploy`.
 6. [ ] Sign in to the live site and spot-check: header 252,282 / 284,306 / 27,258 (F1, India selected);
    Country 360 India 30,292 ▼ 59.6%; Consulates Mumbai 162,287; no fallback banner on Markets.

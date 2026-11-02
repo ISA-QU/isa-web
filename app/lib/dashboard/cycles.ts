@@ -14,7 +14,7 @@
 import { MONTH_NAMES } from "./constants";
 import { MIN_BASE } from "./measures";
 import { sumBy } from "./metrics";
-import { pct1Abs } from "./pct";
+import { pct1, pct1Abs } from "./pct";
 import type { AnnualCountryRow, NationalityMonthlyRow, Visa } from "./types";
 
 /** A downturn starts at this fraction of the running peak or below (20%+ down). */
@@ -448,6 +448,8 @@ export interface DeclineHistory {
   pctOfPeak: number | null;
   /** Earlier downturns (peak 100+) that regained their peak. */
   recovered: number;
+  /** The Market cycles view behind it (split, no visas, too few, or the downturn rows). */
+  view: CountryDownturnView;
 }
 
 /**
@@ -462,7 +464,7 @@ export interface DeclineHistory {
  */
 export function declineHistory(country: string, series: readonly YearValue[]): DeclineHistory {
   const view = countryDownturnView(country, series);
-  const empty: DeclineHistory = { kind: "none", peakYear: null, peak: null, latestYear: null, latest: null, pctOfPeak: null, recovered: 0 };
+  const empty: DeclineHistory = { kind: "none", peakYear: null, peak: null, latestYear: null, latest: null, pctOfPeak: null, recovered: 0, view };
   if (view.kind !== "rows" || series.length === 0) return empty;
   const best = series.reduce((a, b) => (b.value > a.value ? b : a));
   const last = series[series.length - 1];
@@ -479,7 +481,7 @@ export function declineHistory(country: string, series: readonly YearValue[]): D
           : recovered > 0
             ? "recovered"
             : "none";
-  return { kind, peakYear: best.year, peak: best.value, latestYear: last.year, latest: last.value, pctOfPeak: share * 100, recovered };
+  return { kind, peakYear: best.year, peak: best.value, latestYear: last.year, latest: last.value, pctOfPeak: share * 100, recovered, view };
 }
 
 /** The action the classifier gives a declining market; only its wording follows the history. */
@@ -500,9 +502,6 @@ const DECLINE_WORDING: Record<DeclineHistoryKind, string> = {
 export const shownAction = (action: string, history: DeclineHistory | null): string =>
   action === STRUCTURAL_DECLINE_ACTION && history ? DECLINE_WORDING[history.kind] : action;
 
-/** Shown wherever the reworded action appears. */
-export const DECLINE_HISTORY_NOTE = "history based on F1 (students)";
-
 /** Each country's F1 decline history, FY`first`–FY`last` (the Market cycles series). */
 export function declineHistories(
   rows: readonly AnnualCountryRow[],
@@ -512,4 +511,97 @@ export function declineHistories(
   return new Map(
     [...seriesByCountry(rows, ["F1"], first, last)].map(([country, series]) => [country, declineHistory(country, series)]),
   );
+}
+
+/* ---- 2b-2: history labels (background only; the same declineHistory() as the action wording) ---- */
+
+export const HISTORY_LABELS: Record<DeclineHistoryKind, string> = {
+  structural: "Structural — long decline",
+  gradual: "Gradual long decline",
+  recovered: "Cyclical — has recovered before",
+  none: "Too early to tell",
+};
+
+/** The short form for a table cell. */
+export const HISTORY_SHORT: Record<DeclineHistoryKind, string> = {
+  structural: "Structural",
+  gradual: "Gradual",
+  recovered: "Cyclical",
+  none: "Too early",
+};
+
+export interface HistoryLabel {
+  /** "split" and "no-visas" get a line instead of a label. */
+  kind: DeclineHistoryKind | "split" | "no-visas";
+  label: string;
+  short: string;
+  /** One evidence line; empty for split and no-visas. */
+  evidence: string;
+}
+
+const count = (value: number) => value.toLocaleString("en-US");
+const yearsAgo = (n: number) => `${n} year${n === 1 ? "" : "s"} ago`;
+
+/**
+ * A country's history label and its evidence line, from its F1 declineHistory().
+ * `provisional`: fiscal years summed from monthly reports (FY2025 today), marked
+ * "(provisional)" in the evidence.
+ */
+export function historyLabel(h: DeclineHistory, provisional: ReadonlySet<number>): HistoryLabel {
+  const fy = (year: number) => `FY${year}${provisional.has(year) ? " (provisional)" : ""}`;
+  const view = h.view;
+  if (view.kind === "split") {
+    return {
+      kind: "split",
+      label: `Split in ${view.year} — see ${view.successors.join(" or ")}.`,
+      short: "Split",
+      evidence: "",
+    };
+  }
+  if (view.kind === "no-visas") return { kind: "no-visas", label: "No F1 visas in the annual data.", short: "—", evidence: "" };
+  const tooEarly = { kind: "none" as const, label: HISTORY_LABELS.none, short: HISTORY_SHORT.none };
+  if (view.kind === "too-few") {
+    return {
+      ...tooEarly,
+      evidence: `Best F1 year: FY${view.bestYear}, ${count(view.best)} — under ${MAJOR_MARKET_MIN}, too small for its history to say much.`,
+    };
+  }
+  if (h.peakYear === null || h.peak === null || h.latestYear === null || h.latest === null || h.pctOfPeak === null) {
+    return { ...tooEarly, evidence: "" };
+  }
+  if (h.peak < MAJOR_MARKET_MIN) {
+    return {
+      ...tooEarly,
+      evidence: `Best F1 year: FY${h.peakYear}, ${count(h.peak)} — under ${MAJOR_MARKET_MIN}, too small for its history to say much. ${fy(h.latestYear)}: ${count(h.latest)}.`,
+    };
+  }
+  const parts: string[] = [];
+  parts.push(
+    h.peakYear === h.latestYear
+      ? `At its peak in ${fy(h.latestYear)}: ${count(h.latest)}.`
+      : `Peak FY${h.peakYear}: ${count(h.peak)} (${yearsAgo(h.latestYear - h.peakYear)}). ${fy(h.latestYear)}: ${count(h.latest)}, ${pct1(h.pctOfPeak)}% of the peak.`,
+  );
+  const rows = view.rows;
+  const regained = rows.filter((d) => d.regainedYear !== null);
+  parts.push(
+    regained.length > 0
+      ? `Earlier 20%+ downturns that regained their peak: ${regained
+          .map((d) => `FY${d.peakYear}–${String(d.troughYear).slice(2)} (back FY${d.regainedYear})`)
+          .join(", ")}.`
+      : "No earlier 20%+ downturn has regained its peak.",
+  );
+  const open = rows.find((d) => d.regainedYear === null);
+  if (open) parts.push(`In a downturn since FY${open.peakYear} (▼ ${pct1Abs(open.depthPct)}% at its low).`);
+  if ((h.kind === "structural" || h.kind === "gradual") && h.recovered > 0) {
+    parts.push(`Recovered from an earlier downturn, but hasn't regained its FY${h.peakYear} peak since.`);
+  }
+  if (h.kind === "none") parts.push(`The peak is under ${LONG_DECLINE_YEARS} years old.`);
+  return { kind: h.kind, label: HISTORY_LABELS[h.kind], short: HISTORY_SHORT[h.kind], evidence: parts.join(" ") };
+}
+
+/** The note shown with every history label. */
+export function historyNote(visas: readonly Visa[], provisional: ReadonlySet<number>, latestYear: number | null): string {
+  const f1Only = visas.length === 1 && visas[0] === "F1";
+  const prov = latestYear !== null && provisional.has(latestYear) ? `; FY${latestYear} is provisional` : "";
+  return `History based on F1 (students)${f1Only ? "" : ", whatever the Visa control"}${prov}.`;
 }

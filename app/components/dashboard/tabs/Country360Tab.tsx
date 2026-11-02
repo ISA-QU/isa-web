@@ -53,10 +53,10 @@ import {
 } from "../../../lib/dashboard/country360";
 import { restrictionCsv, restrictionsFor } from "../../../lib/dashboard/restrictions";
 import {
-  DECLINE_HISTORY_NOTE,
-  STRUCTURAL_DECLINE_ACTION,
   declineHistory,
   fiscalYearSeries,
+  historyLabel,
+  historyNote,
   shownAction,
 } from "../../../lib/dashboard/cycles";
 import { arrowPct, monthRangeLabel, rollingTotals } from "../../../lib/dashboard/rolling";
@@ -144,6 +144,7 @@ export default function Country360Tab() {
     () => declineHistory(country, fiscalYearSeries(histCountryAll, ["F1"], firstFy, latestFy)),
     [country, histCountryAll, firstFy, latestFy],
   );
+  const history = useMemo(() => historyLabel(declineHist, provisionalYears), [declineHist, provisionalYears]);
   const hcCountryAll = useMemo(
     () => data.postsMonthly.filter((r) => r.country === monthCountry),
     [data.postsMonthly, monthCountry],
@@ -1171,11 +1172,6 @@ export default function Country360Tab() {
             </SubHeading>
             <Panel accent="gold">
               <p className="text-lg font-extrabold text-white">{shownAction(metrics.action, declineHist)}</p>
-              {metrics.action === STRUCTURAL_DECLINE_ACTION && (
-                <p className="text-xs text-slate-400">
-                  {DECLINE_HISTORY_NOTE.charAt(0).toUpperCase() + DECLINE_HISTORY_NOTE.slice(1)}.
-                </p>
-              )}
               <p className="mt-1 text-sm text-slate-300">
                 {metrics.category} market · momentum: {momentumLabel} · confidence:{" "}
                 {shownConfidence(metrics.confidence, metrics.twelve, hasLeadRows)}
@@ -1201,6 +1197,13 @@ export default function Country360Tab() {
                   </li>
                 ))}
               </ul>
+              {/* 2b-2: background only; the same F1 history as the action wording. */}
+              <p className="mt-3 text-xs leading-relaxed text-slate-300">
+                <b className="text-slate-100">History (F1):</b> {history.label}
+                {history.label.endsWith(".") ? "" : "."}
+                {history.evidence ? ` ${history.evidence}` : ""}{" "}
+                <span className="text-slate-400">{historyNote(visaClasses, provisionalYears, latestFy)}</span>
+              </p>
             </Panel>
             {/* The travel-ban small print, only for a country with a restriction (Fix pack 10). */}
             {restrictionsFor(country).length > 0 && (

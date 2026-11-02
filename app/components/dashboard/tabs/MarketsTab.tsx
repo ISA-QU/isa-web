@@ -16,10 +16,12 @@ import {
 } from "../../../lib/dashboard/metrics";
 import { tenYearTrendText, trendCellText } from "../../../lib/dashboard/country360";
 import {
-  DECLINE_HISTORY_NOTE,
   STRUCTURAL_DECLINE_ACTION,
   declineHistories,
+  historyLabel,
+  historyNote,
   shownAction,
+  type HistoryLabel,
 } from "../../../lib/dashboard/cycles";
 import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
@@ -55,7 +57,7 @@ const monthsAhead = (month: number, fromMonth: number) => (month - fromMonth + 1
  * the snapshot has no nationality table.
  */
 export default function MarketsTab() {
-  const { data, visa, periodRange, allCountries } = useDashboard();
+  const { data, visa, periodRange, allCountries, provisionalYears } = useDashboard();
   const { coverage } = data.meta;
   const nationality = data.nationalityMonthly;
   const byNationality = nationality !== null;
@@ -172,6 +174,18 @@ export default function MarketsTab() {
     [data.annualCountry, coverage.annual.first, latestFy],
   );
   const actionText = (r: MarketRow) => shownAction(r.recommendedAction, histories.get(historicalCountryName(r.country)) ?? null);
+
+  // 2b-2: the history label (background only), from the same F1 history as the action wording.
+  const NO_HISTORY: HistoryLabel = { kind: "no-visas", label: "No F1 visas in the annual data.", short: "—", evidence: "" };
+  const historyOf = (r: MarketRow): HistoryLabel => {
+    const h = histories.get(historicalCountryName(r.country));
+    return h ? historyLabel(h, provisionalYears) : NO_HISTORY;
+  };
+  const historyCell = (r: MarketRow) => {
+    const h = historyOf(r);
+    return <span title={h.evidence ? `${h.label}\n${h.evidence}` : h.label}>{h.short}</span>;
+  };
+  const historyNoteText = historyNote(visas as Visa[], provisionalYears, latestFy);
   const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
   const measure = byNationality ? "nationals" : "issued";
   const changeHeader = priorRange ? `Change vs ${monthRangeLabel(priorRange)}` : "Change vs previous period";
@@ -193,6 +207,7 @@ export default function MarketsTab() {
     { key: "nationals", header: `${byNationality ? "Nationals" : "Issued"}, ${periodRange.label}`, numeric: true, render: (r) => int(r.periodTotal) },
     { key: "change", header: changeHeader, numeric: true, render: periodChangeText },
     { key: "trend", header: `10-year trend, ${tenYear}`, numeric: true, render: tenYearText },
+    { key: "history", header: "History (F1)", render: historyCell },
     {
       key: "action",
       header: "Action (category)",
@@ -230,13 +245,15 @@ export default function MarketsTab() {
     { key: "confidence", header: "Confidence", render: (r) => r.confidence },
     { key: "caveat", header: "Caveat", render: (r) => r.caveat },
     { key: "evidence", header: "Evidence", render: (r) => r.evidence },
+    { key: "history", header: "History (F1)", render: (r) => historyOf(r).label },
+    { key: "historyEvidence", header: "History evidence (F1)", render: (r) => historyOf(r).evidence || "—" },
   ];
 
   const csvHeaders = [
     "country", "category", "action", "timing", `${measure}_${periodRange.slug}`, "previous_period", "change_pct",
     "ten_year_trend_pct", `${measure}_last_12_months`, "previous_12_months", "change_last_12_months_pct",
     "recovery_index", "five_year_trend_pct", "peak_month_typical_year", "seasonality_ratio", "volatility_cv",
-    "flags", "why", "but", "confidence", "Restriction", "Suspended since",
+    "flags", "why", "but", "confidence", "Restriction", "Suspended since", "history_f1", "history_evidence",
   ];
   const csvRows = filtered.map((r) => [
     r.country,
@@ -260,6 +277,8 @@ export default function MarketsTab() {
     r.counterSignal,
     r.confidence,
     ...restrictionCsv(r.country),
+    historyOf(r).label,
+    historyOf(r).evidence,
   ]);
 
   /* ---- Travel timing: next outreach window first, from this month ---- */
@@ -364,12 +383,15 @@ export default function MarketsTab() {
           headers={csvHeaders}
           rows={csvRows}
         />
-        {filtered.some((r) => r.recommendedAction === STRUCTURAL_DECLINE_ACTION) && (
-          <p className="mt-2 text-xs text-slate-400">
-            Declining markets: the action&apos;s wording (structural, gradual long decline, has recovered before) follows
-            each country&apos;s downturn history in Historical Trends → Market cycles; {DECLINE_HISTORY_NOTE}.
-          </p>
-        )}
+        <p className="mt-2 text-xs text-slate-400">
+          History (F1): Structural (long decline), Gradual (long decline), Cyclical (has recovered before) or Too early
+          to tell, from each country&apos;s downturns in Historical Trends → Market cycles; hover for the evidence.
+          Background only: it doesn&apos;t change the category or the advice
+          {filtered.some((r) => r.recommendedAction === STRUCTURAL_DECLINE_ACTION)
+            ? ", but a declining market's action wording follows it"
+            : ""}
+          . {historyNoteText}
+        </p>
         <div className="mt-2">
           <RestrictionSmallPrint />
         </div>

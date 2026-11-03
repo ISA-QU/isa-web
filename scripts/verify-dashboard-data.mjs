@@ -74,6 +74,12 @@ async function compileLib() {
       "app/lib/dashboard/url.ts",
       "app/lib/dashboard/constants.ts",
       "app/lib/dashboard/types.ts",
+      "app/lib/dashboard/decode.ts",
+      "app/lib/dashboard/markets.ts",
+      "app/lib/dashboard/cyclesText.ts",
+      "app/lib/dashboard/historicalCards.ts",
+      "app/lib/dashboard/assistant/tools.ts",
+      "app/lib/dashboard/assistant/format.ts",
       "--outDir", outDir,
       "--module", "commonjs",
       "--target", "es2022",
@@ -1474,6 +1480,202 @@ async function main() {
     `${cy.historyNote(["F1"], prov2b2, latestComplete)} | ${cy.historyNote(["F1", "J1"], prov2b2, latestComplete)}`,
     "History based on F1 (students); FY2025 is provisional. | History based on F1 (students), whatever the Visa control; FY2025 is provisional.",
   );
+
+  console.log("\n  Bobcat Step 1: shared page code  (markets.ts, cyclesText.ts, historicalCards.ts, decode.ts moved out of the tabs unchanged; expected values are this script's own checks above, or its independent rebuild of the page logic)");
+  const decode = await import(pathToFileURL(path.join(outDir, "decode.js")).href);
+  const mk = await import(pathToFileURL(path.join(outDir, "markets.js")).href);
+  const cyText = await import(pathToFileURL(path.join(outDir, "cyclesText.js")).href);
+  const hcards = await import(pathToFileURL(path.join(outDir, "historicalCards.js")).href);
+  const bt = await import(pathToFileURL(path.join(outDir, "assistant/tools.js")).href);
+  const bdefs = await import(pathToFileURL(path.join(outDir, "assistant/definitions.js")).href);
+  const data = decode.decodeSnapshot(snapshot);
+  const hashRows = (rows, keys) => createHash("sha1").update(JSON.stringify(rows.map((r) => keys.map((k) => r[k])))).digest("hex").slice(0, 12);
+  const POST_KEYS = ["year", "month", "fiscalYear", "post", "country", "visa", "issuances", "monthIndex"];
+  const ANNUAL_KEYS = ["fiscalYear", "country", "visa", "issuances"];
+  const NAT_KEYS = ["year", "month", "fiscalYear", "monthIndex", "country", "visa", "issuances", "isCountry"];
+  check(
+    "decode.ts decodes the snapshot as this script does: posts | annual | nationality | operational (row hashes)",
+    [hashRows(data.postsMonthly, POST_KEYS), hashRows(data.annualCountry, ANNUAL_KEYS), hashRows(data.nationalityMonthly, NAT_KEYS), data.operational.length].join(" | "),
+    [hashRows(postsMonthly, POST_KEYS), hashRows(annualCountry, ANNUAL_KEYS), hashRows(nationality, NAT_KEYS), operational.length].join(" | "),
+  );
+  check("markets.ts: Country control list = every country in either source", mk.controlCountries(data).join(","), [...countryNames].sort().join(","));
+  const sigF1 = mk.marketSignals(data, "F1", mk.controlCountries(data));
+  check(
+    "markets.ts: Markets rows advice fingerprints, F1 | F1 + J1 (= the nationality advice fingerprints)",
+    `${fingerprint(sigF1)} | ${fingerprint(mk.marketSignals(data, "Both", mk.controlCountries(data)))}`,
+    "9013461fccd7 | c332e7aeb6b1",
+  );
+  const prior12Range = consulates.previousPeriod(last12Range, coverage);
+  const mRowsF1 = mk.marketRows(sigF1, data, "F1", last12Range, prior12Range);
+  const mDefault = mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, "All"), "All", "Nationals");
+  const indepDefault = sorting.sortBy(natRowsF1.filter((r) => r.latest12Total >= 100), [(r) => r.latest12Total]);
+  check(
+    "markets.ts: Markets table at the defaults (last 12 months, min 100, All, by nationals) = this script's nationality rows: order | Period = last 12 months | change = 12-month change",
+    `${mDefault.map((r) => r.country).join(",") === indepDefault.map((r) => r.country).join(",")} | ${mRowsF1.every((r) => r.periodTotal === r.latest12Total)} | ${mRowsF1.every((r) => r.periodChange === r.latest12Momentum)}`,
+    "true | true | true",
+  );
+  check(
+    "markets.ts: Markets action and history cells, India / China / Nigeria",
+    ["India", "China", "Nigeria"].map((c) => { const r = mRowsF1.find((x) => x.country === c); return `${mk.marketActionCellText(r, histories)} · ${mk.marketHistory(c, histories, prov2b2).short} · ${mk.marketChangeText(r)}`; }).join(" | "),
+    "Review Decline — has recovered before (Declining) · Cyclical · ▼ 59.6% | Review Structural Decline (Declining) · Structural · ▼ 30.1% | Restricted — student and exchange visas suspended since 1 Jan 2026 · Cyclical · ▼ 52.8%",
+  );
+  check(
+    "markets.ts: Country 360 row (countrySignalRow) = the nationality row: India / Curacao falls back to issued in",
+    `${fingerprint([mk.countrySignalRow(data, "India", "F1")]) === fingerprint([natRow("India")])} / ${mk.countrySignalRow(data, "Curacao", "F1").latest12Total === measures.lastTwelve(f1Posts.filter((r) => r.country === "Curacao"), coverage.end).current}`,
+    "true / true",
+  );
+  check(
+    "cyclesText.ts: recovery summary sentence (F1) / latest signal sentence (F1)",
+    `${cyText.recoverySummaryText(rs, fyFirst)} / ${cyText.latestSignalText(cy.latestSignal(nationality, ["F1"], coverage.end))}`,
+    "Since FY1997, 56% of major market downturns fully recovered, typically within 3 years of the low. After COVID, 58% of markets were above their FY2019 level by FY2023. Past recoveries don't guarantee future ones. / FY2026 so far (Oct–Feb): ▼ 44.6% vs the same months of FY2025 (44,006 vs 79,367) — no sign of a bottom yet in data through Feb 2026.",
+  );
+  check(
+    "cyclesText.ts: world F1 downturn cells (peak / trough / depth / rebound / regained)",
+    cy.findDownturns(f1Lines.world).map((d) => Object.values(cyText.downturnCells(d, (y) => periods.fyLabel(y, prov2b2), cyText.notYetText(latestComplete, true))).slice(0, 5).join(" / ")).join(" | "),
+    "FY2001 · 293,026 / FY2003 · 215,528 / ▼ 26.4% / ▲ 26.9% / FY2007 · 298,118 | FY2015 · 643,756 / FY2020 · 111,271 / ▼ 82.7% / ▲ 300.0% / Not yet (FY2025 provisional)",
+  );
+  const indiaCards = hcards.historicalCards(annualCountry, "India", fyFirst, latestComplete, latestComplete, prov2b2);
+  check(
+    "historicalCards.ts: India cards (FY2025 F1 / vs FY2024 / vs peak / vs FY2019 / 10-year CAGR)",
+    [indiaCards.metrics.latestF1, indiaCards.cards.vsPriorYear, indiaCards.cards.vsPeakShown, indiaCards.cards.vsPrePandemic, indiaCards.cards.cagr10].join(" / "),
+    "40077 / ▼ 53.4% / ▼ 69.3% / ▼ 8.3% / ▼ 6.1%",
+  );
+  check(
+    "consulates.ts: Mumbai F1, last 12 months, change and recovery cells",
+    `${consulates.consulateChangeText(mumbai12)} / ${consulates.consulateRecoveryText(mumbai12.recovery, recoveryYear)} / ${consulates.consulateRecoveryText(null, recoveryYear)}`,
+    "▼ 68.4% / 39 / — (low volume)",
+  );
+
+  console.log("\n  Bobcat Step 1: tools  (each answer = the page's figure; expected values are this script's checks above)");
+  const ctxF1 = { data, visa: "F1" };
+  const run = (name, args = {}, ctx = ctxF1) => bt.runTool(name, ctx, args);
+  const L12 = "last 12 months (Mar 2025 – Feb 2026) vs the previous 12 months (Mar 2024 – Feb 2025)";
+  const indiaOverview = run("country_overview", { country: "India" });
+  check(
+    "country_overview India, F1: nationals last 12 / previous 12 and change / recovery",
+    indiaOverview.lines.slice(0, 3).join(" | "),
+    "Nationals of India, F1, last 12 months (Mar 2025 – Feb 2026): 30,292 | Previous 12 months (Mar 2024 – Feb 2025): 75,060 · change ▼ 59.6% | Recovery (2025 vs 2019): 67",
+  );
+  check(
+    "country_overview India: category / action / source / Open tab",
+    `${indiaOverview.lines[3]} | ${indiaOverview.lines[4]} | ${indiaOverview.sources[0].tab} · ${indiaOverview.sources[0].period} | ${JSON.stringify(indiaOverview.link)}`,
+    `Category: Declining | What to do: Review Decline — has recovered before | Country 360 · ${L12} | {"tab":"country-360","country":"India","visa":"F1","period":"last12"}`,
+  );
+  check(
+    "country_trend India: the Historical Trends cards",
+    run("country_trend", { country: "India" }).lines.slice(0, 6).join(" | "),
+    "F1 by nationality, FY2025 (provisional): 40,077 | J1 by nationality, FY2025 (provisional): 8,614 | F1 vs FY2024: ▼ 53.4% | F1 vs peak (FY2023): ▼ 69.3% | F1 vs FY2019 (pre-pandemic): ▼ 8.3% | F1 10-year CAGR, FY2015–FY2025: ▼ 6.1%",
+  );
+  const histLine = (c) => run("history_label", { country: c }).lines[0];
+  check(
+    "history_label: India (full line) | China (label) | Serbia and Montenegro (split line)",
+    `${histLine("India")} | ${histLine("China").split(". ")[0]} | ${histLine("Serbia and Montenegro")}`,
+    "History (F1): Cyclical — has recovered before. Peak FY2023: 130,730 (2 years ago). FY2025 (provisional): 40,077, 30.7% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–04 (back FY2006), FY2008–12 (back FY2014), FY2015–20 (back FY2021). In a downturn since FY2023 (▼ 69.3% at its low). | History (F1): Structural — long decline | History (F1): Split in 2006 — see Serbia or Montenegro.",
+  );
+  const nigeriaR = run("restrictions", { country: "Nigeria" });
+  check(
+    "restrictions Nigeria: badge / last checked / State Department source",
+    `${nigeriaR.lines[0]} | ${nigeriaR.lines[nigeriaR.lines.length - 1]} | ${nigeriaR.links.map((l) => l.url).join(", ")}`,
+    "Travel ban: student and exchange visas suspended since 1 Jan 2026 | Last checked 23 Oct 2026. | https://travel.state.gov/content/travel/en/News/visas-news/suspension-of-visa-issuance-to-foreign-nationals-to-protect-the-security-of-the-united-states.html",
+  );
+  const allR = run("restrictions");
+  check(
+    "restrictions (all): full / partial / paused counts | India has none",
+    `${allR.lines.slice(0, 3).map((l) => l.split(":")[0]).join(" / ")} | ${run("restrictions", { country: "India" }).lines[0]}`,
+    "Travel ban, full (19) / Travel ban, partial (19) / Visa services paused (3) | No U.S. visa restriction is listed for India.",
+  );
+  const evIndia = run("events", { country: "India" });
+  const evNigeria = run("events", { country: "Nigeria" });
+  check(
+    "events: India has no travel-ban events | Nigeria's own events",
+    `${evIndia.lines.filter((l) => /Proclamation 109(49|98)/.test(l)).length} | ${evNigeria.lines.slice(0, -1).map((l) => l.split(":")[0]).join("; ")}`,
+    "0 | 1 Jan 2026 — Expanded travel ban (Proclamation 10998)",
+  );
+  const lm = (args) => run("list_markets", args);
+  const names = (r) => r.lines.map((l) => l.replace(/^\d+\. /, "").split(":")[0]).join(", ");
+  check(
+    "list_markets = Markets rows: largest 15 | fastest-growing 15 (Markets sorted by Change), F1",
+    `${names(lm({ limit: 15 })) === mDefault.slice(0, 15).map((r) => r.country).join(", ")} | ${names(lm({ sort: "growing", limit: 15 })) === mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, "All"), "All", "Change").filter((r) => r.periodChange > 0).slice(0, 15).map((r) => r.country).join(", ")}`,
+    "true | true",
+  );
+  const indepDecline = sorting.sortBy(indepDefault, [(r) => r.latest12Momentum], true).filter((r) => r.latest12Momentum !== null && r.latest12Momentum < 0);
+  const declining = lm({ sort: "declining", limit: 15 });
+  check(
+    "list_markets declining (lowest change first) = this script's rows | every restricted row carries its badge",
+    `${names(declining) === indepDecline.slice(0, 15).map((r) => r.country).join(", ")} | ${declining.lines.filter((l) => / · Restricted/.test(l)).every((l) => / · (Travel ban|Paused)/.test(l))}`,
+    "true | true",
+  );
+  check(
+    "list_markets declining, F1: first 3 rows (recounted with pandas)",
+    declining.lines.slice(0, 3).join(" | "),
+    "1. Myanmar: 249 · ▼ 92.8% · Restricted · Travel ban (full) since 9 Jun 2025 | 2. Iran: 191 · ▼ 91.8% · Restricted · Travel ban (full) since 9 Jun 2025 | 3. Democratic Republic of the Congo: 225 · ▼ 75.5% · Restricted · Paused since 18 May 2026",
+  );
+  const growing5 = lm({ sort: "growing", limit: 5 });
+  check(
+    "list_markets fastest-growing, F1: top 5 | how many grew (recounted with pandas)",
+    `${names(growing5)} | ${growing5.notes[0]}`,
+    "Latvia, Croatia, Czechia, Iceland, Belgium | 11 of 121 markets grew.",
+  );
+  check(
+    "list_markets: an unknown region / category lists the valid ones",
+    `${lm({ region: "Atlantis" }).status} ${lm({ region: "Atlantis" }).suggestions.length > 0} / ${lm({ category: "Hot" }).status} ${lm({ category: "Hot" }).suggestions.join(",")}`,
+    "unknown true / unknown Core,Growth,Emerging,Recovery,Watch,Declining,Restricted",
+  );
+  check("country_vs_world India, F1: the Market cycles sentence", run("country_vs_world", { country: "India" }).lines[0], indiaVs.sentence);
+  check(
+    "market_cycles, F1: world downturn depths",
+    run("market_cycles").lines.filter((l) => l.startsWith("World: ")).map((l) => /(▼ [\d.]+%)/.exec(l)[1]).join(" / "),
+    "▼ 26.4% / ▼ 82.7%",
+  );
+  check(
+    "consulates India, F1: context line (issued in / nationals) | Mumbai row",
+    `${run("consulates", { country: "India" }).lines[0]} | ${run("consulates", { country: "India" }).lines.find((l) => l.startsWith("Mumbai"))}`,
+    "Consulates in India issued 27,258 F1 visas in the last 12 months; nationals of India received 30,292 F1 visas worldwide. | Mumbai: 6,413 · 23.5% of India · ▼ 68.4% vs the previous 12 months · recovery 39",
+  );
+  check(
+    "monthly tools state the last 12 months in their source line: country_overview / list_markets / consulates",
+    ["country_overview", "list_markets", "consulates"].map((t) => run(t, { country: "India" }).sources[0].period === L12).join(" / "),
+    "true / true / true",
+  );
+  const docsText = (await readFile(path.join(ROOT, "docs/dashboard.md"), "utf8")).replace(/\s+/g, " ");
+  const missingTerms = bdefs.DEFINITIONS.filter((d) => !docsText.includes(d.docPhrase.replace(/\s+/g, " ")));
+  check(
+    "definitions: every term's phrase still appears in docs/dashboard.md (missing)",
+    `${bdefs.DEFINITIONS.length - missingTerms.length} of ${bdefs.DEFINITIONS.length} (${missingTerms.map((d) => d.id).join(", ") || "none"})`,
+    `${bdefs.DEFINITIONS.length} of ${bdefs.DEFINITIONS.length} (none)`,
+  );
+  check(
+    "definition: 'low volume' / 'structural' / an unknown term",
+    ["low volume", "structural", "blah"].map((t) => { const r = run("definition", { term: t }); return r.status === "ok" ? r.title : r.status; }).join(" / "),
+    "— (low volume) / History labels / unknown",
+  );
+  const inida = run("country_overview", { country: "Inida" });
+  check(
+    "unknown country → did you mean | United States → not in the data | Korea → South Korea",
+    `${inida.status} ${inida.suggestions[0]} | ${run("country_overview", { country: "USA" }).status} | ${run("country_overview", { country: "Korea" }).title}`,
+    "unknown-country India | not-in-data | South Korea, F1",
+  );
+
+  console.log("\n  Bobcat Step 1: missing data  (the live site may serve a snapshot without the monthly nationality table)");
+  const oldSnapshot = { ...snapshot, coverage: { ...snapshot.coverage, nationalityMonthly: null } };
+  delete oldSnapshot.nationalityMonthly;
+  const oldCtx = { data: decode.decodeSnapshot(oldSnapshot), visa: "F1" };
+  const sample = (t) => (bt.toolByName(t).params.term ? { term: "low volume" } : { country: "India" });
+  const errorsOn = (ctx, countries) =>
+    bt.TOOLS.flatMap((t) => countries.map((c) => bt.runTool(t.name, ctx, t.params.term ? { term: "low volume" } : { country: c }))).filter((r) => r.status === "error" || r.sources.length === 0).length;
+  const oldRun = (t, args) => bt.runTool(t, oldCtx, args ?? sample(t));
+  check(
+    "no nationality table: 11 tools × India, Nigeria, China, Curacao: errors | Country 360 overview falls back to issued in | Markets says so | latest signal unavailable",
+    `${errorsOn(oldCtx, ["India", "Nigeria", "China", "Curacao"])} errors | ${oldRun("country_overview").lines[0]} | ${oldRun("list_markets").notes.some((n) => n.startsWith("Monthly nationality data isn't in this data snapshot"))} | ${oldRun("market_cycles", {}).notes.some((n) => n.startsWith("The latest signal isn't available yet"))}`,
+    "0 errors | Visas issued in India, F1, last 12 months (Mar 2025 – Feb 2026): 27,258 | true | true",
+  );
+  const emptyCtx = { data: { ...data, annualCountry: [], postsMonthly: [] }, visa: "F1" };
+  check(
+    "missing annual / consulate tables: trend / cycles / vs world / history / consulates say the data isn't available | a broken snapshot gives 'error', never a crash",
+    `${["country_trend", "market_cycles", "country_vs_world", "history_label", "consulates"].map((t) => bt.runTool(t, emptyCtx, { country: "India" }).status).join(" / ")} | ${bt.runTool("country_overview", { data: {}, visa: "F1" }, { country: "India" }).status}`,
+    "not-in-data / not-in-data / not-in-data / not-in-data / not-in-data | error",
+  );
+  check("every tool, full snapshot: errors or results without a source", errorsOn(ctxF1, ["India", "Nigeria", "China", "Curacao", "Serbia and Montenegro", "Palau"]), 0);
 
   await rm(outDir, { recursive: true, force: true });
 

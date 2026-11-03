@@ -5,45 +5,34 @@ import { useMemo, useState } from "react";
 import { MARKET_CATEGORIES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { previousPeriod } from "../../../lib/dashboard/consulates";
 import { decimals, int, metricNumber, monthDisplay } from "../../../lib/dashboard/format";
-import { LOW_VOLUME, MIN_BASE, changeText, changeVsBase, latestCompleteYearOf } from "../../../lib/dashboard/measures";
+import { LOW_VOLUME, MIN_BASE, changeText, latestCompleteYearOf } from "../../../lib/dashboard/measures";
+import { MARKET_THRESHOLDS, notNa, recommendedOutreachWindow } from "../../../lib/dashboard/metrics";
+import { STRUCTURAL_DECLINE_ACTION, historyNote } from "../../../lib/dashboard/cycles";
 import {
-  MARKET_THRESHOLDS,
-  buildCommandCenterFrame,
-  historicalCountryName,
-  nationalitySignals,
-  notNa,
-  recommendedOutreachWindow,
-} from "../../../lib/dashboard/metrics";
-import { tenYearTrendText, trendCellText } from "../../../lib/dashboard/country360";
-import {
-  STRUCTURAL_DECLINE_ACTION,
-  declineHistories,
-  historyLabel,
-  historyNote,
-  shownAction,
-  type HistoryLabel,
-} from "../../../lib/dashboard/cycles";
+  SORTS,
+  annualRowsByCountry,
+  marketActionText,
+  marketChangeText,
+  marketFiveYearText,
+  marketHistories,
+  marketHistory,
+  marketRows,
+  marketSignals,
+  marketTenYearText,
+  marketsInScope,
+  sortMarkets,
+  type MarketRow,
+  type SortKey,
+} from "../../../lib/dashboard/markets";
 import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { sortBy } from "../../../lib/dashboard/sort";
-import type { AnnualCountryRow, CommandCenterRow, Visa } from "../../../lib/dashboard/types";
+import type { Visa } from "../../../lib/dashboard/types";
 import { pct1 } from "../../../lib/dashboard/pct";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
 import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import { Column, DataTable, Expander, FixedTag, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
-
-/** How the main table is sorted. */
-const SORTS = ["Nationals", "Change", "10-year trend"] as const;
-type SortKey = (typeof SORTS)[number];
-
-/** A market row: the shared nationality row (or the issued-in fallback) plus its Period figures. */
-type MarketRow = CommandCenterRow & {
-  hideTiming?: boolean;
-  periodTotal: number;
-  periodPrior: number | null;
-  periodChange: number | null;
-};
 
 const T = MARKET_THRESHOLDS;
 
@@ -59,8 +48,7 @@ const monthsAhead = (month: number, fromMonth: number) => (month - fromMonth + 1
 export default function MarketsTab() {
   const { data, visa, periodRange, allCountries, provisionalYears } = useDashboard();
   const { coverage } = data.meta;
-  const nationality = data.nationalityMonthly;
-  const byNationality = nationality !== null;
+  const byNationality = data.nationalityMonthly !== null;
   const visaLabel = visaLabelOf(visa);
   const visas = visa === "Both" ? ["F1", "J1"] : [visa];
 
@@ -69,77 +57,23 @@ export default function MarketsTab() {
   const [sort, setSort] = useState<SortKey>("Nationals");
   const [minNationals, setMinNationals] = useState<number>(MIN_BASE);
 
-  /* ---- One row per country: the shared rules, nothing computed separately here ---- */
-  const signals = useMemo((): CommandCenterRow[] => {
-    if (nationality) {
-      const control = new Set(allCountries);
-      const countries = [...new Set(nationality.filter((r) => r.isCountry && control.has(r.country)).map((r) => r.country))];
-      return countries
-        .map((c) =>
-          nationalitySignals(
-            nationality,
-            data.annualCountry,
-            c,
-            visa,
-            coverage.annual.latestComplete,
-            coverage.postsMonthly,
-            coverage.operational,
-          ),
-        )
-        .filter((r): r is NonNullable<typeof r> => r !== null);
-    }
-    return buildCommandCenterFrame(
-      data.operational,
-      data.annualCountry,
-      data.postsMonthly,
-      visa,
-      coverage.annual.latestComplete,
-      coverage.postsMonthly,
-    );
-  }, [nationality, allCountries, data.annualCountry, data.operational, data.postsMonthly, visa, coverage]);
+  /* ---- One row per country: the shared rules, nothing computed separately here (markets.ts) ---- */
+  const signals = useMemo(() => marketSignals(data, visa, allCountries), [data, visa, allCountries]);
 
   // The Period columns: nationals in the Period and the change vs the previous period of equal length.
   const priorRange = previousPeriod(periodRange, coverage.postsMonthly);
-  const rows = useMemo((): MarketRow[] => {
-    const now = new Map<string, number>();
-    const before = new Map<string, number>();
-    const source: readonly { country: string; visa: string; monthIndex: number; issuances: number }[] =
-      nationality ? nationality.filter((r) => r.isCountry) : data.postsMonthly;
-    for (const r of source) {
-      if (!visas.includes(r.visa)) continue;
-      if (r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end) {
-        now.set(r.country, (now.get(r.country) ?? 0) + r.issuances);
-      } else if (priorRange && r.monthIndex >= priorRange.start && r.monthIndex <= priorRange.end) {
-        before.set(r.country, (before.get(r.country) ?? 0) + r.issuances);
-      }
-    }
-    return signals.map((r) => {
-      const periodTotal = now.get(r.country) ?? 0;
-      const periodPrior = priorRange ? (before.get(r.country) ?? 0) : null;
-      return {
-        ...r,
-        periodTotal,
-        periodPrior,
-        periodChange: periodPrior === null ? null : changeVsBase(periodTotal, periodPrior),
-      };
-    });
+  const rows = useMemo(
+    () => marketRows(signals, data, visa, periodRange, priorRange),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signals, nationality, data.postsMonthly, visa, periodRange, priorRange?.start, priorRange?.end]);
+    [signals, data, visa, periodRange, priorRange?.start, priorRange?.end],
+  );
 
   const regionOptions = useMemo(() => ["All", ...[...new Set(rows.map((r) => r.region))].sort()], [rows]);
   const maxNationals = useMemo(() => Math.max(1000, ...rows.map((r) => r.latest12Total)), [rows]);
 
   // Region and minimum first (the category counts use these), then the category.
-  const inScope = useMemo(
-    () => rows.filter((r) => r.latest12Total >= minNationals && (region === "All" || r.region === region)),
-    [rows, minNationals, region],
-  );
-  const filtered = useMemo(() => {
-    const scoped = category === "All" ? inScope : inScope.filter((r) => r.marketCategory === category);
-    if (sort === "Change") return sortBy(scoped, [(r) => r.periodChange, (r) => r.periodTotal]);
-    if (sort === "10-year trend") return sortBy(scoped, [(r) => r.growth10yr, (r) => r.periodTotal]);
-    return sortBy(scoped, [(r) => r.periodTotal, (r) => r.latest12Total]);
-  }, [inScope, category, sort]);
+  const inScope = useMemo(() => marketsInScope(rows, minNationals, region), [rows, minNationals, region]);
+  const filtered = useMemo(() => sortMarkets(inScope, category, sort), [inScope, category, sort]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of inScope) counts.set(r.marketCategory, (counts.get(r.marketCategory) ?? 0) + 1);
@@ -153,34 +87,17 @@ export default function MarketsTab() {
 
   // Fix pack 10: the 10-year trend with the shared minimum base (FY base under 100 → low volume).
   // Display only: the categories and the sort keep the raw value, as the Change column does.
-  const annualByCountry = useMemo(() => {
-    const byCountry = new Map<string, AnnualCountryRow[]>();
-    for (const r of data.annualCountry) {
-      const list = byCountry.get(r.country);
-      if (list) list.push(r);
-      else byCountry.set(r.country, [r]);
-    }
-    return byCountry;
-  }, [data.annualCountry]);
-  const tenYearText = (r: MarketRow) =>
-    tenYearTrendText(r.growth10yr, annualByCountry.get(historicalCountryName(r.country)) ?? [], visas as Visa[], latestFy);
+  const annualByCountry = useMemo(() => annualRowsByCountry(data.annualCountry), [data.annualCountry]);
+  const tenYearText = (r: MarketRow) => marketTenYearText(r, annualByCountry, visas as Visa[], latestFy);
   // Fix pack 11: the same minimum base for the 5-year trend (FY2020 base today).
-  const fiveYearText = (r: MarketRow) =>
-    trendCellText(r.growth5yr, annualByCountry.get(historicalCountryName(r.country)) ?? [], visas as Visa[], latestFy, 5);
+  const fiveYearText = (r: MarketRow) => marketFiveYearText(r, annualByCountry, visas as Visa[], latestFy);
 
   // Fix pack 10: "Review Structural Decline" worded by each country's F1 history (Market cycles' rule).
-  const histories = useMemo(
-    () => declineHistories(data.annualCountry, coverage.annual.first ?? 1997, latestFy ?? coverage.annual.first ?? 1997),
-    [data.annualCountry, coverage.annual.first, latestFy],
-  );
-  const actionText = (r: MarketRow) => shownAction(r.recommendedAction, histories.get(historicalCountryName(r.country)) ?? null);
+  const histories = useMemo(() => marketHistories(data), [data]);
+  const actionText = (r: MarketRow) => marketActionText(r, histories);
 
   // 2b-2: the history label (background only), from the same F1 history as the action wording.
-  const NO_HISTORY: HistoryLabel = { kind: "no-visas", label: "No F1 visas in the annual data.", short: "—", evidence: "" };
-  const historyOf = (r: MarketRow): HistoryLabel => {
-    const h = histories.get(historicalCountryName(r.country));
-    return h ? historyLabel(h, provisionalYears) : NO_HISTORY;
-  };
+  const historyOf = (r: MarketRow) => marketHistory(r.country, histories, provisionalYears);
   const historyCell = (r: MarketRow) => {
     const h = historyOf(r);
     return <span title={h.evidence ? `${h.label}\n${h.evidence}` : h.label}>{h.short}</span>;
@@ -189,8 +106,7 @@ export default function MarketsTab() {
   const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
   const measure = byNationality ? "nationals" : "issued";
   const changeHeader = priorRange ? `Change vs ${monthRangeLabel(priorRange)}` : "Change vs previous period";
-  const periodChangeText = (r: MarketRow) =>
-    r.periodPrior === null ? "—" : changeText(r.periodChange, r.periodPrior, arrowPct);
+  const periodChangeText = marketChangeText;
   const timingText = (r: MarketRow) => (r.hideTiming || !r.timing ? "—" : r.timing);
   const rowKey = (r: { country: string }) => r.country;
 

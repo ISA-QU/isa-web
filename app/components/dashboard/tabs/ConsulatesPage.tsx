@@ -6,6 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
   buildConsulateTable,
+  consulateChangeText,
   consulateContext,
   consulateStatus,
   dormantConsulates,
@@ -969,8 +970,7 @@ export default function ConsulatesPage() {
 }
 
 /** "—" with no previous period; "— (low volume)" when the previous period had fewer than 100. */
-const changeCell = (row: { change: number | null; prior: number | null }) =>
-  row.prior === null ? "—" : row.change === null ? LOW_VOLUME : arrowPct(row.change);
+const changeCell = consulateChangeText;
 
 /** "This country / All countries" switch: a radio group, arrow keys to move. */
 function ScopeSwitch({

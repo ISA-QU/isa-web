@@ -26,12 +26,19 @@ import {
   type YearValue,
 } from "../../lib/dashboard/cycles";
 import { EMPTY_OVERLAY, EVENTS, eventOverlay, withEvents } from "../../lib/dashboard/events";
-import { int, monthDisplay } from "../../lib/dashboard/format";
-import { LOW_VOLUME, MIN_BASE } from "../../lib/dashboard/measures";
+import {
+  countryDownturnNote,
+  downturnCells,
+  historyLineText,
+  latestMonthsText,
+  latestSignalText,
+  notYetText,
+  recoverySummaryText,
+  yearsText,
+} from "../../lib/dashboard/cyclesText";
+import { MIN_BASE } from "../../lib/dashboard/measures";
 import { selectedVisaClasses } from "../../lib/dashboard/metrics";
 import { fyLabel, provisionalFiscalYears } from "../../lib/dashboard/periods";
-import { arrowPct } from "../../lib/dashboard/rolling";
-import { MONTH_NAMES } from "../../lib/dashboard/constants";
 import { pct1 } from "../../lib/dashboard/pct";
 import Chart from "./Chart";
 import { EventsList, EventsToggle } from "./EventsControls";
@@ -224,33 +231,22 @@ export default function MarketCycles() {
   const eventChart = useMemo(() => withEvents(chart.traces, chart.layout, events), [chart, events]);
 
   const fy = (year: number) => fyLabel(year, provisional);
-  const notYet = `Not yet${lastIsProvisional ? ` (FY${last} provisional)` : ""}`;
-  const years = (n: number | null) => (n === null ? "N/A" : `${Number.isInteger(n) ? n : n.toFixed(1)} year${n === 1 ? "" : "s"}`);
-  const pct = (n: number) => `${Math.round(n)}%`;
+  const notYet = notYetText(last, lastIsProvisional);
+  const cells = (r: DownturnRow) => downturnCells(r, fy, notYet);
 
   const tableColumns = (withSeries: boolean) => [
     ...(withSeries ? [{ key: "series", header: "Series", render: (r: DownturnRow) => r.series }] : []),
-    { key: "peak", header: "Peak", render: (r: DownturnRow) => `${fy(r.peakYear)} · ${int(r.peak)}` },
-    { key: "trough", header: "Trough", render: (r: DownturnRow) => `${fy(r.troughYear)} · ${int(r.trough)}` },
-    { key: "depth", header: "Depth from peak", numeric: true, render: (r: DownturnRow) => arrowPct(r.depthPct) },
+    { key: "peak", header: "Peak", render: (r: DownturnRow) => cells(r).peak },
+    { key: "trough", header: "Trough", render: (r: DownturnRow) => cells(r).trough },
+    { key: "depth", header: "Depth from peak", numeric: true, render: (r: DownturnRow) => cells(r).depth },
     {
       key: "rebound",
       header: `Rebound within ${REBOUND_YEARS} years of trough`,
       numeric: true,
-      render: (r: DownturnRow) =>
-        r.reboundPct === null ? "—" : r.reboundLowVolume ? LOW_VOLUME : arrowPct(r.reboundPct),
+      render: (r: DownturnRow) => cells(r).rebound,
     },
-    {
-      key: "regained",
-      header: "Regained peak",
-      render: (r: DownturnRow) => (r.regainedYear !== null ? `${fy(r.regainedYear)} · ${int(r.regained ?? 0)}` : notYet),
-    },
-    {
-      key: "high",
-      header: "Later new high",
-      render: (r: DownturnRow) =>
-        r.newHighYear !== null ? `Yes, ${fy(r.newHighYear)}` : r.regainedYear !== null ? "Not yet" : "—",
-    },
+    { key: "regained", header: "Regained peak", render: (r: DownturnRow) => cells(r).regained },
+    { key: "high", header: "Later new high", render: (r: DownturnRow) => cells(r).high },
   ];
 
   const worldRows: DownturnRow[] = [
@@ -261,16 +257,7 @@ export default function MarketCycles() {
     countryView.kind === "rows" ? countryView.rows.map((d) => ({ ...d, series: focusCountry })) : [];
   const visaWords = visas.length === 2 ? "F1 or J1" : visas[0];
 
-  const signalMonth = (index: number) => MONTH_NAMES[(index % 12) + 1];
-  const signalText = signal
-    ? `FY${signal.fiscalYear} so far (${signal.monthsLabel}): ${signal.changePct === null ? "N/A" : arrowPct(signal.changePct)} vs the same months of FY${signal.fiscalYear - 1} (${int(signal.current)} vs ${int(signal.prior)})${
-        signal.reading === "no-bottom"
-          ? ` — no sign of a bottom yet in data through ${monthDisplay(signal.dataEnd)}.`
-          : signal.reading === "narrowing"
-            ? ` — the decline is narrowing in data through ${monthDisplay(signal.dataEnd)}.`
-            : ` — up on a year earlier, in data through ${monthDisplay(signal.dataEnd)}.`
-      }`
-    : null;
+  const signalText = signal ? latestSignalText(signal) : null;
 
   return (
     <section className="space-y-4">
@@ -297,21 +284,16 @@ export default function MarketCycles() {
             Recovery summary
             <FixedTag title="Always F1 (students), whatever the Visa control shows.">Always F1</FixedTag>
           </h4>
-          <p className="leading-relaxed text-[#DDEBFA]">
-            Since FY{first}, {pct(summary.recoveredPct)} of major market downturns fully recovered, typically
-            within {years(summary.medianYears)} of the low.{" "}
-            {`After COVID, ${pct((summary.postCovid.above / Math.max(1, summary.postCovid.markets)) * 100)} of markets were above their FY2019 level by FY2023.`}{" "}
-            Past recoveries don&apos;t guarantee future ones.
-          </p>
+          <p className="leading-relaxed text-[#DDEBFA]">{recoverySummaryText(summary, first)}</p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-300">
             <li>
               Major markets: {summary.markets} countries with {MAJOR_MARKET_MIN}+ F1 visas in their best year;{" "}
-              {summary.downturns} downturns, {summary.recovered} fully recovered (median {years(summary.medianYears)} from
+              {summary.downturns} downturns, {summary.recovered} fully recovered (median {yearsText(summary.medianYears)} from
               the low to regaining the peak).
             </li>
             <li>
               Downturns from peaks in FY2000–FY2002 (around 9/11): {summary.early.recovered} of {summary.early.downturns}{" "}
-              recovered (median {years(summary.early.medianYears)}).
+              recovered (median {yearsText(summary.early.medianYears)}).
             </li>
             <li>
               COVID: {summary.postCovid.above} of {summary.postCovid.markets} markets with {MAJOR_MARKET_MIN}+ F1 in FY2019
@@ -336,9 +318,7 @@ export default function MarketCycles() {
           <b className="text-white">{signalText}</b>{" "}
           <span className="text-xs text-slate-400">
             {visaLabel}, monthly nationality data, countries only. Latest 3 months vs a year earlier:{" "}
-            {signal.latestMonths
-              .map((m) => `${signalMonth(m.monthIndex)} ${m.changePct === null ? "N/A" : arrowPct(m.changePct)}`)
-              .join(", ")}
+            {latestMonthsText(signal)}
             . &quot;No sign of a bottom yet&quot; while each of the latest 3 months is 20%+ below a year earlier.
           </span>
         </div>
@@ -428,9 +408,7 @@ export default function MarketCycles() {
           Downturns: {focusCountry} ({visaLabel})
         </h4>
         <p className="mb-2 text-xs leading-relaxed text-slate-300">
-          <b className="text-slate-100">History (F1):</b> {countryHistory.label}
-          {countryHistory.label.endsWith(".") ? "" : "."}
-          {countryHistory.evidence ? ` ${countryHistory.evidence}` : ""}{" "}
+          <b className="text-slate-100">History (F1):</b> {historyLineText(countryHistory)}{" "}
           <span className="text-slate-400">{historyNote(visas, provisional, last)}</span>
         </p>
         {countryView.kind === "rows" ? (
@@ -442,17 +420,7 @@ export default function MarketCycles() {
             empty={`No 20%+ downturn from a peak of ${MIN_BASE}+ for ${focusCountry} since FY${first}.`}
           />
         ) : (
-          <p className="text-sm text-slate-400">
-            {countryView.kind === "split"
-              ? `${focusCountry} split in ${countryView.year}; later visas are counted under ${countryView.successors.join(" and under ")}${
-                  countryView.lastYear !== null
-                    ? ` (last ${visaWords} visas recorded under this name: FY${countryView.lastYear})`
-                    : ""
-                }.`
-              : countryView.kind === "too-few"
-                ? `Too few visas for a downturn history (${focusCountry}'s best year: ${int(countryView.best)} in FY${countryView.bestYear}).`
-                : `No ${visaWords} visas for ${focusCountry} in the annual data.`}
-          </p>
+          <p className="text-sm text-slate-400">{countryDownturnNote(focusCountry, countryView, visaWords)}</p>
         )}
       </div>
       <p className="text-xs text-slate-400">

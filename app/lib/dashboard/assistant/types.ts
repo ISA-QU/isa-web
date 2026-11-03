@@ -70,6 +70,8 @@ export interface ToolResult {
   /** Notes shown under the answer (small print, the F1 history note, fallbacks). */
   notes?: string[];
   links?: ExternalLink[];
+  /** Extra "Open" buttons (the tour has one per tab); `link` is the main one. */
+  actions?: { label: string; link: TabLink }[];
 }
 
 /** What every tool gets: the loaded snapshot and the dashboard's Visa control. */

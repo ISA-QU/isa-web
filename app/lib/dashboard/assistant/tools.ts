@@ -73,7 +73,7 @@ import {
   sortMarkets,
   type MarketRow,
 } from "../markets";
-import { LOW_VOLUME, MIN_BASE, changeText, latestCompleteYearOf } from "../measures";
+import { LOW_VOLUME, MIN_BASE, changeText, changeVsBase, latestCompleteYearOf } from "../measures";
 import { historicalCountryName, notNa, selectedVisaClasses } from "../metrics";
 import { pct1 } from "../pct";
 import { provisionalFiscalYears, resolvePeriod } from "../periods";
@@ -95,7 +95,8 @@ import { arrowPct, monthRangeLabel } from "../rolling";
 import { sortBy } from "../sort";
 import type { CommandCenterRow, DashboardData, MonthRange, Visa, VisaSelection } from "../types";
 import { matchOption } from "../url";
-import { UNITED_STATES_NOTE, normalize, resolveCountry } from "./countries";
+import { SPECIAL_CATEGORIES, UNITED_STATES_NOTE, normalize, resolveCountry } from "./countries";
+import { NAV_TOPICS, TOUR, TOUR_INTRO } from "./navigation";
 import { DEFINITIONS } from "./definitions";
 import { TAB_LABELS, type ExternalLink, type SourceLine, type TabLink, type ToolContext, type ToolDef, type ToolResult } from "./types";
 
@@ -451,15 +452,36 @@ const listMarkets: ToolDef = {
     const scope = [region !== "All" ? region : null, category !== "All" ? category : null].filter(Boolean).join(", ");
     const title = `${what}, ${vl}${scope ? ` (${scope})` : ""}`;
     const pool = category === "All" ? inScope.length : inScope.filter((r) => r.marketCategory === category).length;
-    const lines = shown.length > 0 ? shown.map(line) : ["No markets match these filters."];
+    // None grew (or none fell): say so, and list the closest instead (smallest declines / smallest gains).
+    const withChange = byNationals.filter((r) => r.periodChange !== null);
+    const closest =
+      shown.length > 0 || pool === 0
+        ? []
+        : sort === "growing"
+          ? sortBy(withChange, [(r) => r.periodChange]).slice(0, limit)
+          : sort === "declining"
+            ? sortBy(withChange, [(r) => r.periodChange], true).slice(0, limit)
+            : [];
+    const scopeWords = [region !== "All" ? region : null, category !== "All" ? category : null].filter(Boolean).join(" ");
+    const noneLine =
+      closest.length === 0
+        ? null
+        : sort === "growing"
+          ? `None of the ${pool} ${scopeWords ? `${scopeWords} ` : ""}markets grew in the last 12 months; the smallest declines were:`
+          : `None of the ${pool} ${scopeWords ? `${scopeWords} ` : ""}markets fell in the last 12 months; the smallest gains were:`;
+    const lines = shown.length > 0 ? shown.map(line) : noneLine ? [noneLine, ...closest.map(line)] : ["No markets match these filters."];
     const notes = [
-      sort === "growing"
-        ? `${sorted.length} of ${pool} markets grew.`
-        : sort === "declining"
-          ? `${sorted.length} of ${pool} markets fell.`
-          : `${shown.length} of ${pool} markets shown.`,
+      ...(noneLine
+        ? []
+        : [
+            sort === "growing"
+              ? `${sorted.length} of ${pool} markets grew.`
+              : sort === "declining"
+                ? `${sorted.length} of ${pool} markets fell.`
+                : `${shown.length} of ${pool} markets shown.`,
+          ]),
       `Each row: ${byNationality ? "nationals" : "visas issued"} in the last 12 months · change vs the previous 12 months · category.`,
-      ...(shown.some((r) => restrictionsFor(r.country).some((x) => x.studentVisasAffected))
+      ...([...shown, ...closest].some((r) => restrictionsFor(r.country).some((x) => x.studentVisasAffected))
         ? ["Countries marked Travel ban or Paused can't currently get student or exchange visas, so their fall reflects the suspension, not ordinary demand."]
         : []),
       ...(byNationality
@@ -816,6 +838,72 @@ const definitionTool: ToolDef = {
   },
 };
 
+const specialCategory: ToolDef = {
+  name: "special_category",
+  description: "A special reporting category in the nationality data (BNO passports, Palestinian Authority Travel Document): its last 12 months. Not a country, so no tab shows it.",
+  params: {
+    name: { type: "string", description: "The category" },
+    visa: { type: "string", description: "F1, J1 or Both", options: ["F1", "J1", "Both"], optional: true },
+  },
+  run: (ctx, args) => {
+    const { data } = ctx;
+    const tool = "special_category";
+    const name = SPECIAL_CATEGORIES[normalize(String(args.name ?? ""))] ?? String(args.name ?? "");
+    const visa = visaArg(ctx, args.visa);
+    const vl = visaLabel(visa);
+    const visas = selectedVisaClasses(visa);
+    const t = twelveMonths(data);
+    const src = source("Data snapshot", `monthly nationality data, special reporting category (not shown on a tab), ${vl}`, t.period);
+    const note = `${name} is a special reporting category in the State Department's nationality data, not a country, so the dashboard has no page, badge or flag for it and leaves it out of the country figures.`;
+    if (!data.nationalityMonthly) {
+      return notInData(tool, name, "This data isn't available yet: it needs the monthly nationality data, which isn't in this data snapshot.", [src], null, { notes: [note] });
+    }
+    const rows = data.nationalityMonthly.filter((r) => !r.isCountry && r.country === name && visas.includes(r.visa));
+    if (rows.length === 0) {
+      return notInData(tool, name, `The monthly nationality data has no ${vl} rows for ${name}.`, [src], null, { notes: [note] });
+    }
+    const sum = (range: MonthRange | null) =>
+      range ? rows.filter((r) => r.monthIndex >= range.start && r.monthIndex <= range.end).reduce((total, r) => total + r.issuances, 0) : 0;
+    const now = sum(t.range);
+    const before = sum(t.prior);
+    const lines = [
+      `${name}, ${vl}, last 12 months (${t.label}): ${int(now)}`,
+      `Previous 12 months (${t.priorLabel}): ${int(before)} · change ${changeText(changeVsBase(now, before), before, arrowPct)}`,
+    ];
+    const links: ExternalLink[] = [];
+    if ((RESTRICTED_NON_COUNTRY as readonly string[]).includes(name)) {
+      const ban = EVENTS.find((e) => e.derivedFrom === "proclamation-10998");
+      if (ban) {
+        lines.push(`Also covered by the travel ban (Proclamation 10998, from ${eventDateText(ban)}): student and exchange visas suspended.`);
+        links.push({ label: `${ban.label} (${sourceSite(ban.source)})`, url: ban.source });
+      }
+    }
+    return result(tool, name, lines, [src], null, { notes: [note], links });
+  },
+};
+
+const navigationTool: ToolDef = {
+  name: "navigation",
+  description: "How to use the dashboard: a tab, a control (Country, Visa, Period, Show events), CSV downloads or a badge; 'tour' gives one line per tab.",
+  params: { topic: { type: "string", description: `A topic id (${NAV_TOPICS.map((t) => t.id).join(", ")}) or tour` } },
+  run: (_ctx, args) => {
+    const tool = "navigation";
+    const src = (tab: string) => source(tab, "how to use the dashboard", "the dashboard's tabs and controls");
+    const topicId = String(args.topic ?? "tour");
+    if (topicId === "tour") {
+      return result(tool, "What I can help with", [TOUR_INTRO, ...TOUR.map((t) => t.line)], [src("Dashboard")], null, {
+        actions: TOUR.map((t) => ({ label: `Open ${TAB_LABELS[t.tab]}`, link: { tab: t.tab } })),
+        notes: ["Ask about a country, a list of markets, travel bans, events, history or a term, e.g. \"How is India doing?\""],
+      });
+    }
+    const topic = NAV_TOPICS.find((t) => t.id === topicId);
+    if (!topic) {
+      return { tool, status: "unknown", title: `I don't know the topic "${topicId}"`, lines: ["I can explain each tab, the Country, Visa and Period controls, Show events, CSV downloads and the badges."], sources: [src("Dashboard")], link: null, suggestions: NAV_TOPICS.map((t) => t.title) };
+    }
+    return result(tool, topic.title, [topic.text], [src(TAB_LABELS[topic.tab])], { tab: topic.tab });
+  },
+};
+
 /** Every tool, in the order the plan lists them. */
 export const TOOLS: readonly ToolDef[] = [
   dataCoverage,
@@ -829,6 +917,8 @@ export const TOOLS: readonly ToolDef[] = [
   historyLabelTool,
   consulatesTool,
   definitionTool,
+  specialCategory,
+  navigationTool,
 ];
 
 export const toolByName = (name: string): ToolDef | undefined => TOOLS.find((t) => t.name === name);

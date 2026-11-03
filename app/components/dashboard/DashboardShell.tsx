@@ -12,6 +12,7 @@ import { periodFromParam, periodToParam } from "../../lib/dashboard/periods";
 import { canonicalTab } from "../../lib/dashboard/url";
 import { monthRangeLabel } from "../../lib/dashboard/rolling";
 import type { DashboardData, VisaSelection } from "../../lib/dashboard/types";
+import BobcatAssistant from "./assistant/BobcatAssistant";
 import ControlBar from "./ControlBar";
 import { TabNavigationContext, type OpenTab } from "./TabNavigation";
 import { DashboardProvider, useDashboard, type InitialSelection } from "./DashboardContext";
@@ -274,6 +275,7 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
           </footer>
         </main>
       </div>
+      <BobcatAssistant openTab={openTab} />
     </div>
   );
 }

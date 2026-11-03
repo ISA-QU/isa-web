@@ -1,0 +1,26 @@
+/* The Bobcat button's hop: a small double jump about every 10 seconds, only when motion is allowed. */
+@media (prefers-reduced-motion: no-preference) {
+  .hop {
+    animation: hop 10s ease-in-out 4s infinite;
+  }
+}
+
+@keyframes hop {
+  0%,
+  86%,
+  100% {
+    transform: translateY(0);
+  }
+  89% {
+    transform: translateY(-9px);
+  }
+  92% {
+    transform: translateY(0);
+  }
+  94.5% {
+    transform: translateY(-4px);
+  }
+  97% {
+    transform: translateY(0);
+  }
+}

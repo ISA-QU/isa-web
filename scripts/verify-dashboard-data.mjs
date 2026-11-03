@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -80,6 +81,10 @@ async function compileLib() {
       "app/lib/dashboard/historicalCards.ts",
       "app/lib/dashboard/assistant/tools.ts",
       "app/lib/dashboard/assistant/format.ts",
+      "app/lib/dashboard/assistant/answer.ts",
+      "app/lib/dashboard/assistant/samples.ts",
+      "app/lib/dashboard/assistant/greetings.ts",
+      "app/lib/dashboard/assistant/flags.ts",
       "--outDir", outDir,
       "--module", "commonjs",
       "--target", "es2022",
@@ -1676,6 +1681,160 @@ async function main() {
     "not-in-data / not-in-data / not-in-data / not-in-data / not-in-data | error",
   );
   check("every tool, full snapshot: errors or results without a source", errorsOn(ctxF1, ["India", "Nigeria", "China", "Curacao", "Serbia and Montenegro", "Palau"]), 0);
+
+  console.log("\n  Bobcat Step 2: questions  (match.ts + answer.ts; one check per sample question in samples.ts)");
+  const bans = await import(pathToFileURL(path.join(outDir, "assistant/answer.js")).href);
+  const bsamples = await import(pathToFileURL(path.join(outDir, "assistant/samples.js")).href);
+  const bgreet = await import(pathToFileURL(path.join(outDir, "assistant/greetings.js")).href);
+  const bflags = await import(pathToFileURL(path.join(outDir, "assistant/flags.js")).href);
+  const bnav = await import(pathToFileURL(path.join(outDir, "assistant/navigation.js")).href);
+  const bcountries = await import(pathToFileURL(path.join(outDir, "assistant/countries.js")).href);
+  const askCtx = { data, visa: "F1", focusCountry: "India" };
+  const ask = (q, after) => bans.answerQuestion(q, askCtx, after ? bans.answerQuestion(after, askCtx, null).memory : null).answer;
+  for (const sample of bsamples.SAMPLES) {
+    check(`ask "${sample.q}"${sample.after ? ` (after "${sample.after}")` : ""}`, bsamples.describeAnswer(ask(sample.q, sample.after)), sample.expect);
+  }
+  console.log("\n  Bobcat Step 2: navigation questions  (navigation.ts)");
+  for (const sample of bsamples.NAV_SAMPLES) {
+    check(`ask "${sample.q}"`, bsamples.describeAnswer(ask(sample.q, sample.after)), sample.expect);
+  }
+
+  console.log("\n  Bobcat Step 2: answers  (cards are the tools' results unchanged; expected values are this script's checks above, or recounted with pandas)");
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check(
+    "answer cards = the tools' results, unchanged: India summary (4 cards) | How is India doing? | Fastest-growing markets | Nigeria restrictions",
+    [
+      same(ask("India").cards, [run("country_overview", { country: "India" }), run("country_trend", { country: "India" }), run("history_label", { country: "India" }), run("country_vs_world", { country: "India" })]),
+      same(ask("How is India doing?").cards, [run("country_overview", { country: "India" })]),
+      same(ask("Fastest-growing markets").cards, [run("list_markets", { sort: "growing" })]),
+      same(ask("Is Nigeria restricted?").cards, [run("restrictions", { country: "Nigeria" })]),
+    ].join(" | "),
+    "true | true | true | true",
+  );
+  check(
+    "answer card text: How is India doing? (first 3 lines)",
+    ask("How is India doing?").cards[0].lines.slice(0, 3).join(" | "),
+    "Nationals of India, F1, last 12 months (Mar 2025 – Feb 2026): 30,292 | Previous 12 months (Mar 2024 – Feb 2025): 75,060 · change ▼ 59.6% | Recovery (2025 vs 2019): 67",
+  );
+  check(
+    "years reach the events tool as a year: What happened in 2020? | FY2019 | Events in FY2020 for China",
+    ["What happened in 2020?", "FY2019", "Events in FY2020 for China"].map((q) => ask(q).cards[0].title).join(" | "),
+    "Events in 2020 | Events in FY2019 | Events in FY2020 (China)",
+  );
+  check(
+    "What happened in 2020? lists COVID (20 Mar 2020)",
+    ask("What happened in 2020?").cards[0].lines.some((l) => l.startsWith("20 Mar 2020 — COVID-19")),
+    true,
+  );
+  check(
+    '"we/our/us" note on trend and downturn questions | not on "Tell us about India"',
+    `${ask("Are we in a downturn?").notes[0]} | ${ask("Tell us about India").notes.length}`,
+    "This dashboard shows U.S. visa issuances worldwide (State Department data), not Quinnipiac's own applicants or enrolments. | 0",
+  );
+  check(
+    "United States: the not-in-data note",
+    ask("US students").cards[0].lines[0],
+    "The United States isn't in this data: U.S. citizens don't need student (F1) or exchange visitor (J1) visas.",
+  );
+  check(
+    "I don't know: the line, a reason and 4 suggested questions (applicants / forecast)",
+    `${ask("How many Indian students applied to QU?").intro} ${ask("How many Indian students applied to QU?").notes[0]} ${ask("asdfgh").suggestions.length} | ${ask("What will FY2027 be?").notes[0]}`,
+    "I don't know — the dashboard doesn't have that. It shows U.S. visa issuances by nationality, not Quinnipiac's applicants, admissions or enrolments. 4 | The dashboard doesn't forecast: it shows visas issued up to Feb 2026.",
+  );
+  check(
+    "Congo: asks which one",
+    `${ask("Congo").intro} ${ask("Congo").suggestions.map((s) => s.text).join(" / ")}`,
+    "Which one do you mean: Democratic Republic of the Congo or Republic of the Congo? Democratic Republic of the Congo / Republic of the Congo",
+  );
+  const bno = ask("BNO passports").cards[0];
+  const pa = ask("Palestinian students").cards[0];
+  check(
+    "special categories, F1, last 12 / previous 12 (recounted with pandas): BNO | Palestinian Authority Travel Document (+ travel ban) | no flag",
+    `${bno.lines.join(" | ")} || ${pa.lines.join(" | ")} || ${bflags.flagCode(bno.title)} ${bflags.flagCode(pa.title)}`,
+    "British National Overseas (Hong Kong) Passport, F1, last 12 months (Mar 2025 – Feb 2026): 10 | Previous 12 months (Mar 2024 – Feb 2025): 24 · change — (low volume) || Palestinian Authority Travel Document, F1, last 12 months (Mar 2025 – Feb 2026): 83 | Previous 12 months (Mar 2024 – Feb 2025): 290 · change ▼ 71.4% | Also covered by the travel ban (Proclamation 10998, from 1 Jan 2026): student and exchange visas suspended. || null null",
+  );
+  check(
+    "special categories without the nationality table: says the data isn't available yet",
+    bt.runTool("special_category", oldCtx, { name: "bno" }).status,
+    "not-in-data",
+  );
+  check(
+    "tour: one line and one Open button per tab",
+    bt.runTool("navigation", ctxF1, { topic: "tour" }).actions.map((a) => a.link.tab).join(","),
+    tabIds.join(","),
+  );
+  check(
+    "navigation answers: tabs exist / at most 2 sentences each",
+    `${bnav.NAV_TOPICS.every((t) => tabIds.includes(t.tab))} / ${bnav.NAV_TOPICS.filter((t) => t.text.split(/(?<=[.!?])\s+(?=[A-Z"])/).length > 2).map((t) => t.id).join(", ") || "all"}`,
+    "true / all",
+  );
+  const flagSet = createRequire(path.join(ROOT, "package.json"))("country-flag-icons/string/3x2");
+  const noFlag = mk.controlCountries(data).filter((c) => !bflags.flagCode(c));
+  check(
+    "flags: every Country control country has a flag code in country-flag-icons (except) | codes missing from the package",
+    `${noFlag.join(", ")} | ${Object.values(bflags.FLAG_CODES).filter((c) => !flagSet[c]).length}`,
+    "Serbia and Montenegro | 0",
+  );
+  check(
+    "greetings: countries not in the dashboard (typos) | countries with a greeting",
+    `${Object.keys(bgreet.GREETINGS).filter((c) => !mk.controlCountries(data).includes(c)).join(", ") || "none"} | ${Object.keys(bgreet.GREETINGS).length}`,
+    `none | ${Object.keys(bgreet.GREETINGS).length}`,
+  );
+  check(
+    "greetings changed by the owner: Kenya / Tanzania / Ukraine / Bangladesh | India",
+    ["Kenya", "Tanzania", "Ukraine", "Bangladesh", "India"].map((c) => bgreet.greetingFor(c).text).join(" / "),
+    "Habari / Habari / Dobryi den / Assalamu alaikum / Namaste",
+  );
+  check(
+    "country names in a sentence: Niger vs Nigeria, Guinea vs Papua New Guinea, Dominica vs Dominican Republic, China's",
+    ["Niger and Nigeria", "Guinea, Papua New Guinea", "Dominican students and Dominica", "Is China's decline structural?"].map((t) => bcountries.findPlaces(t, mk.controlCountries(data)).map((p) => p.country).join("+")).join(" | "),
+    "Niger+Nigeria | Guinea+Papua New Guinea | Dominican Republic+Dominica | China",
+  );
+
+  console.log("\n  Regions  (REGION_MAP: every country, UN geoscheme onto the dashboard's regions plus Central Asia; the original 48 unchanged; counts recounted with pandas)");
+  const constantsJs = await import(pathToFileURL(path.join(outDir, "constants.js")).href);
+  const allNames = [...new Set([...postsMonthly.map((r) => r.country), ...annualCountry.map((r) => r.country), ...nationality.map((r) => r.country)])].sort();
+  check(
+    "regions: names in the data without a region (only the special categories)",
+    allNames.filter((c) => !constantsJs.REGION_MAP[c]).join(", "),
+    "British National Overseas (Hong Kong) Passport, Non-Nationality Based Issuances, Palestinian Authority Travel Document, Unknown",
+  );
+  check(
+    "regions: the original 48 assignments are unchanged",
+    ["India", "Nepal", "Bangladesh", "Pakistan", "Sri Lanka", "China", "South Korea", "Japan", "Taiwan", "Hong Kong", "Vietnam", "Thailand", "Philippines", "Indonesia", "Malaysia", "Singapore", "Nigeria", "Ghana", "Kenya", "South Africa", "Zimbabwe", "Ethiopia", "Egypt", "Morocco", "Brazil", "Colombia", "Mexico", "Peru", "Argentina", "Chile", "Ecuador", "Jamaica", "United Kingdom", "France", "Germany", "Spain", "Italy", "Netherlands", "Ireland", "Turkey", "Saudi Arabia", "United Arab Emirates", "Jordan", "Lebanon", "Qatar", "Canada", "Australia", "New Zealand"].map((c) => `${c}=${constantsJs.REGION_MAP[c]}`).join("; "),
+    "India=South Asia; Nepal=South Asia; Bangladesh=South Asia; Pakistan=South Asia; Sri Lanka=South Asia; China=East Asia; South Korea=East Asia; Japan=East Asia; Taiwan=East Asia; Hong Kong=East Asia; Vietnam=SE Asia; Thailand=SE Asia; Philippines=SE Asia; Indonesia=SE Asia; Malaysia=SE Asia; Singapore=SE Asia; Nigeria=Africa; Ghana=Africa; Kenya=Africa; South Africa=Africa; Zimbabwe=Africa; Ethiopia=Africa; Egypt=Africa; Morocco=Africa; Brazil=Latin America; Colombia=Latin America; Mexico=Latin America; Peru=Latin America; Argentina=Latin America; Chile=Latin America; Ecuador=Latin America; Jamaica=Latin America; United Kingdom=Europe; France=Europe; Germany=Europe; Spain=Europe; Italy=Europe; Netherlands=Europe; Ireland=Europe; Turkey=Europe; Saudi Arabia=Middle East; United Arab Emirates=Middle East; Jordan=Middle East; Lebanon=Middle East; Qatar=Middle East; Canada=N. America / Oceania; Australia=N. America / Oceania; New Zealand=N. America / Oceania",
+  );
+  const regionCounts = (rows) => {
+    const counts = {};
+    for (const r of rows) counts[r.region] = (counts[r.region] ?? 0) + 1;
+    return Object.entries(counts).sort().map(([k, v]) => `${k} ${v}`).join(" / ");
+  };
+  check(
+    "Markets rows per region, F1, default view (last 12 months, min 100) — was Africa 8, Europe 8, Other 73",
+    regionCounts(mk.marketsInScope(mRowsF1, 100, "All")),
+    "Africa 22 / Central Asia 4 / East Asia 7 / Europe 40 / Latin America 22 / Middle East 10 / N. America / Oceania 3 / SE Asia 8 / South Asia 5",
+  );
+  check(
+    "regions decided by the owner: Central Asia | Iran | Armenia, Azerbaijan, Georgia, Cyprus",
+    `${["Kazakhstan", "Kyrgyzstan", "Tajikistan", "Turkmenistan", "Uzbekistan"].map((c) => constantsJs.REGION_MAP[c]).join(", ")} | ${constantsJs.REGION_MAP.Iran} | ${["Armenia", "Azerbaijan", "Georgia", "Cyprus"].map((c) => constantsJs.REGION_MAP[c]).join(", ")}`,
+    "Central Asia, Central Asia, Central Asia, Central Asia, Central Asia | Middle East | Europe, Europe, Europe, Europe",
+  );
+  check(
+    "Central Asia / South Asia / Middle East markets, F1, default view, largest first (recounted with pandas)",
+    ["Central Asia", "South Asia", "Middle East"].map((reg) => mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, reg), "All", "Nationals").map((r) => r.country).join(", ")).join(" | "),
+    "Kazakhstan, Kyrgyzstan, Uzbekistan, Tajikistan | India, Bangladesh, Nepal, Pakistan, Sri Lanka | Saudi Arabia, Israel, Kuwait, United Arab Emirates, Jordan, Lebanon, Iran, Oman, Iraq, Qatar",
+  );
+  check(
+    "regions don't touch the advice: Markets fingerprints F1 | F1 + J1 (unchanged)",
+    `${fingerprint(sigF1)} | ${fingerprint(mk.marketSignals(data, "Both", mk.controlCountries(data)))}`,
+    "9013461fccd7 | c332e7aeb6b1",
+  );
+  const africaGrowing = ask("Top 5 growing markets in Africa").cards[0];
+  check(
+    "none grew: Top 5 growing markets in Africa lists the smallest declines (recounted with pandas)",
+    africaGrowing.lines.join(" | "),
+    "None of the 22 Africa markets grew in the last 12 months; the smallest declines were: | 1. Rwanda: 472 · ▼ 2.5% · Watch | 2. Mozambique: 123 · ▼ 9.6% · Watch | 3. South Africa: 1,059 · ▼ 21.4% · Watch | 4. Madagascar: 125 · ▼ 26.5% · Watch | 5. Kenya: 1,334 · ▼ 29.6% · Watch",
+  );
 
   await rm(outDir, { recursive: true, force: true });
 

@@ -633,6 +633,77 @@ Country 360, top to bottom:
   average/median month chart (the typical-year chart is kept; its CSV stays), the F1-only
   change card, and the separate recommendation cards.
 
+## Bobcat assistant
+
+The Bobcat button (bottom-right on every dashboard tab) opens a small chat panel that answers
+questions about the dashboard and its trends. It is free and local: no AI model, no web
+search, no server, no keys. It reads only the dashboard data already loaded behind sign-in
+and answers "I don't know — the dashboard doesn't have that" for anything else (applicants,
+emails, forecasts, legal questions…). Chat history stays in the open panel and is never
+saved or sent anywhere.
+
+Every answer is a card with the same numbers and wording as the tab it comes from, a source
+line (tab · measure · period), an "Open tab" button that shows the same figures, and a Copy
+button. Monthly figures always use the last 12 months. Questions with "we", "our" or "us"
+about trends get a note that the data is U.S.-wide visa issuances, not Quinnipiac's own
+applicants or enrolments. The United States isn't in the data (U.S. citizens don't need
+student or exchange visas), and the two special reporting categories (BNO passports and the
+Palestinian Authority Travel Document) are answered without a flag, with a note. Flags come
+from the `country-flag-icons` package (MIT) and load only when the panel opens.
+
+**Regions (with the Bobcat).** `REGION_MAP` in `constants.ts` now gives every country in the
+data a region: the original 48 assignments are unchanged and the rest follow the UN geoscheme
+mapped onto the dashboard's region names, with a new "Central Asia" region (Kazakhstan,
+Kyrgyzstan, Tajikistan, Turkmenistan, Uzbekistan), Iran in the Middle East, the Caucasus
+(Armenia, Azerbaijan, Georgia) and Cyprus in Europe, and the rest of UN Western Asia in the
+Middle East. "Other" is left only for the special reporting categories. At the default Markets
+view (F1) "Other" went from 73 of 121 markets to none (Africa 8 → 22, Central Asia 4, Europe
+8 → 40, Latin America 8 → 22, Middle East 5 → 10, South Asia 5, SE Asia 6 → 8, East Asia
+5 → 7, N. America / Oceania 3). It changes the
+Markets Region filter, Country 360's compare-by-region presets and the Bobcat's region lists;
+no number, category or advice changes.
+
+How it is built (`app/lib/dashboard/assistant/` and `app/components/dashboard/assistant/`):
+- `tools.ts`: the answers. Each tool reuses the pages' own functions (`markets.ts`,
+  `cyclesText.ts`, `historicalCards.ts`, `restrictions.ts`, `events.ts`…) and returns
+  ready-made lines, the source, and the tab to open.
+- `match.ts`: reads a question with word lists (no AI): countries and their other names,
+  visa words, regions, categories, years and what is being asked.
+- `answer.ts`: picks the tools for a question and passes their results through unchanged.
+- `navigation.ts`: the "how do I / where can I" answers and the tour, in one file so a user
+  guide can reuse the wording.
+- `definitions.ts`, `greetings.ts`, `suggestions.ts`, `flags.ts`: terms, greetings, suggested
+  questions and flag codes.
+- `samples.ts`: sample questions and the answer each must give, checked by
+  `npm run dashboard:verify`.
+- The panel: `BobcatAssistant.tsx` (the button), `AssistantPanel.tsx`, `AnswerCard.tsx`.
+
+Try the tools in a terminal with `node scripts/assistant-tools.mjs --list`, e.g.
+`node scripts/assistant-tools.mjs country_overview India`.
+
+### How to extend the Bobcat
+
+Run `npm run dashboard:verify` after each change; it runs every sample question.
+
+- **A country's other name** (e.g. "Persia" for Iran): add it to `COUNTRY_ALIASES` in
+  `countries.ts`, written in lowercase without punctuation. A nationality word ("Iranian")
+  goes in `DEMONYMS`. Add a sample question to `samples.ts`.
+- **A new keyword for an existing kind of question** (e.g. "slump" for downturns): add it to
+  the right list in `INTENT_WORDS` in `match.ts`, then add a sample question.
+- **A definition**: add an entry to `definitions.ts` with the term, other words for it, the
+  plain-language text, the tab, and a short phrase copied from this document (`docPhrase`).
+  Verify checks the phrase is still here, so the definition can't drift from the rules.
+- **A navigation answer**: add a topic to `navigation.ts` (title, keywords, one or two
+  sentences, the tab), then a sample question in `NAV_SAMPLES`.
+- **A new tool** (e.g. Quinnipiac's own counts, once approved): add it to `tools.ts` with a
+  name, a description and its parameters, returning lines, a source and a tab link; add it to
+  `TOOLS`; add the words that should reach it in `match.ts` and the call in `answer.ts`; add
+  verify checks that its numbers match the page, and sample questions.
+- **A sample-question test**: add `{ q: "…", expect: "intent | tool:Country | details" }` to
+  `samples.ts`. The expected line is what `describeAnswer()` prints; if a test fails, verify
+  shows what it got.
+- **A greeting**: add the country and its greeting to `greetings.ts`.
+
 ## Handoff notes for deployment (Koushik)
 
 The branch `dev/dashboard-improvements` changes the **dashboard pages** and the
@@ -658,8 +729,10 @@ is the only backend file that changed, see `git diff main...HEAD -- backend`):
    `__pycache__/` and `*.pyc`. Upload only `lambda_function.py`.
 
 **What changed in the site:** dashboard pages only (Markets, Country 360, Consulates,
-Historical Trends with Market cycles and Country vs World, the control bar, events). The
-calculator, transcript tool, login and `api.ts` are unchanged.
+Historical Trends with Market cycles and Country vs World, the control bar, events, and the
+Bobcat assistant). The calculator, transcript tool, login and `api.ts` are unchanged. The
+Bobcat runs entirely in the browser from the loaded data: it needs no AWS setup, keys or new
+routes. It adds one npm dependency, `country-flag-icons` (MIT), installed by `npm ci`.
 
 **Expected Test output** with the current raw files (Mar 2017–Feb 2026 monthly; FY1997–FY2026
 annual). Run the Test event `{}` and expect:
@@ -672,7 +745,7 @@ annual). Run the Test event `{}` and expect:
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **236/236** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes **383/383** on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes

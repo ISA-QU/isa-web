@@ -186,6 +186,40 @@ Until the upload button exists:
 To roll back, open `snapshot/snapshot.json.gz` → **Versions** and restore the previous
 version, or delete the bad raw file and rebuild.
 
+## Monthly intake (PDFs → the 3 data files)
+
+The State Department publishes two monthly PDFs, *Nonimmigrant Visa Issuances by Nationality*
+and *by Post* (travel.state.gov → Visa Statistics → Monthly Nonimmigrant Visa Issuances). The
+intake tool in `scripts/intake/` turns them into updated versions of the 3 files in `dashboard/`,
+so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/intake/requirements.txt`.
+
+1. **Check the State Department page in your browser to see if a new month is out.** The page
+   blocks scripts, so the tool can't check it for you; `--download` can fetch a month's two PDFs
+   once you know it's there, or save them from the page by hand.
+
+- **Local page:** `npm run admin` prints an address that works only on this computer. Drop a
+  month's two PDFs, check the report, then press Apply: the 3 files are backed up and replaced,
+  and `dashboard:data` and `dashboard:verify` run.
+- **Command line:** `npm run intake -- --pdf "<nationality>.pdf" --pdf "<post>.pdf"` builds and
+  checks the files in `dashboard-intake/staging/`; add `--apply` to replace the 3 files (after a
+  backup in `dashboard-intake/backups/`), `--replace` to redo a month already in the files, or
+  `--download 2026-03` to fetch a month's PDFs first.
+- **What it checks:** only F1 and J1 rows are kept, names exactly as the files spell them; a name
+  it has never seen stops the run (a new name needs a decision first); each report's GRAND TOTAL
+  must equal the sum of its rows; a month already in the files is refused without `--replace`;
+  the staged files are read back with the Lambda's own reader before anything is replaced. The
+  open fiscal year's rows in the historical file are recomputed from the monthly rows, and a
+  fiscal year that reaches September becomes "Complete fiscal year".
+- **PDF spellings:** a few names are spelled differently in the PDFs than in the files (for
+  example "China - mainland" vs "China - Mainland"). `scripts/intake/pdf_spellings.py` lists them,
+  each with its evidence, and every use is shown in the report.
+- **Only the 3 files live in `dashboard/`**, since the build reads every `.xlsx`/`.csv` there.
+  Staging, backups, downloads and proofs go in `dashboard-intake/` (gitignored).
+- **Live upload** (`live_upload.py`) is switched off: the live dashboard is still updated by the
+  IT/AWS contact.
+- **Tests:** `npm run intake:test`. `python3 scripts/intake/proof.py --pdf … --pdf …` rebuilds a
+  month from its PDFs in `dashboard-intake/proof/` and compares it with the current files.
+
 ## Local development
 
 ```bash

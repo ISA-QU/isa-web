@@ -45,6 +45,8 @@ next-env.d.ts
 /dashboard/
 /dashboard-data/
 /public/dashboard-data/
+# Monthly intake tool: staging, backups, downloads and proofs (never data in git).
+/dashboard-intake/
 
 # python bytecode
 __pycache__/

@@ -9,6 +9,9 @@
     "lint": "eslint",
     "dashboard:data": "python3 backend/lambdas/rebuild-dashboard/lambda_function.py --local dashboard --out public/dashboard-data",
     "dashboard:verify": "node scripts/verify-dashboard-data.mjs",
+    "admin": "python3 scripts/intake/admin_server.py",
+    "intake": "python3 scripts/intake/intake.py",
+    "intake:test": "python3 -m unittest discover -s scripts/intake/tests",
     "postbuild": "touch out/.nojekyll && rm -rf out/dashboard-data",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d out --dotfiles"

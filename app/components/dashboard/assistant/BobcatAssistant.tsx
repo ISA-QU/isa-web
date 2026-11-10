@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
 
 import type { OpenTab } from "../TabNavigation";
-import BobcatIcon from "./BobcatIcon";
+import BobcatLogo from "./BobcatLogo";
 import styles from "./assistant.module.css";
 
 /** The panel (and the flags it draws) load only when the button is first pressed. */
@@ -36,7 +36,7 @@ export default function BobcatAssistant({ openTab }: { openTab: OpenTab }) {
           open ? "max-sm:hidden" : styles.hop
         }`}
       >
-        <BobcatIcon size={40} />
+        <BobcatLogo size={48} />
       </button>
     </div>
   );

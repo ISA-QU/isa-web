@@ -703,6 +703,9 @@ Run `npm run dashboard:verify` after each change; it runs every sample question.
   `samples.ts`. The expected line is what `describeAnswer()` prints; if a test fails, verify
   shows what it got.
 - **A greeting**: add the country and its greeting to `greetings.ts`.
+- **The logo**: the button and the panel show the official Bobcat logo from
+  `public/brand/bobcat-official.png` (supplied by the office; never redrawn). `BobcatIcon` is
+  only the fallback, shown until the image loads or if it fails to load.
 
 ## Handoff notes for deployment (Koushik)
 

@@ -10,13 +10,21 @@ import { DEFAULT_PERIOD } from "../../../lib/dashboard/periods";
 import { useDashboard } from "../DashboardContext";
 import type { OpenTab } from "../TabNavigation";
 import AnswerCard from "./AnswerCard";
-import BobcatIcon from "./BobcatIcon";
+import BobcatLogo from "./BobcatLogo";
 import Flag from "./Flag";
 
-/** A chat turn. History lives in this component's memory only: nothing is stored or sent anywhere. */
-type Turn = { id: number; question: string; answer: Answer };
+/**
+ * A chat turn. History lives in this component's memory only: nothing is stored or sent anywhere.
+ * The answer is worked out when the question is asked; `shown` only delays displaying it.
+ */
+type Turn = { id: number; question: string; answer: Answer; shown: boolean };
 
 const MAX_QUESTION = 300;
+/** How long the typing dots show before an answer appears (none under reduced motion). */
+const TYPING_MS = 400;
+
+const reducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 /**
  * The Bobcat panel (loaded on first open). Answers come only from the loaded
@@ -26,7 +34,10 @@ const MAX_QUESTION = 300;
 export default function AssistantPanel({ onClose, openTab }: { onClose: () => void; openTab: OpenTab }) {
   const { data, visa, focusCountry, setFocusCountry, setVisa, setPeriod } = useDashboard();
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [memory, setMemory] = useState<Memory | null>(null);
+  // Follow-up memory updates the moment a question is asked, so "What about J1?" asked straight
+  // after works even while the previous answer is still behind the typing dots.
+  const memory = useRef<Memory | null>(null);
+  const timers = useRef(new Set<number>());
   const [draft, setDraft] = useState("");
   const panel = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -38,7 +49,7 @@ export default function AssistantPanel({ onClose, openTab }: { onClose: () => vo
   const [rotation, setRotation] = useState(0);
   useEffect(() => {
     if (fixed) return;
-    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (reducedMotion()) return;
     const timer = window.setInterval(() => setRotation((i) => (i + 1) % ROTATING_GREETINGS.length), 3000);
     return () => window.clearInterval(timer);
   }, [fixed]);
@@ -46,18 +57,33 @@ export default function AssistantPanel({ onClose, openTab }: { onClose: () => vo
 
   useEffect(() => {
     input.current?.focus();
+    // Closing the panel unmounts it: drop any answer still waiting to be shown.
+    const pending = timers.current;
+    return () => {
+      for (const t of pending) window.clearTimeout(t);
+      pending.clear();
+    };
   }, []);
+  const shownCount = turns.filter((t) => t.shown).length;
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [turns.length]);
+  }, [turns.length, shownCount]);
 
   const ask = (text: string) => {
     const question = text.trim().slice(0, MAX_QUESTION);
     if (!question) return;
-    const { answer, memory: next } = answerQuestion(question, { data, visa, focusCountry }, memory);
-    setTurns((list) => [...list, { id: nextId.current++, question, answer }]);
-    setMemory(next);
+    const { answer, memory: next } = answerQuestion(question, { data, visa, focusCountry }, memory.current);
+    memory.current = next;
+    const id = nextId.current++;
+    const instant = reducedMotion();
+    setTurns((list) => [...list, { id, question, answer, shown: instant }]);
     setDraft("");
+    if (instant) return;
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
+      setTurns((list) => list.map((t) => (t.id === id ? { ...t, shown: true } : t)));
+    }, TYPING_MS);
+    timers.current.add(timer);
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -120,30 +146,39 @@ export default function AssistantPanel({ onClose, openTab }: { onClose: () => vo
       aria-modal="true"
       aria-labelledby="bobcat-title"
       onKeyDown={onKeyDown}
-      className="fixed inset-0 z-50 flex flex-col overflow-hidden border-slate-400/25 bg-[#07152E] text-slate-200 shadow-2xl print:hidden sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[560px] sm:max-h-[calc(100vh-7rem)] sm:w-[380px] sm:rounded-xl sm:border"
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden border-t-[3px] border-t-[#FFB81C] bg-[#07152E] text-slate-200 shadow-2xl print:hidden sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[560px] sm:max-h-[calc(100vh-7rem)] sm:w-[380px] sm:rounded-xl sm:border sm:border-slate-400/25 sm:border-t-[3px] sm:border-t-[#FFB81C]"
     >
-      <header className="flex items-center gap-3 border-b border-slate-400/20 bg-[#0C2340] px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <BobcatIcon size={36} />
-        <div className="min-w-0 flex-1">
-          <h2 id="bobcat-title" className="text-sm font-extrabold text-white">
-            <span title={greeting.language}>
-              {greeting.text}!
-            </span>{" "}
-            I&apos;m the Bobcat.
-          </h2>
-          <p className="text-[11px] text-slate-300">Answers come only from this dashboard&apos;s data.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close Bobcat assistant"
-          className="rounded-md px-2 py-1 text-lg leading-none text-slate-300 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB81C]"
-        >
-          ×
-        </button>
-      </header>
+      <div className="px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <header className="flex items-center gap-3 rounded-lg border border-slate-400/15 bg-[#0F2D52] px-3 py-2.5">
+          <BobcatLogo size={44} />
+          <div className="min-w-0 flex-1">
+            <h2 id="bobcat-title" className="text-sm font-extrabold text-white">
+              Bobcat International
+            </h2>
+            <p className="text-[11px] text-slate-300">International Admissions · Dashboard assistant</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close Bobcat assistant"
+            className="rounded-md px-2 py-1 text-lg leading-none text-slate-300 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB81C]"
+          >
+            ×
+          </button>
+        </header>
+      </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-live="polite">
+        {/* The Bobcat's first message: always at the top of the conversation. */}
+        <div className="flex items-start gap-2">
+          <BobcatLogo size={28} />
+          <div className="min-w-0">
+            <p className="w-fit rounded-lg rounded-tl-none bg-[#0F2D52] px-3 py-1.5 text-sm text-white">
+              <span title={greeting.language}>{greeting.text}</span>! How can I help you today?
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">Answers come only from this dashboard&apos;s data.</p>
+          </div>
+        </div>
         {turns.length === 0 && (
           <div className="space-y-2">
             <p className="text-sm text-slate-300">
@@ -152,23 +187,46 @@ export default function AssistantPanel({ onClose, openTab }: { onClose: () => vo
             {chips(welcomeSuggestions(focusCountry))}
           </div>
         )}
-        {turns.map((turn) => (
-          <div key={turn.id} className="space-y-2">
-            <p className="ml-auto w-fit max-w-[85%] rounded-lg bg-[#FFB81C] px-3 py-1.5 text-sm font-medium text-[#0C2340]">
-              {turn.question}
-            </p>
-            {turn.answer.intro && <p className="text-sm text-slate-200">{turn.answer.intro}</p>}
-            {turn.answer.cards.map((card, i) => (
-              <AnswerCard key={i} card={card} onOpen={open} />
-            ))}
-            {turn.answer.notes.map((note) => (
-              <p key={note} className="text-xs leading-relaxed text-slate-400">
-                {note}
+        {turns.map((turn, index) => {
+          // Answers appear in question order: one waits until every earlier one is shown.
+          const visible = turns.slice(0, index + 1).every((t) => t.shown);
+          const typing = !visible && turns.slice(0, index).every((t) => t.shown);
+          return (
+            <div key={turn.id} className="space-y-2">
+              <p className="ml-auto w-fit max-w-[85%] rounded-lg bg-[#FFB81C] px-3 py-1.5 text-sm font-medium text-[#0C2340]">
+                {turn.question}
               </p>
-            ))}
-            {turn.answer.kind !== "answer" && chips(turn.answer.suggestions)}
-          </div>
-        ))}
+              {typing && (
+                <div className="flex items-center gap-2">
+                  <span className="flex gap-1 rounded-lg bg-[#0F2D52] px-3 py-2.5" aria-hidden="true">
+                    {[0, 150, 300].map((delay) => (
+                      <span
+                        key={delay}
+                        className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#FFB81C]"
+                        style={{ animationDelay: `${delay}ms` }}
+                      />
+                    ))}
+                  </span>
+                  <span className="sr-only">Bobcat is typing</span>
+                </div>
+              )}
+              {visible && (
+                <>
+                  {turn.answer.intro && <p className="text-sm text-slate-200">{turn.answer.intro}</p>}
+                  {turn.answer.cards.map((card, i) => (
+                    <AnswerCard key={i} card={card} onOpen={open} />
+                  ))}
+                  {turn.answer.notes.map((note) => (
+                    <p key={note} className="text-xs leading-relaxed text-slate-400">
+                      {note}
+                    </p>
+                  ))}
+                  {turn.answer.kind !== "answer" && chips(turn.answer.suggestions)}
+                </>
+              )}
+            </div>
+          );
+        })}
         <div ref={end} />
       </div>
 

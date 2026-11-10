@@ -272,6 +272,7 @@ function DashboardBody({ initialTab }: { initialTab?: string }) {
             Data: U.S. Department of State visa issuance statistics, monthly through{" "}
             {monthLongDisplay(data.meta.coverage.postsMonthly.end)} · Built for Quinnipiac University
             International Admissions
+            <span className="mt-1 block">Designed and built by Aadhi Arun Kandhivanam · 2026</span>
           </footer>
         </main>
       </div>

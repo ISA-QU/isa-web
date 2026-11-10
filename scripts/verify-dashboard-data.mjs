@@ -1836,6 +1836,60 @@ async function main() {
     "None of the 22 Africa markets grew in the last 12 months; the smallest declines were: | 1. Rwanda: 472 · ▼ 2.5% · Watch | 2. Mozambique: 123 · ▼ 9.6% · Watch | 3. South Africa: 1,059 · ▼ 21.4% · Watch | 4. Madagascar: 125 · ▼ 26.5% · Watch | 5. Kenya: 1,334 · ▼ 29.6% · Watch",
   );
 
+  console.log("\n  Renamed consulates  (POST_ALIASES: Nur-Sultan → Astana, Kuwait → Kuwait City; expected values recounted with pandas from the raw by-post CSV)");
+  const postHistory = (post) => {
+    const rows = postsMonthly.filter((r) => r.post === post);
+    const months = new Set(rows.map((r) => r.monthIndex));
+    const span = rows.map((r) => r.year * 100 + r.month);
+    const f1Total = sum(rows.filter((r) => r.visa === "F1"));
+    const j1Total = sum(rows.filter((r) => r.visa === "J1"));
+    return `${rows.length} rows, ${Math.min(...span)}–${Math.max(...span)}, ${months.size} months, F1 ${f1Total}, J1 ${j1Total}`;
+  };
+  const f1ByYear = (post) => {
+    const byYear = new Map();
+    for (const r of postsMonthly) if (r.post === post && r.visa === "F1") byYear.set(r.year, (byYear.get(r.year) ?? 0) + r.issuances);
+    return [...byYear].sort((a, b) => a[0] - b[0]).map(([y, v]) => `${y} ${v}`).join(", ");
+  };
+  check("consulates in the snapshot (was 228 before Nur-Sultan and Kuwait were merged)", new Set(postsMonthly.map((r) => r.post)).size, 226);
+  check("Astana: full history (Astana + Nur-Sultan)", postHistory("Astana"), "207 rows, 201703–202602, 104 months, F1 6850, J1 12753");
+  check("Kuwait City: full history (Kuwait City + Kuwait)", postHistory("Kuwait City"), "207 rows, 201703–202602, 107 months, F1 16227, J1 1288");
+  check(
+    "Astana | Kuwait City: F1 by calendar year",
+    `${f1ByYear("Astana")} | ${f1ByYear("Kuwait City")}`,
+    "2017 473, 2018 499, 2019 514, 2020 333, 2021 1066, 2022 943, 2023 886, 2024 1109, 2025 980, 2026 47 | 2017 2695, 2018 2201, 2019 1945, 2020 1136, 2021 2223, 2022 1855, 2023 1811, 2024 1557, 2025 710, 2026 94",
+  );
+  const renamed = snapshot.validation.postsMonthly.renamedPosts ?? {};
+  check(
+    "old labels gone from the posts, listed as renamed: Kuwait | Nur-Sultan",
+    ["Kuwait", "Nur-Sultan"].map((p) => `${postsMonthly.some((r) => r.post === p) ? "still a post" : "merged"} → ${renamed[p]?.to} (${renamed[p]?.rows} rows, ${renamed[p]?.issuances})`).join(" | "),
+    "merged → Kuwait City (62 rows, 6837) | merged → Astana (73 rows, 6422)",
+  );
+  // A warning, not a failure: two consulates in one country that never report in the same month
+  // may be one post under an old and a new name.
+  const NOT_RENAMES = [["Chengdu", "Wuhan"], ["Tijuana", "Tijuana Tpf"]];
+  const postMonths = new Map();
+  const postCountry = new Map();
+  for (const r of postsMonthly) {
+    if (!postMonths.has(r.post)) postMonths.set(r.post, new Set());
+    postMonths.get(r.post).add(r.monthIndex);
+    postCountry.set(r.post, r.country);
+  }
+  const postNamesSorted = [...postMonths.keys()].sort();
+  const possibleRenames = [];
+  for (let i = 0; i < postNamesSorted.length; i += 1) {
+    for (let j = i + 1; j < postNamesSorted.length; j += 1) {
+      const [x, y] = [postNamesSorted[i], postNamesSorted[j]];
+      if (postCountry.get(x) !== postCountry.get(y)) continue;
+      if (NOT_RENAMES.some(([a, b]) => (a === x && b === y) || (a === y && b === x))) continue;
+      const other = postMonths.get(y);
+      if (![...postMonths.get(x)].some((m) => other.has(m))) possibleRenames.push(`${x} / ${y} (${postCountry.get(x)})`);
+    }
+  }
+  for (const pair of possibleRenames) {
+    console.log(`    WARN  Possible renamed consulate: ${pair}. If it's a rename, add it to POST_ALIASES; if not, add the pair to the allow-list.`);
+  }
+  console.log(`    info  possible renamed consulates (same country, no overlapping months, not on the allow-list): ${possibleRenames.length}`);
+
   await rm(outDir, { recursive: true, force: true });
 
   console.log(

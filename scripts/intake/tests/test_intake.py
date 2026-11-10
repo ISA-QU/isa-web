@@ -314,6 +314,17 @@ class SafetyTests(FakeFiles):
             intake.undo(self.dashboard, self.intake_dir, expected_backup="an-older-backup", checks=fake_checks())
 
 
+class RenamedConsulateTests(FakeFiles):
+    def test_old_and_new_consulate_spellings_are_accepted(self):
+        # The CSV keeps whatever the PDF prints; the Lambda merges old labels via POST_ALIASES.
+        L = lambda_module()
+        self.assertEqual((L.POST_ALIASES["Nur-Sultan"], L.POST_ALIASES["Kuwait"]), ("Astana", "Kuwait City"))
+        for posts in (["Nur-Sultan", "Kuwait"], ["Astana", "Kuwait City"]):
+            month = self.month(2030, 8, [("Atlantis", "F1", 2, 1)], [(posts[0], "F1", 1, 1), (posts[1], "F1", 1, 2)])
+            report = self.run_intake([month])
+            self.assertEqual(report["months"][0]["postRows"], 2)
+
+
 class SpellingTests(unittest.TestCase):
     def test_pdf_spellings(self):
         month = {

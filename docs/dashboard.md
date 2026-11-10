@@ -55,6 +55,11 @@ Rules the build applies:
   `validation.postsMonthly.renamedPosts` and on the `renamed` line of the rebuild output.
   If an old and a current label both report the same month and visa class, the build
   stops rather than add them together, since that could count the same visas twice.
+  Two later renames are mapped the same way: `Nur-Sultan` → `Astana` (the city was renamed
+  and renamed back) and `Kuwait` → `Kuwait City` (renamed in Oct 2019); 228 consulates
+  became 226. `npm run dashboard:verify` warns (without failing) about two consulates in one
+  country that never report in the same month, which may be one post under two names; pairs
+  that aren't renames (Chengdu / Wuhan, Tijuana / Tijuana Tpf) are on its allow-list.
   **The deployed `rebuild-dashboard` Lambda has not been updated with `POST_ALIASES`
   yet**; only the code in this repo and the local build (`npm run dashboard:data`) have it.
 - **Non-nationalities are excluded** from country views: "Unknown", "Non-Nationality Based
@@ -793,6 +798,10 @@ is the only backend file that changed, see `git diff main...HEAD -- backend`):
    the nationality files join the post data on one name (as `"Korea, South"` already did).
 4. The committed `__pycache__/*.pyc` is no longer tracked, and `.gitignore` now ignores
    `__pycache__/` and `*.pyc`. Upload only `lambda_function.py`.
+5. **Two more consulate renames (Nov 2026).** `POST_ALIASES` gains `"Nur-Sultan"` →
+   `"Astana"` and `"Kuwait"` → `"Kuwait City"`, so each post is one series (226 consulates
+   instead of 228). **The live Lambda needs this change too**; it's in the same
+   `lambda_function.py` upload as items 1–3. No other Lambda change.
 
 **What changed in the site:** dashboard pages only (Markets, Country 360, Consulates,
 Historical Trends with Market cycles and Country vs World, the control bar, events, and the
@@ -806,12 +815,13 @@ annual). Run the Test event `{}` and expect:
 - `"postsMonthly": "41965 rows, 2017-03 to 2026-02"` (41,524 before the renames)
 - `"annualCountry": "11367 rows, FY1997 to FY2026 (latest complete FY2025, FY2026 has 5 months)"`
 - `"nationalityMonthly": "35967 rows, 2017-03 to 2026-02"`
-- `"renamed"`: 7 lines, e.g. `"Mumbai (Bombay) -> Mumbai (62 rows, 48,332)"`
+- `"renamed"`: 9 lines, e.g. `"Mumbai (Bombay) -> Mumbai (62 rows, 48,332)"`, including
+  `"Kuwait -> Kuwait City (62 rows, 6,837)"` and `"Nur-Sultan -> Astana (73 rows, 6,422)"`
 - `"gzipBytes"` about 144,000 (`snapshot/snapshot.json.gz` about 145 KB); the served
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **383/383** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes **388/388** on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes
@@ -820,7 +830,7 @@ which GitHub Pages serves. Nothing deploys on push or merge.
 
 **Deploy order: Lambda first, then the site.** The new pages read `nationalityMonthly` and
 the renamed posts. On the old snapshot they still load, but Markets and Country 360 fall back
-to visas issued in each country (with a banner) and the 7 old post labels stay separate. The
+to visas issued in each country (with a banner) and the 9 old post labels stay separate. The
 old site ignores the new table, so updating the Lambda first is safe.
 
 **Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito,

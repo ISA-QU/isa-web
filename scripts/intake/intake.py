@@ -530,7 +530,8 @@ def run(month_inputs, dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE
     return report
 
 
-def report_text(report):
+def report_text(report, applying=False):
+    """The run's report. `applying`: the files are about to be applied, so no "Not applied" line."""
     lines = []
     for m in report["months"]:
         lines.append(f"{m['month']}: {m['postRows']} post rows ({m['postZeroRows']} zero), "
@@ -560,7 +561,7 @@ def report_text(report):
     lines.append(f"Staged in {report['staging']}")
     if report.get("applied"):
         lines.append(f"Applied. Originals backed up to {report['backup']}")
-    else:
+    elif not applying:
         lines.append("Not applied (run with --apply to replace the 3 files).")
     return "\n".join(lines)
 
@@ -616,7 +617,7 @@ def main(argv=None):
             parsed.append(p)
         report = run(group_reports(parsed), args.dashboard, args.intake, args.replace)
         report["warnings"] += [n for p in parsed for n in p["notes"]]
-        print(report_text(report))
+        print(report_text(report, applying=args.apply))
         if args.apply:
             result = apply_and_check(report["staging"], args.dashboard, args.intake, report["monthLabels"])
             print(steps_text(result))

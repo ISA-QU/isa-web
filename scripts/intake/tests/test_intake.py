@@ -261,6 +261,11 @@ class SafetyTests(FakeFiles):
         with self.assertRaisesRegex(IntakeError, "no update to undo"):
             intake.undo_info(self.dashboard, self.intake_dir)
 
+    def test_no_not_applied_line_when_applying(self):
+        report = self.run_intake([self.month(2030, 8, *self.AUG)])
+        self.assertIn("Not applied", intake.report_text(report))
+        self.assertNotIn("Not applied", intake.report_text(report, applying=True))
+
     def test_successful_apply(self):
         staging, months = self.stage((8, self.AUG))
         result = intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())

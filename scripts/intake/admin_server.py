@@ -3,15 +3,15 @@
 
 Runs only on this computer (127.0.0.1), never on the website. Drop a month's two PDFs → see the
 report from the staged files → Apply replaces the 3 files in dashboard/ (after a backup), then
-runs dashboard:data and dashboard:verify and shows the result. A one-time token in the address
-and a same-origin check stop other web pages from using it.
+runs dashboard:data and dashboard:verify; if either fails, the old files are put back
+automatically. "Undo last update" restores the most recent update's backup after you confirm.
+A one-time token in the address and a same-origin check stop other web pages from using it.
 """
 
 import hashlib
 import json
 import os
 import secrets
-import subprocess
 import sys
 from email.parser import BytesParser
 from email.policy import default as email_policy
@@ -29,7 +29,7 @@ PORT = int(os.environ.get("INTAKE_PORT", "8765"))
 TOKEN = secrets.token_urlsafe(24)
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
 MAX_UPLOAD = 50 * 1024 * 1024
-PREVIEWS = {}  # staging folder → fingerprint of the 3 originals when the preview was made
+PREVIEWS = {}  # staging folder → (fingerprint of the 3 originals when previewed, months being added)
 
 
 def originals_fingerprint(dashboard_dir):
@@ -38,10 +38,6 @@ def originals_fingerprint(dashboard_dir):
         with open(os.path.join(dashboard_dir, name), "rb") as fh:
             h.update(hashlib.sha256(fh.read()).digest())
     return h.hexdigest()
-
-
-def tail(text, lines=25):
-    return "\n".join(text.strip().splitlines()[-lines:])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -86,6 +82,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self.preview(body))
             if self.path == "/api/apply":
                 return self._send(200, self.apply(json.loads(body or b"{}")))
+            if self.path == "/api/undo-info":
+                info = intake.undo_info()
+                return self._send(200, {"ok": True, "backup": info["backup"], "text": intake.undo_text(info)})
+            if self.path == "/api/undo":
+                result = intake.undo(expected_backup=json.loads(body or b"{}").get("backup"))
+                return self._send(200, {**result, "text": intake.steps_text(result)})
             return self._send(404, {"error": "Not found."})
         except IntakeError as error:
             return self._send(200, {"ok": False, "error": str(error)})
@@ -118,23 +120,19 @@ class Handler(BaseHTTPRequestHandler):
             parsed.append(p)
         report = intake.run(intake.group_reports(parsed), replace=replace)
         report["warnings"] += [n for p in parsed for n in p["notes"]]
-        PREVIEWS[report["staging"]] = originals_fingerprint(intake.DEFAULT_DASHBOARD)
-        return {"ok": True, "report": intake.report_text(report), "staging": report["staging"]}
+        PREVIEWS[report["staging"]] = (originals_fingerprint(intake.DEFAULT_DASHBOARD), report["monthLabels"])
+        return {"ok": True, "report": intake.report_text(report), "staging": report["staging"],
+                "bigChanges": report["bigChanges"]}
 
     def apply(self, body):
         staging = body.get("staging")
         if staging not in PREVIEWS:
             raise IntakeError("Preview the files again first.")
-        if originals_fingerprint(intake.DEFAULT_DASHBOARD) != PREVIEWS.pop(staging):
+        fp, months = PREVIEWS.pop(staging)
+        if originals_fingerprint(intake.DEFAULT_DASHBOARD) != fp:
             raise IntakeError("The files in dashboard/ changed since the preview. Drop the PDFs again.")
-        backup = intake.apply_staged(staging, intake.DEFAULT_DASHBOARD, intake.DEFAULT_INTAKE)
-        steps = []
-        for script in ("dashboard:data", "dashboard:verify"):
-            done = subprocess.run(["npm", "run", script], cwd=intake.ROOT, capture_output=True, text=True)
-            steps.append({"step": script, "ok": done.returncode == 0, "output": tail(done.stdout + done.stderr)})
-            if done.returncode != 0:
-                break
-        return {"ok": all(s["ok"] for s in steps), "backup": backup, "steps": steps}
+        result = intake.apply_and_check(staging, months=months)
+        return {**result, "text": intake.steps_text(result)}
 
 
 def main():

@@ -5,11 +5,11 @@ import { useState } from "react";
 import { asset } from "../../../lib/basePath";
 import BobcatIcon from "./BobcatIcon";
 
-/** The official Bobcat logo, supplied by the office (never drawn or traced here). */
+/** The Bobcat logo image, supplied by the office (never drawn or traced here). See docs/dashboard.md. */
 export const BOBCAT_LOGO_SRC = "/brand/bobcat-official.png";
 
 /**
- * The official logo in a navy circle with a small gold globe badge. The
+ * The Bobcat logo in a navy circle with a small gold globe badge. The
  * placeholder BobcatIcon shows until the image has loaded, and stays if it
  * fails, so there's never a broken image. Decorative: the button and the dialog
  * carry the labels.

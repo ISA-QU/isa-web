@@ -193,6 +193,122 @@ class IntakeTests(FakeFiles):
             intake.run([], dashboard_dir=self.dashboard, intake_dir=os.path.join(self.dashboard, "staging"))
 
 
+def fake_checks(fail=None):
+    """Stands in for dashboard:data / dashboard:verify, so tests never run the real npm scripts."""
+    calls = []
+
+    def checks(scripts):
+        steps = []
+        for script in scripts:
+            calls.append(script)
+            ok = script != fail
+            steps.append({"step": script, "ok": ok, "output": "" if ok else f"{script} failed (pretend)"})
+            if not ok:
+                break
+        return steps
+
+    checks.calls = calls
+    return checks
+
+
+class SafetyTests(FakeFiles):
+    AUG = ([("Atlantis", "F1", 6, 1), ("Freedonia", "J1", 0, 2)], [("Atlantis City", "F1", 6, 1), ("Freedonia Port", "J1", 0, 2)])
+    SEP = ([("Atlantis", "F1", 2, 1)], [("Atlantis City", "F1", 2, 1)])
+
+    def stage(self, *months):
+        report = self.run_intake([self.month(2030, mo, *rows) for mo, rows in months])
+        return report["staging"], report["monthLabels"]
+
+    # 3. No gaps
+    def test_gap_refused(self):
+        with self.assertRaisesRegex(IntakeError, "Add August 2030 first"):
+            self.run_intake([self.month(2030, 9, *self.SEP)])
+
+    def test_consecutive_months_together_are_fine(self):
+        report = self.run_intake([self.month(2030, 8, *self.AUG), self.month(2030, 9, *self.SEP)])
+        self.assertEqual(report["monthLabels"], ["2030-08", "2030-09"])
+
+    # 4. Pair check
+    def test_reports_must_match(self):
+        with self.assertRaisesRegex(IntakeError, "the two PDFs don't match; check they're the same month"):
+            self.run_intake([self.month(2030, 8, [("Atlantis", "F1", 6, 1)], [("Atlantis City", "F1", 5, 1)])])
+
+    # 5. Big-change warning (never a stop)
+    def test_big_change_warns_but_does_not_stop(self):
+        path = os.path.join(self.dashboard, F.NATIONALITY_FILE)
+        rows = F.read_nationality(path) + [F.nationality_row(2029, 8, "Atlantis", F.COUNTRY, "F1", 10)]
+        F.write_nationality(path, rows)
+        down_60 = self.run_intake([self.month(2030, 8, [("Atlantis", "F1", 4, 1)], [("Atlantis City", "F1", 4, 1)])])
+        self.assertEqual(down_60["bigChanges"], [
+            "Big change: August 2030 F1 4 vs 10 in August 2029 (▼ 60.0%). This can be real — just confirm these are "
+            "the right month's PDFs before Apply."
+        ])
+        self.assertIn("Warning: Big change: August 2030 F1 4 vs 10", intake.report_text(down_60))
+        down_40 = self.run_intake([self.month(2030, 8, [("Atlantis", "F1", 6, 1)], [("Atlantis City", "F1", 6, 1)])])
+        self.assertEqual(down_40["bigChanges"], [])
+
+    # 2. Automatic rollback
+    def test_failed_check_restores_the_old_files(self):
+        before = digest(self.dashboard)
+        staging, months = self.stage((8, self.AUG))
+        checks = fake_checks(fail="dashboard:verify")
+        result = intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=checks)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["message"], "Apply failed, old files restored, nothing changed.")
+        self.assertEqual(digest(self.dashboard), before)
+        self.assertEqual(checks.calls, ["dashboard:data", "dashboard:verify", "dashboard:data"])
+        self.assertTrue(intake.read_manifest(result["backup"])["rolledBack"])
+        with self.assertRaisesRegex(IntakeError, "no update to undo"):
+            intake.undo_info(self.dashboard, self.intake_dir)
+
+    def test_successful_apply(self):
+        staging, months = self.stage((8, self.AUG))
+        result = intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())
+        self.assertTrue(result["ok"])
+        self.assertEqual(intake.read_manifest(result["backup"])["months"], ["2030-08"])
+
+    # 1. Undo
+    def test_undo_restores_latest_update_and_keeps_every_backup(self):
+        original = digest(self.dashboard)
+        staging, months = self.stage((8, self.AUG))
+        intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())
+        after_august = digest(self.dashboard)
+        staging, months = self.stage((9, self.SEP))
+        intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())
+
+        info = intake.undo_info(self.dashboard, self.intake_dir)
+        self.assertEqual((info["monthsRemoved"], info["monthsChanged"]), (["2030-09"], []))
+        self.assertIn("Months it removes: 2030-09", intake.undo_text(info))
+        result = intake.undo(self.dashboard, self.intake_dir, expected_backup=info["backup"], checks=fake_checks())
+        self.assertTrue(result["ok"])
+        self.assertEqual(digest(self.dashboard), after_august)
+        # A second undo takes the next older update (August), not the one just undone.
+        info = intake.undo_info(self.dashboard, self.intake_dir)
+        self.assertEqual(info["monthsRemoved"], ["2030-08"])
+        intake.undo(self.dashboard, self.intake_dir, checks=fake_checks())
+        self.assertEqual(digest(self.dashboard), original)
+        with self.assertRaisesRegex(IntakeError, "no update to undo"):
+            intake.undo_info(self.dashboard, self.intake_dir)
+        # Nothing was deleted: 2 updates + 2 "before undo" copies.
+        kinds = sorted(intake.read_manifest(os.path.join(self.intake_dir, "backups", b))["kind"]
+                       for b in os.listdir(os.path.join(self.intake_dir, "backups")))
+        self.assertEqual(kinds, ["apply", "apply", "before-undo", "before-undo"])
+
+    def test_undo_refuses_if_files_changed_since(self):
+        staging, months = self.stage((8, self.AUG))
+        intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())
+        path = os.path.join(self.dashboard, F.POST_FILE)
+        F.write_post(path, F.read_post(path)[:-1])
+        with self.assertRaisesRegex(IntakeError, "changed since the update"):
+            intake.undo(self.dashboard, self.intake_dir, checks=fake_checks())
+
+    def test_undo_checks_it_is_still_the_same_update(self):
+        staging, months = self.stage((8, self.AUG))
+        intake.apply_and_check(staging, self.dashboard, self.intake_dir, months, checks=fake_checks())
+        with self.assertRaisesRegex(IntakeError, "changed since you checked"):
+            intake.undo(self.dashboard, self.intake_dir, expected_backup="an-older-backup", checks=fake_checks())
+
+
 class SpellingTests(unittest.TestCase):
     def test_pdf_spellings(self):
         month = {

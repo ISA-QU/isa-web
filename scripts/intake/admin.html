@@ -19,6 +19,8 @@
   pre { white-space: pre-wrap; background: #07152E; border: 1px solid #94a3b833; border-radius: 8px; padding: 12px; font-size: 13px; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
   .err { color: #fca5a5; } .ok { color: #86efac; }
+  .warn { background: #422006; border: 1px solid #f59e0b88; color: #fde68a; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .undo { margin-top: 28px; padding-top: 16px; border-top: 1px solid #94a3b833; }
   ul { margin: 8px 0; padding-left: 20px; }
 </style>
 </head>
@@ -38,6 +40,10 @@
     <button id="apply" class="ghost" disabled>Apply: replace the 3 files and run the checks</button>
   </div>
   <div id="out" aria-live="polite"></div>
+  <section class="undo">
+    <div class="row"><button id="undo" class="ghost">Undo last update</button></div>
+    <div id="undoOut" aria-live="polite"></div>
+  </section>
 </main>
 <script>
   const token = "__TOKEN__";
@@ -69,16 +75,32 @@
     $("preview").disabled = false;
     if (!r.ok) return show(`<p class="err">Stopped: ${esc(r.error)}</p>`);
     staging = r.staging; $("apply").disabled = false;
-    show(`<p class="ok">Checked. Nothing has changed yet.</p><pre>${esc(r.report)}</pre>`);
+    const warnings = (r.bigChanges || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+    show(`<p class="ok">Checked. Nothing has changed yet.</p>${warnings}<pre>${esc(r.report)}</pre>`);
   };
   $("apply").onclick = async () => {
     if (!staging) return;
     $("apply").disabled = true; show("Replacing the files and running the checks… (about a minute)");
     const r = await post("/api/apply", JSON.stringify({ staging }), true);
     if (r.error) return show(`<p class="err">Stopped: ${esc(r.error)}</p>`);
-    show(`<p class="${r.ok ? "ok" : "err"}">${r.ok ? "Done: the 3 files are updated and the checks passed." : "A check failed — see below. The originals are in the backup."}</p>
-      <p>Backup: ${esc(r.backup)}</p>` + r.steps.map((s) => `<p><b>${esc(s.step)}</b>: ${s.ok ? "passed" : "failed"}</p><pre>${esc(s.output)}</pre>`).join(""));
+    show(`<p class="${r.ok ? "ok" : "err"}"><b>${esc(r.message)}</b></p><pre>${esc(r.text)}</pre>`);
     staging = null;
+  };
+  // Undo: first show which backup and which months, then ask to confirm.
+  $("undo").onclick = async () => {
+    const box = $("undoOut");
+    box.innerHTML = "Checking…";
+    const r = await post("/api/undo-info", "{}", true);
+    if (!r.ok) return (box.innerHTML = `<p class="err">${esc(r.error)}</p>`);
+    box.innerHTML = `<pre>${esc(r.text)}</pre><div class="row"><button id="undoYes" class="gold">Yes, undo it</button>
+      <button id="undoNo" class="ghost">Cancel</button></div>`;
+    $("undoNo").onclick = () => (box.innerHTML = "Nothing changed.");
+    $("undoYes").onclick = async () => {
+      box.innerHTML = "Undoing and running the checks… (about a minute)";
+      const u = await post("/api/undo", JSON.stringify({ backup: r.backup }), true);
+      if (u.error) return (box.innerHTML = `<p class="err">Stopped: ${esc(u.error)}</p>`);
+      box.innerHTML = `<p class="${u.ok ? "ok" : "err"}"><b>${esc(u.message)}</b></p><pre>${esc(u.text)}</pre>`;
+    };
   };
 </script>
 </body>

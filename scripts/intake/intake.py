@@ -17,8 +17,11 @@ the printed totals must match; a month already in the files is refused unless --
 """
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -33,6 +36,9 @@ from pdf_spellings import NATIONALITY_SPELLINGS, POST_SPELLINGS  # noqa: E402
 VISAS = ("F1", "J1")
 DEFAULT_DASHBOARD = os.path.join(ROOT, "dashboard")
 DEFAULT_INTAKE = os.path.join(ROOT, "dashboard-intake")
+# A month whose F1 or J1 total moves more than this share from the same month a year earlier gets a
+# warning (not a stop): big swings can be real (F1 fell 53% in June 2025 and 55% in November 2025).
+BIG_CHANGE = 0.5
 
 
 # ---- loading ----
@@ -140,6 +146,26 @@ def add_month(state, month_input, replace):
 
     post_rows = [r for r in unique(month_input["post"], "by-Post") if r[1] in VISAS]
     nat_rows = [r for r in unique(month_input["nationality"], "by-Nationality") if r[1] in VISAS]
+    nat_totals = {v: sum(r[2] for r in nat_rows if r[1] == v) for v in VISAS}
+    post_totals = {v: sum(r[2] for r in post_rows if r[1] == v) for v in VISAS}
+    if nat_totals != post_totals:
+        raise IntakeError(
+            f"{label}: the two PDFs don't match; check they're the same month. "
+            f"By Nationality: F1 {nat_totals['F1']:,}, J1 {nat_totals['J1']:,}; "
+            f"by Post: F1 {post_totals['F1']:,}, J1 {post_totals['J1']:,}. Nothing was written."
+        )
+    big_changes = []
+    for visa in VISAS:
+        before = sum(r["issuances"] for r in state["nationality"]
+                     if (r["calendar_year"], r["calendar_month"]) == (y - 1, m) and r["visa_class"] == visa)
+        now = nat_totals[visa]
+        if before > 0 and abs(now - before) / before > BIG_CHANGE:
+            change = (now - before) / before * 100
+            big_changes.append(
+                f"Big change: {month_name(y, m)} {visa} {now:,} vs {before:,} in {month_name(y - 1, m)} "
+                f"({'▲' if change > 0 else '▼'} {abs(change):.1f}%). This can be real — just confirm these are "
+                "the right month's PDFs before Apply."
+            )
     replaced = {
         "post": sum(1 for r in state["post"] if (r["calendar_year"], r["calendar_month"]) == (y, m)),
         "nationality": sum(1 for r in state["nationality"] if (r["calendar_year"], r["calendar_month"]) == (y, m)),
@@ -171,6 +197,7 @@ def add_month(state, month_input, replace):
         "postTotals": dict(Counter({v: sum(r[2] for r in post_rows if r[1] == v) for v in VISAS})),
         "topF1": by_name.most_common(5),
         "respelled": respelled,
+        "bigChanges": big_changes,
     }
 
 
@@ -268,21 +295,175 @@ def stamp():
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def apply_staged(staging, dashboard_dir, intake_dir):
-    """Backs up the 3 originals, then replaces them with the staged files."""
+MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+               "October", "November", "December"]
+
+
+def month_name(year, month):
+    return f"{MONTH_NAMES[month - 1]} {year}"
+
+
+def fingerprint(folder):
+    """Each data file's SHA-256, so undo can tell whether the files changed since an update."""
+    out = {}
+    for name in F.DATA_FILES:
+        with open(os.path.join(folder, name), "rb") as fh:
+            out[name] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+MANIFEST = "backup.json"
+
+
+def read_manifest(backup):
+    path = os.path.join(backup, MANIFEST)
+    if not os.path.isfile(path):
+        return None
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def write_manifest(backup, manifest):
+    with open(os.path.join(backup, MANIFEST), "w") as fh:
+        json.dump(manifest, fh, indent=2)
+
+
+def new_backup(intake_dir, dashboard_dir, manifest):
+    """Copies the 3 files into a new dated backup folder with a note of why. Backups are never deleted."""
+    backup = os.path.join(intake_dir, "backups", stamp())
+    while os.path.exists(backup):
+        backup += "-1"
+    os.makedirs(backup)
+    for name in F.DATA_FILES:
+        shutil.copy2(os.path.join(dashboard_dir, name), os.path.join(backup, name))
+    write_manifest(backup, {"created": datetime.now().isoformat(timespec="seconds"), **manifest})
+    return backup
+
+
+def restore(backup, dashboard_dir):
+    for name in F.DATA_FILES:
+        shutil.copyfile(os.path.join(backup, name), os.path.join(dashboard_dir, name))
+    F.check_dashboard_dir(dashboard_dir)
+
+
+def apply_staged(staging, dashboard_dir, intake_dir, months=()):
+    """Backs up the 3 originals (with a note of the months being added), then replaces them."""
     F.check_dashboard_dir(dashboard_dir)
     for name in F.DATA_FILES:
         if not os.path.isfile(os.path.join(staging, name)):
             raise IntakeError(f"The staged files are incomplete ({name} is missing); nothing was applied.")
-    backup = os.path.join(intake_dir, "backups", stamp())
-    os.makedirs(backup)
-    for name in F.DATA_FILES:
-        shutil.copy2(os.path.join(dashboard_dir, name), os.path.join(backup, name))
-    for name in F.DATA_FILES:
-        shutil.copyfile(os.path.join(staging, name), os.path.join(dashboard_dir, name))
-    F.check_dashboard_dir(dashboard_dir)
+    backup = new_backup(intake_dir, dashboard_dir, {
+        "kind": "apply",
+        "months": list(months),
+        "before": fingerprint(dashboard_dir),
+        "after": fingerprint(staging),
+        "undone": None,
+        "rolledBack": False,
+    })
+    restore(staging, dashboard_dir)
     return backup
 
+
+def run_checks(scripts=("dashboard:data", "dashboard:verify")):
+    """Runs the dashboard's own build and checks; stops at the first that fails."""
+    steps = []
+    for script in scripts:
+        done = subprocess.run(["npm", "run", script], cwd=ROOT, capture_output=True, text=True)
+        output = (done.stdout + done.stderr).strip().splitlines()
+        steps.append({"step": script, "ok": done.returncode == 0, "output": "\n".join(output[-25:])})
+        if done.returncode != 0:
+            break
+    return steps
+
+
+def apply_and_check(staging, dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE, months=(), checks=run_checks):
+    """Replaces the 3 files, then runs dashboard:data and dashboard:verify. If either fails, the
+    backup is put back automatically (and dashboard:data rerun on it), so nothing changes."""
+    backup = apply_staged(staging, dashboard_dir, intake_dir, months)
+    steps = checks(("dashboard:data", "dashboard:verify"))
+    if all(s["ok"] for s in steps):
+        return {"ok": True, "backup": backup, "steps": steps,
+                "message": "Applied: the 3 files are updated and the checks passed."}
+    restore(backup, dashboard_dir)
+    manifest = read_manifest(backup)
+    manifest["rolledBack"] = True
+    write_manifest(backup, manifest)
+    rebuilt = checks(("dashboard:data",))
+    message = ("Apply failed, old files restored, nothing changed." if all(s["ok"] for s in rebuilt) else
+               "Apply failed and the old files are restored, but rebuilding the local copy from them also failed. Stop and ask for help.")
+    return {"ok": False, "rolledBack": True, "backup": backup, "steps": steps, "restoreSteps": rebuilt, "message": message}
+
+
+# ---- undo ----
+
+def _months(state):
+    by_month = defaultdict(set)
+    for r in state["post"]:
+        by_month[(r["calendar_year"], r["calendar_month"])].add(("post", r["post"], r["visa_class"], r["issuances"]))
+    for r in state["nationality"]:
+        by_month[(r["calendar_year"], r["calendar_month"])].add(("nat", r["nationality"], r["visa_class"], r["issuances"]))
+    return by_month
+
+
+def undo_target(intake_dir):
+    """The most recent update that hasn't been undone or rolled back (older backups without a note count too)."""
+    folder = os.path.join(intake_dir, "backups")
+    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+    for name in reversed(names):
+        backup = os.path.join(folder, name)
+        manifest = read_manifest(backup)
+        if manifest is None or (manifest.get("kind") == "apply" and not manifest.get("undone") and not manifest.get("rolledBack")):
+            return backup, manifest
+    raise IntakeError("There's no update to undo.")
+
+
+def undo_info(dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE):
+    """Which backup undo would restore, and the months it removes or changes back."""
+    F.check_dashboard_dir(dashboard_dir)
+    backup, manifest = undo_target(intake_dir)
+    if manifest and manifest.get("after") != fingerprint(dashboard_dir):
+        raise IntakeError(
+            f"The data files changed since the update in {os.path.basename(backup)}, so undoing it would lose "
+            "those changes. Nothing was changed."
+        )
+    now, then = _months(load(dashboard_dir)), _months(load(backup))
+    label = lambda ym: F.month_key(*ym)  # noqa: E731
+    return {
+        "backup": os.path.basename(backup),
+        "path": backup,
+        "created": (manifest or {}).get("created", os.path.basename(backup)),
+        "monthsRemoved": [label(k) for k in sorted(set(now) - set(then))],
+        "monthsChanged": [label(k) for k in sorted(set(now) & set(then)) if now[k] != then[k]],
+    }
+
+
+def undo_text(info):
+    removed = ", ".join(info["monthsRemoved"]) or "none"
+    changed = ", ".join(info["monthsChanged"]) or "none"
+    return (f"Undo restores the files from before the update of {info['created']} (backup {info['backup']}).\n"
+            f"  Months it removes: {removed}\n  Months it changes back: {changed}")
+
+
+def undo(dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE, expected_backup=None, checks=run_checks):
+    """Restores the most recent update's backup (after saving the current files as another backup),
+    then runs dashboard:data and dashboard:verify. No backup is ever deleted."""
+    info = undo_info(dashboard_dir, intake_dir)
+    if expected_backup is not None and info["backup"] != expected_backup:
+        raise IntakeError("The files changed since you checked. Press Undo again to see what it would do now.")
+    saved = new_backup(intake_dir, dashboard_dir, {"kind": "before-undo", "undoes": info["backup"],
+                                                   "after": fingerprint(dashboard_dir)})
+    restore(info["path"], dashboard_dir)
+    manifest = read_manifest(info["path"]) or {"kind": "apply", "note": "made before backups had notes"}
+    manifest["undone"] = datetime.now().isoformat(timespec="seconds")
+    write_manifest(info["path"], manifest)
+    steps = checks(("dashboard:data", "dashboard:verify"))
+    ok = all(s["ok"] for s in steps)
+    return {"ok": ok, "info": info, "savedCopy": saved, "steps": steps,
+            "message": "Undone: the files are back as they were before that update." if ok else
+            "The files are restored, but a check failed afterwards. Stop and ask for help."}
+
+
+# ---- one run ----
 
 def group_reports(parsed_pdfs):
     """One input per month, with both reports."""
@@ -302,23 +483,49 @@ def group_reports(parsed_pdfs):
     return out
 
 
+def check_no_gaps(state, month_inputs):
+    """New months must start right after the latest month in the files and follow on without holes."""
+    post_months, nat_months = months_present(state)
+    present = post_months | nat_months
+    if not present:
+        return
+    index = lambda ym: ym[0] * 12 + ym[1] - 1  # noqa: E731
+    name = lambda i: month_name(i // 12, i % 12 + 1)  # noqa: E731
+    latest = index(max(present))
+    expected = latest + 1
+    for mi in sorted(month_inputs, key=lambda mi: (mi["year"], mi["month"])):
+        i = index((mi["year"], mi["month"]))
+        if i <= latest:
+            continue
+        if i > expected:
+            raise IntakeError(
+                f"Add {name(expected)} first: the files end at {name(latest)}, so {name(i)} would leave a gap. "
+                "Nothing was written. (Several months in a row can be added in one go.)"
+            )
+        expected = i + 1
+
+
 def run(month_inputs, dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE, replace=False, apply=False):
-    """Builds the updated files in staging, checks them, and (with apply) replaces the originals."""
+    """Builds the updated files in staging and checks them. With apply, replaces the originals
+    (after a backup) without running the dashboard checks; use apply_and_check for that."""
     if os.path.abspath(intake_dir).startswith(os.path.abspath(dashboard_dir) + os.sep):
         raise IntakeError("The staging folder must be outside the data folder.")
     state = load(dashboard_dir)
-    report = {"months": [], "fiscalYears": [], "warnings": []}
+    check_no_gaps(state, month_inputs)
+    report = {"months": [], "fiscalYears": [], "warnings": [], "bigChanges": []}
     for mi in month_inputs:
         report["months"].append(add_month(state, mi, replace))
         report["months"][-1]["nameJoins"] = [j[0] for j in mi.get("joins", [])]
+        report["bigChanges"] += report["months"][-1]["bigChanges"]
     for fy in sorted({F.fiscal_year_of(mi["year"], mi["month"]) for mi in month_inputs}):
         report["fiscalYears"].append(rebuild_fiscal_year(state, fy))
     staging = os.path.join(intake_dir, "staging", stamp())
     write_all(state, staging)
     check_with_lambda(staging, state)
     report["staging"] = staging
+    report["monthLabels"] = [m["month"] for m in report["months"]]
     if apply:
-        report["backup"] = apply_staged(staging, dashboard_dir, intake_dir)
+        report["backup"] = apply_staged(staging, dashboard_dir, intake_dir, report["monthLabels"])
         report["applied"] = True
     return report
 
@@ -346,6 +553,8 @@ def report_text(report):
                          f"{f['rowsBefore']} → {f['rowsAfter']} rows")
             if f["remapped"]:
                 lines.append("  Spelled as in the historical file: " + "; ".join(f"{k} → {v}" for k, v in f["remapped"].items()))
+    for b in report.get("bigChanges", []):
+        lines.append(f"Warning: {b}")
     for w in report["warnings"]:
         lines.append(f"Warning: {w}")
     lines.append(f"Staged in {report['staging']}")
@@ -356,17 +565,42 @@ def report_text(report):
     return "\n".join(lines)
 
 
+def steps_text(result):
+    lines = [result["message"]]
+    for s in result.get("steps", []) + result.get("restoreSteps", []):
+        lines.append(f"  {s['step']}: {'passed' if s['ok'] else 'FAILED'}")
+        if not s["ok"]:
+            lines += ["    " + l for l in s["output"].splitlines()]
+    if result.get("backup"):
+        lines.append(f"  Backup: {result['backup']}")
+    if result.get("savedCopy"):
+        lines.append(f"  The files from before the undo were also saved: {result['savedCopy']}")
+    return "\n".join(lines)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Add monthly State Department reports to the dashboard's 3 data files.")
     parser.add_argument("--pdf", action="append", default=[], help="a monthly report PDF (give both for each month)")
     parser.add_argument("--download", action="append", default=[], metavar="YYYY-MM",
                         help="download that month's two PDFs from travel.state.gov first (off by default)")
     parser.add_argument("--replace", action="store_true", help="replace a month that's already in the files")
-    parser.add_argument("--apply", action="store_true", help="replace the 3 files in dashboard/ (after a backup)")
+    parser.add_argument("--apply", action="store_true",
+                        help="replace the 3 files in dashboard/ (after a backup), then run dashboard:data and dashboard:verify")
+    parser.add_argument("--undo", action="store_true", help="undo the most recent update (restores its backup)")
+    parser.add_argument("--yes", action="store_true", help="with --undo: don't ask to confirm")
     parser.add_argument("--dashboard", default=DEFAULT_DASHBOARD, help=argparse.SUPPRESS)
     parser.add_argument("--intake", default=DEFAULT_INTAKE, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
+        if args.undo:
+            info = undo_info(args.dashboard, args.intake)
+            print(undo_text(info))
+            if not args.yes and input("Undo this update? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("Nothing changed.")
+                return 0
+            result = undo(args.dashboard, args.intake, expected_backup=info["backup"])
+            print(steps_text(result))
+            return 0 if result["ok"] else 1
         import pdf_extract
         paths = list(args.pdf)
         if args.download:
@@ -378,12 +612,15 @@ def main(argv=None):
         parsed = []
         for path in paths:
             p = pdf_extract.read_pdf(path)
-            notes = pdf_extract.check_totals(p, os.path.basename(path))
-            p["notes"] = notes
+            p["notes"] = pdf_extract.check_totals(p, os.path.basename(path))
             parsed.append(p)
-        report = run(group_reports(parsed), args.dashboard, args.intake, args.replace, args.apply)
+        report = run(group_reports(parsed), args.dashboard, args.intake, args.replace)
         report["warnings"] += [n for p in parsed for n in p["notes"]]
         print(report_text(report))
+        if args.apply:
+            result = apply_and_check(report["staging"], args.dashboard, args.intake, report["monthLabels"])
+            print(steps_text(result))
+            return 0 if result["ok"] else 1
         return 0
     except IntakeError as error:
         print(f"Stopped: {error}", file=sys.stderr)

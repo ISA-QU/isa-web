@@ -220,6 +220,33 @@ so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/in
 - **Tests:** `npm run intake:test`. `python3 scripts/intake/proof.py --pdf … --pdf …` rebuilds a
   month from its PDFs in `dashboard-intake/proof/` and compares it with the current files.
 
+### If something goes wrong
+
+- **Undo an update.** On the intake page press **Undo last update**, or run
+  `npm run intake -- --undo`. It shows which update it would undo (its date and time) and which
+  months it would remove, and asks you to confirm. It then puts back the files from before that
+  update and runs `dashboard:data` and `dashboard:verify`. Pressing Undo again undoes the update
+  before that one. If the files were changed some other way since that update, Undo refuses
+  rather than lose those changes.
+- **"Apply failed, old files restored, nothing changed."** After Apply, the dashboard's own build
+  and checks run. If either fails, the tool puts the old files back by itself and rebuilds the
+  local copy, so the dashboard is exactly as before. Read the failed step's output, and ask for
+  help if it isn't clear why.
+- **"Add March 2026 first."** Months must be added in order with no gaps: you can't add April
+  while March is missing. Add the missing month first, or drop several months' PDFs in one go.
+- **"The two PDFs don't match; check they're the same month."** The F1 and J1 totals in the
+  Nationality report must equal those in the Post report. Usually one of the two files is from a
+  different month; download the pair again.
+- **"Big change: …" (a yellow warning, not a stop).** A month's F1 or J1 total is more than 50%
+  above or below the same month a year earlier. This can be real (F1 fell 53% in June 2025 and
+  55% in November 2025): just confirm these are the right month's PDFs before Apply.
+- **"Close Excel and try again."** One of the data files is open in Excel. Close it first.
+- **A name it has never seen.** The run stops and names it. Check the spelling against the PDF;
+  if it's a spelling of a name the files already have, it goes in `scripts/intake/pdf_spellings.py`
+  (with the evidence); a genuinely new country needs a decision first.
+- **Backups** are in `dashboard-intake/backups/`, one dated folder per update (plus a copy made
+  before each undo). They're never deleted, so any earlier state can be recovered.
+
 ## Local development
 
 ```bash
@@ -737,9 +764,11 @@ Run `npm run dashboard:verify` after each change; it runs every sample question.
   `samples.ts`. The expected line is what `describeAnswer()` prints; if a test fails, verify
   shows what it got.
 - **A greeting**: add the country and its greeting to `greetings.ts`.
-- **The logo**: the button and the panel show the official Bobcat logo from
-  `public/brand/bobcat-official.png` (supplied by the office; never redrawn). `BobcatIcon` is
-  only the fallback, shown until the image loads or if it fails to load.
+- **The logo**: the button and the panel show the Bobcat image in
+  `public/brand/bobcat-official.png`. The current file was taken from our approved Bobcat
+  mockup; if Marketing provides the official file, save it under the same name to replace it
+  (never redraw it). `BobcatIcon` is only the fallback, shown until the image loads or if it
+  fails to load.
 
 ## Handoff notes for deployment (Koushik)
 

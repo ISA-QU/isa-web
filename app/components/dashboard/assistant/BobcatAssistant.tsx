@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { OpenTab } from "../TabNavigation";
 import BobcatLogo from "./BobcatLogo";
@@ -17,10 +17,20 @@ const AssistantPanel = dynamic(() => import("./AssistantPanel"), { ssr: false })
 export default function BobcatAssistant({ openTab }: { openTab: OpenTab }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
-  const close = () => {
-    setOpen(false);
-    button.current?.focus();
-  };
+  // Whether the panel has been opened, so focus returns to the button only after a close,
+  // never on first page load.
+  const wasOpened = useRef(false);
+  const close = () => setOpen(false);
+
+  // Focus the button after the panel closes. Done after the render, not in close(): on phones
+  // the button is hidden while the panel is open and can only take focus once it's shown again.
+  useEffect(() => {
+    if (open) {
+      wasOpened.current = true;
+      return;
+    }
+    if (wasOpened.current) button.current?.focus();
+  }, [open]);
 
   return (
     <div className="print:hidden">

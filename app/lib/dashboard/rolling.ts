@@ -9,6 +9,7 @@
 
 import { monthDisplay } from "./format";
 import { pctGrowth } from "./metrics";
+import { pct1Abs } from "./pct";
 import type { MonthRange, PostMonthlyRow } from "./types";
 
 const WINDOW = 12;
@@ -142,8 +143,8 @@ export function rollingTotals<K>(
 /** "▲ 4.2%" / "▼ 34.7%" / "0.0%"; "N/A" when there is no change. */
 export function arrowPct(change: number | null): string {
   if (change === null || Number.isNaN(change)) return "N/A";
-  if (change > 0) return `▲ ${change.toFixed(1)}%`;
-  if (change < 0) return `▼ ${Math.abs(change).toFixed(1)}%`;
+  if (change > 0) return `▲ ${pct1Abs(change)}%`;
+  if (change < 0) return `▼ ${pct1Abs(change)}%`;
   return "0.0%";
 }
 

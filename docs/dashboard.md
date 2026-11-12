@@ -1,5 +1,7 @@
 # Recruitment Intelligence Dashboard
 
+How to run it month to month: [RUNBOOK.md](RUNBOOK.md). How to use it: [USER_GUIDE.md](USER_GUIDE.md).
+
 The dashboard at `/` (and `/dashboard`) is a port of the Streamlit app that lived in
 `dashboard/`. It renders seven of the original ten tabs, now fed from three Excel workbooks
 through two Lambdas.
@@ -55,6 +57,11 @@ Rules the build applies:
   `validation.postsMonthly.renamedPosts` and on the `renamed` line of the rebuild output.
   If an old and a current label both report the same month and visa class, the build
   stops rather than add them together, since that could count the same visas twice.
+  Two later renames are mapped the same way: `Nur-Sultan` → `Astana` (the city was renamed
+  and renamed back) and `Kuwait` → `Kuwait City` (renamed in Oct 2019); 228 consulates
+  became 226. `npm run dashboard:verify` warns (without failing) about two consulates in one
+  country that never report in the same month, which may be one post under two names; pairs
+  that aren't renames (Chengdu / Wuhan, Tijuana / Tijuana Tpf) are on its allow-list.
   **The deployed `rebuild-dashboard` Lambda has not been updated with `POST_ALIASES`
   yet**; only the code in this repo and the local build (`npm run dashboard:data`) have it.
 - **Non-nationalities are excluded** from country views: "Unknown", "Non-Nationality Based
@@ -185,6 +192,67 @@ Until the upload button exists:
 
 To roll back, open `snapshot/snapshot.json.gz` → **Versions** and restore the previous
 version, or delete the bad raw file and rebuild.
+
+## Monthly intake (PDFs → the 3 data files)
+
+The State Department publishes two monthly PDFs, *Nonimmigrant Visa Issuances by Nationality*
+and *by Post* (travel.state.gov → Visa Statistics → Monthly Nonimmigrant Visa Issuances). The
+intake tool in `scripts/intake/` turns them into updated versions of the 3 files in `dashboard/`,
+so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/intake/requirements.txt`.
+
+1. **Check the State Department page in your browser to see if a new month is out.** The page
+   blocks scripts, so the tool can't check it for you; `--download` can fetch a month's two PDFs
+   once you know it's there, or save them from the page by hand.
+
+- **Local page:** `npm run admin` prints an address that works only on this computer. Drop a
+  month's two PDFs, check the report, then press Apply: the 3 files are backed up and replaced,
+  and `dashboard:data` and `dashboard:verify` run.
+- **Command line:** `npm run intake -- --pdf "<nationality>.pdf" --pdf "<post>.pdf"` builds and
+  checks the files in `dashboard-intake/staging/`; add `--apply` to replace the 3 files (after a
+  backup in `dashboard-intake/backups/`), `--replace` to redo a month already in the files, or
+  `--download 2026-03` to fetch a month's PDFs first.
+- **What it checks:** only F1 and J1 rows are kept, names exactly as the files spell them; a name
+  it has never seen stops the run (a new name needs a decision first); each report's GRAND TOTAL
+  must equal the sum of its rows; a month already in the files is refused without `--replace`;
+  the staged files are read back with the Lambda's own reader before anything is replaced. The
+  open fiscal year's rows in the historical file are recomputed from the monthly rows, and a
+  fiscal year that reaches September becomes "Complete fiscal year".
+- **PDF spellings:** a few names are spelled differently in the PDFs than in the files (for
+  example "China - mainland" vs "China - Mainland"). `scripts/intake/pdf_spellings.py` lists them,
+  each with its evidence, and every use is shown in the report.
+- **Only the 3 files live in `dashboard/`**, since the build reads every `.xlsx`/`.csv` there.
+  Staging, backups, downloads and proofs go in `dashboard-intake/` (gitignored).
+- **Live upload** (`live_upload.py`) is switched off: the live dashboard is still updated by the
+  IT/AWS contact.
+- **Tests:** `npm run intake:test`. `python3 scripts/intake/proof.py --pdf … --pdf …` rebuilds a
+  month from its PDFs in `dashboard-intake/proof/` and compares it with the current files.
+
+### If something goes wrong
+
+- **Undo an update.** On the intake page press **Undo last update**, or run
+  `npm run intake -- --undo`. It shows which update it would undo (its date and time) and which
+  months it would remove, and asks you to confirm. It then puts back the files from before that
+  update and runs `dashboard:data` and `dashboard:verify`. Pressing Undo again undoes the update
+  before that one. If the files were changed some other way since that update, Undo refuses
+  rather than lose those changes.
+- **"Apply failed, old files restored, nothing changed."** After Apply, the dashboard's own build
+  and checks run. If either fails, the tool puts the old files back by itself and rebuilds the
+  local copy, so the dashboard is exactly as before. Read the failed step's output, and ask for
+  help if it isn't clear why.
+- **"Add March 2026 first."** Months must be added in order with no gaps: you can't add April
+  while March is missing. Add the missing month first, or drop several months' PDFs in one go.
+- **"The two PDFs don't match; check they're the same month."** The F1 and J1 totals in the
+  Nationality report must equal those in the Post report. Usually one of the two files is from a
+  different month; download the pair again.
+- **"Big change: …" (a yellow warning, not a stop).** A month's F1 or J1 total is more than 50%
+  above or below the same month a year earlier. This can be real (F1 fell 53% in June 2025 and
+  55% in November 2025): just confirm these are the right month's PDFs before Apply.
+- **"Close Excel and try again."** One of the data files is open in Excel. Close it first.
+- **A name it has never seen.** The run stops and names it. Check the spelling against the PDF;
+  if it's a spelling of a name the files already have, it goes in `scripts/intake/pdf_spellings.py`
+  (with the evidence); a genuinely new country needs a decision first.
+- **Backups** are in `dashboard-intake/backups/`, one dated folder per update (plus a copy made
+  before each undo). They're never deleted, so any earlier state can be recovered.
 
 ## Local development
 
@@ -429,6 +497,64 @@ has its own version:
   view. A note under the world chart gives mainland China's share of world visas in the
   world's peak year and how far the rest of the world came back (F1: 42.6% in FY2015; 97% by
   FY2023), computed from the data for the selected visas.
+- **Fix pack 10.**
+  - Travel-ban events: Proclamation 10949 (G10) shows only on the charts of its 19 countries
+    and Proclamation 10998 (G13) on its 39 (both lists from `restrictions.ts`), plus world
+    charts (Market cycles), since the bans moved world totals. The interview pause and other
+    global events stay on every chart.
+  - Country 360's travel-ban small print shows only for a country with a restriction (41 today);
+    Markets keeps it.
+  - Country vs world, Index view: "Both lines are set to 100 in FY2019, the last year before
+    COVID. 92 means 8% below FY2019; 200 means double."
+  - Markets' "10-year trend": "— (low volume)" when the FY base is under 100 (54 rows F1, 41
+    F1 + J1). Categories, the sort and the CSV keep the raw value, as the Change column does.
+  - Historical Trends' cards and chart end at the range's last year (the latest complete FY by
+    default) for every country, missing years as 0 (North Korea: FY2025 0, not FY2022 1).
+    Serbia and Montenegro (split in 2006) keeps its own last year.
+  - "Review Structural Decline" is worded by the country's F1 history (`declineHistory()` in
+    `cycles.ts`, the Market cycles downturn rule; shared with the 2b-2 history labels), first
+    match wins: peak 8+ years ago and latest under 50% of it → "Review Structural Decline";
+    peak 8+ years ago and latest at 50–80% → "Review Decline — gradual long decline"; an
+    earlier 20%+ downturn that regained its peak → "Review Decline — has recovered before";
+    otherwise "Review Decline". Always F1 history, whatever the Visa control; the 2b-2 history line
+    under the advice says "History based on F1 (students)" (the separate note under the
+    action was removed in 2b-2 as a duplicate). Display only: the category (Declining), the stored
+    action, the advice text and the advice fingerprints are unchanged. F1, default view: 13
+    structural, 1 gradual (Egypt), 3 recovered before (India, Colombia, Albania).
+- **Fix pack 11.**
+  - Phone width: the 8 layout grids that only set columns from a breakpoint up (`sm:`,
+    `lg:`, `xl:`) get a base `grid-cols-1`, so below the breakpoint wide tables scroll inside
+    their own box instead of widening the page (Markets' movers and Historical Trends'
+    rankings made the page ~745 px wide at 375). Charts narrower than 640 px
+    (`chartLayout.ts`, applied in `Chart.tsx`): fiscal-year ticks every 5 years instead of
+    2, event labels hover-only (◆ markers stay), a 14 px title and the legend below the
+    plot. At 640 px and wider every chart is drawn exactly as before.
+  - Decline wording: a best F1 year under 500 (`MAJOR_MARKET_MIN`, the history-label rule)
+    gives plain "Review Decline". F1, default view: 12 structural, 1 gradual (Egypt), 3
+    recovered before (India, Colombia, Albania), 1 plain (El Salvador, best 499).
+  - Markets' "5-year trend": "— (low volume)" when the FY base (FY2020) is under 100.
+  - One percent formatter, `pct1()` in `pct.ts`: every 1-decimal percent on the pages and in
+    the CSVs rounds the raw value once, half away from zero. Historical Trends' rankings no
+    longer pre-round to 2 decimals, which made 14 values differ from the other pages (Uganda
+    +75.0% → +75.1%, as on Markets). Whole-number figures, ratios and 2-decimal CSV shares
+    are unchanged.
+- **History labels (2b-2).** Background only, always F1 whatever the Visa control, from the
+  same `declineHistory()` as the declining-market action wording (`historyLabel()` in
+  `cycles.ts`), so the two can't disagree. First match wins: "Structural — long decline"
+  (peak 8+ years ago, latest under 50% of it); "Gradual long decline" (peak 8+ years ago,
+  50–80%); "Cyclical — has recovered before" (an earlier 20%+ downturn from a peak of 100+
+  regained its peak); "Too early to tell" (best F1 year under 500, or none of the above).
+  Structural/Gradual countries that recovered earlier add "Recovered from an earlier
+  downturn, but hasn't regained its FY[peak] peak since." Each label has an evidence line
+  (peak, latest as % of peak, earlier downturns that regained their peak, any current
+  downturn) and the note "History based on F1 (students); FY2025 is provisional."
+  Serbia and Montenegro gets "Split in 2006 — see Serbia or Montenegro." instead of a label;
+  Palau (no F1) gets "No F1 visas in the annual data." Counts: 43 Cyclical, 38 Structural,
+  19 Gradual, 102 Too early to tell, plus 1 split. Shown on Markets (a "History (F1)" column
+  with the evidence on hover, both in More details, and `history_f1` / `history_evidence` at
+  the end of the CSV), in Country 360's "What to do" (one line under the advice) and above
+  the country's downturn table in Historical Trends → Market cycles. No category, action,
+  number, advice text or fingerprint changes.
 
 ## Choices the data forced
 
@@ -575,7 +701,83 @@ Country 360, top to bottom:
   average/median month chart (the typical-year chart is kept; its CSV stays), the F1-only
   change card, and the separate recommendation cards.
 
-## Handoff notes for deployment (Koushik)
+## Bobcat assistant
+
+The Bobcat button (bottom-right on every dashboard tab) opens a small chat panel that answers
+questions about the dashboard and its trends. It is free and local: no AI model, no web
+search, no server, no keys. It reads only the dashboard data already loaded behind sign-in
+and answers "I don't know — the dashboard doesn't have that" for anything else (applicants,
+emails, forecasts, legal questions…). Chat history stays in the open panel and is never
+saved or sent anywhere.
+
+Every answer is a card with the same numbers and wording as the tab it comes from, a source
+line (tab · measure · period), an "Open tab" button that shows the same figures, and a Copy
+button. Monthly figures always use the last 12 months. Questions with "we", "our" or "us"
+about trends get a note that the data is U.S.-wide visa issuances, not Quinnipiac's own
+applicants or enrolments. The United States isn't in the data (U.S. citizens don't need
+student or exchange visas), and the two special reporting categories (BNO passports and the
+Palestinian Authority Travel Document) are answered without a flag, with a note. Flags come
+from the `country-flag-icons` package (MIT) and load only when the panel opens.
+
+**Regions (with the Bobcat).** `REGION_MAP` in `constants.ts` now gives every country in the
+data a region: the original 48 assignments are unchanged and the rest follow the UN geoscheme
+mapped onto the dashboard's region names, with a new "Central Asia" region (Kazakhstan,
+Kyrgyzstan, Tajikistan, Turkmenistan, Uzbekistan), Iran in the Middle East, the Caucasus
+(Armenia, Azerbaijan, Georgia) and Cyprus in Europe, and the rest of UN Western Asia in the
+Middle East. "Other" is left only for the special reporting categories. At the default Markets
+view (F1) "Other" went from 73 of 121 markets to none (Africa 8 → 22, Central Asia 4, Europe
+8 → 40, Latin America 8 → 22, Middle East 5 → 10, South Asia 5, SE Asia 6 → 8, East Asia
+5 → 7, N. America / Oceania 3). It changes the
+Markets Region filter, Country 360's compare-by-region presets and the Bobcat's region lists;
+no number, category or advice changes.
+
+How it is built (`app/lib/dashboard/assistant/` and `app/components/dashboard/assistant/`):
+- `tools.ts`: the answers. Each tool reuses the pages' own functions (`markets.ts`,
+  `cyclesText.ts`, `historicalCards.ts`, `restrictions.ts`, `events.ts`…) and returns
+  ready-made lines, the source, and the tab to open.
+- `match.ts`: reads a question with word lists (no AI): countries and their other names,
+  visa words, regions, categories, years and what is being asked.
+- `answer.ts`: picks the tools for a question and passes their results through unchanged.
+- `navigation.ts`: the "how do I / where can I" answers and the tour, in one file so a user
+  guide can reuse the wording.
+- `definitions.ts`, `greetings.ts`, `suggestions.ts`, `flags.ts`: terms, greetings, suggested
+  questions and flag codes.
+- `samples.ts`: sample questions and the answer each must give, checked by
+  `npm run dashboard:verify`.
+- The panel: `BobcatAssistant.tsx` (the button), `AssistantPanel.tsx`, `AnswerCard.tsx`.
+
+Try the tools in a terminal with `node scripts/assistant-tools.mjs --list`, e.g.
+`node scripts/assistant-tools.mjs country_overview India`.
+
+### How to extend the Bobcat
+
+Run `npm run dashboard:verify` after each change; it runs every sample question.
+
+- **A country's other name** (e.g. "Persia" for Iran): add it to `COUNTRY_ALIASES` in
+  `countries.ts`, written in lowercase without punctuation. A nationality word ("Iranian")
+  goes in `DEMONYMS`. Add a sample question to `samples.ts`.
+- **A new keyword for an existing kind of question** (e.g. "slump" for downturns): add it to
+  the right list in `INTENT_WORDS` in `match.ts`, then add a sample question.
+- **A definition**: add an entry to `definitions.ts` with the term, other words for it, the
+  plain-language text, the tab, and a short phrase copied from this document (`docPhrase`).
+  Verify checks the phrase is still here, so the definition can't drift from the rules.
+- **A navigation answer**: add a topic to `navigation.ts` (title, keywords, one or two
+  sentences, the tab), then a sample question in `NAV_SAMPLES`.
+- **A new tool** (e.g. Quinnipiac's own counts, once approved): add it to `tools.ts` with a
+  name, a description and its parameters, returning lines, a source and a tab link; add it to
+  `TOOLS`; add the words that should reach it in `match.ts` and the call in `answer.ts`; add
+  verify checks that its numbers match the page, and sample questions.
+- **A sample-question test**: add `{ q: "…", expect: "intent | tool:Country | details" }` to
+  `samples.ts`. The expected line is what `describeAnswer()` prints; if a test fails, verify
+  shows what it got.
+- **A greeting**: add the country and its greeting to `greetings.ts`.
+- **The logo**: the button and the panel show the Bobcat image in
+  `public/brand/bobcat-official.png`. The current file was taken from our approved Bobcat
+  mockup; if Marketing provides the official file, save it under the same name to replace it
+  (never redraw it). `BobcatIcon` is only the fallback, shown until the image loads or if it
+  fails to load.
+
+## Handoff notes for deployment (IT/AWS contact)
 
 The branch `dev/dashboard-improvements` changes the **dashboard pages** and the
 **`rebuild-dashboard` Lambda**. Nothing in AWS has been changed and nothing has been deployed
@@ -598,10 +800,16 @@ is the only backend file that changed, see `git diff main...HEAD -- backend`):
    the nationality files join the post data on one name (as `"Korea, South"` already did).
 4. The committed `__pycache__/*.pyc` is no longer tracked, and `.gitignore` now ignores
    `__pycache__/` and `*.pyc`. Upload only `lambda_function.py`.
+5. **Two more consulate renames (Nov 2026).** `POST_ALIASES` gains `"Nur-Sultan"` →
+   `"Astana"` and `"Kuwait"` → `"Kuwait City"`, so each post is one series (226 consulates
+   instead of 228). **The live Lambda needs this change too**; it's in the same
+   `lambda_function.py` upload as items 1–3. No other Lambda change.
 
 **What changed in the site:** dashboard pages only (Markets, Country 360, Consulates,
-Historical Trends with Market cycles and Country vs World, the control bar, events). The
-calculator, transcript tool, login and `api.ts` are unchanged.
+Historical Trends with Market cycles and Country vs World, the control bar, events, and the
+Bobcat assistant). The calculator, transcript tool, login and `api.ts` are unchanged. The
+Bobcat runs entirely in the browser from the loaded data: it needs no AWS setup, keys or new
+routes. It adds one npm dependency, `country-flag-icons` (MIT), installed by `npm ci`.
 
 **Expected Test output** with the current raw files (Mar 2017–Feb 2026 monthly; FY1997–FY2026
 annual). Run the Test event `{}` and expect:
@@ -609,12 +817,13 @@ annual). Run the Test event `{}` and expect:
 - `"postsMonthly": "41965 rows, 2017-03 to 2026-02"` (41,524 before the renames)
 - `"annualCountry": "11367 rows, FY1997 to FY2026 (latest complete FY2025, FY2026 has 5 months)"`
 - `"nationalityMonthly": "35967 rows, 2017-03 to 2026-02"`
-- `"renamed"`: 7 lines, e.g. `"Mumbai (Bombay) -> Mumbai (62 rows, 48,332)"`
+- `"renamed"`: 9 lines, e.g. `"Mumbai (Bombay) -> Mumbai (62 rows, 48,332)"`, including
+  `"Kuwait -> Kuwait City (62 rows, 6,837)"` and `"Nur-Sultan -> Astana (73 rows, 6,422)"`
 - `"gzipBytes"` about 144,000 (`snapshot/snapshot.json.gz` about 145 KB); the served
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **216/216** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes (all checks) on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes
@@ -623,7 +832,7 @@ which GitHub Pages serves. Nothing deploys on push or merge.
 
 **Deploy order: Lambda first, then the site.** The new pages read `nationalityMonthly` and
 the renamed posts. On the old snapshot they still load, but Markets and Country 360 fall back
-to visas issued in each country (with a banner) and the 7 old post labels stay separate. The
+to visas issued in each country (with a banner) and the 9 old post labels stay separate. The
 old site ignores the new table, so updating the Lambda first is safe.
 
 **Unchanged:** the `get-dashboard` Lambda, API Gateway routes and authorizer, CORS, Cognito,
@@ -637,7 +846,7 @@ build takes about 3 seconds).
    `lambda_function.py` (keep the bucket setting as it is in AWS if it differs), **Deploy**.
 3. [ ] Run the Test event `{}`; compare with "Expected Test output" above.
 4. [ ] Optional: download the new snapshot, gunzip it to `public/dashboard-data/snapshot.json`
-   and run `npm run dashboard:verify` (expect 216/216).
+   and run `npm run dashboard:verify` (expect 236/236).
 5. [ ] From `main`: `npm ci`, then `npm run deploy`.
 6. [ ] Sign in to the live site and spot-check: header 252,282 / 284,306 / 27,258 (F1, India selected);
    Country 360 India 30,292 ▼ 59.6%; Consulates Mumbai 162,287; no fallback banner on Markets.

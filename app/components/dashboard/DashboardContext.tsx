@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 import { splitVisa } from "../../lib/dashboard/data";
+import { controlCountries } from "../../lib/dashboard/markets";
 import {
   buildCountrySummary,
   buildHistoricalMetricsFromAnnual,
@@ -175,10 +176,7 @@ export function DashboardProvider({
     [data.annualCountry],
   );
   // Names already match across the two sources (the rebuild Lambda unifies them).
-  const allCountries = useMemo(
-    () => [...new Set([...consulateCountries, ...nationalityCountries])].sort(),
-    [consulateCountries, nationalityCountries],
-  );
+  const allCountries = useMemo(() => controlCountries(data), [data]);
 
   const [selectedFocus, setFocusCountry] = useState<string>(() =>
     // country=china opens China: links match the country name whatever its capitalisation.

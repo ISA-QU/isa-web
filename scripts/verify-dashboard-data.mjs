@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -74,6 +75,16 @@ async function compileLib() {
       "app/lib/dashboard/url.ts",
       "app/lib/dashboard/constants.ts",
       "app/lib/dashboard/types.ts",
+      "app/lib/dashboard/decode.ts",
+      "app/lib/dashboard/markets.ts",
+      "app/lib/dashboard/cyclesText.ts",
+      "app/lib/dashboard/historicalCards.ts",
+      "app/lib/dashboard/assistant/tools.ts",
+      "app/lib/dashboard/assistant/format.ts",
+      "app/lib/dashboard/assistant/answer.ts",
+      "app/lib/dashboard/assistant/samples.ts",
+      "app/lib/dashboard/assistant/greetings.ts",
+      "app/lib/dashboard/assistant/flags.ts",
       "--outDir", outDir,
       "--module", "commonjs",
       "--target", "es2022",
@@ -883,7 +894,8 @@ async function main() {
   check(
     "event country names in the Country control / unmatched",
     `${scoped.join(", ")} / ${scoped.filter((c) => !controlCountries.has(c)).length}`,
-    "Afghanistan, China, Democratic Republic of the Congo, Russia, Saudi Arabia, South Sudan, Turkmenistan, Uganda, Ukraine, Venezuela / 0",
+    // Re-recorded in Fix pack 10: the travel bans (G10, G13) list their countries instead of "global".
+    "Afghanistan, Angola, Antigua and Barbuda, Benin, Burkina Faso, Burundi, Chad, China, Cote d'Ivoire, Cuba, Democratic Republic of the Congo, Dominica, Equatorial Guinea, Eritrea, Gabon, Gambia, Haiti, Iran, Laos, Libya, Malawi, Mali, Mauritania, Myanmar, Niger, Nigeria, Republic of the Congo, Russia, Saudi Arabia, Senegal, Sierra Leone, Somalia, South Sudan, Sudan, Syria, Tanzania, Togo, Tonga, Turkmenistan, Uganda, Ukraine, Venezuela, Yemen, Zambia, Zimbabwe / 0",
   );
   check(
     "fiscal years: 2014-11-12 / 2020-03-20 / 2001-09-11 / 2008-09 / G9 27 May-18 Jun 2025 / C1 2005 / C2 2015-2016",
@@ -947,17 +959,19 @@ async function main() {
   check(
     "China, Country 360 monthly: events (h = hover only) / labels / later",
     describe(ev.eventOverlay({ axis: monthAxis, dataEnd: coverage.end, country: "China", globalDetail: true })),
-    "G6 C4 G7(h) G8(h) G9 C5 G10 G11(h) G12(h) G13 | labels 5 | later G14",
+    // Re-recorded in Fix pack 10: China isn't covered by either travel ban.
+    "G6 C4 G7(h) G8(h) G9 C5 G11(h) G12(h) | labels 3 | later G14",
   );
   check(
     "China, Country 360 long-term (FY): events / labels / later",
     describe(ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: "China", globalDetail: true })),
-    "G1 G2(h) G3 C3 G4(h) G5(h) G6(h) C4 G7(h) G8(h) G9 C5 G10 G11(h) G12(h) | labels 5 | later G13 G14",
+    "G1 G2(h) G3 C3 G4(h) G5(h) G6(h) C4 G7(h) G8(h) G9 C5 G11(h) G12(h) | labels 5 | later G14",
   );
   check(
     "India, Historical Trends (FY, major global only): events / labels / later",
     describe(ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: "India", globalDetail: false })),
-    "G1 G3 G6(h) G9 G10 | labels 3 | later G13",
+    // Re-recorded in Fix pack 10: India isn't covered by either travel ban.
+    "G1 G3 G6(h) G9 | labels 3 | later -",
   );
   check(
     "Nigeria on Proclamation 10998 / Venezuela on 10949 (hover note)",
@@ -1303,6 +1317,592 @@ async function main() {
     [...new Set(styled.shapes.filter((x) => x.type === "line").map((x) => x.line.color))].sort().join(" / "),
     "rgba(167,139,250,0.5) / rgba(167,139,250,0.9)",
   );
+
+  console.log("\n  Fix pack 10  (expected values recounted with pandas from the raw workbooks)");
+  const evIds = (c) => {
+    const o = ev.eventOverlay({ axis: monthAxis, dataEnd: coverage.end, country: c, globalDetail: true });
+    return [...o.shown.map((p) => p.event.id), ...o.later.map((e) => e.id)].filter((id) => ["G9", "G10", "G13"].includes(id)).join(" ");
+  };
+  check(
+    "travel-ban events: G10 / G13 countries | Country 360 (G9 G10 G13): India; Vietnam; China; Germany | Nigeria | Iran | world chart",
+    `${byId("G10").scope.length} / ${byId("G13").scope.length} | ${["India", "Vietnam", "China", "Germany"].map(evIds).join("; ")} | ${evIds("Nigeria")} | ${evIds("Iran")} | ${describe(ev.eventOverlay({ axis: fyAxis, dataEnd: coverage.end, country: null, globalDetail: false }))}`,
+    "19 / 39 | G9; G9; G9; G9 | G9 G13 | G9 G10 G13 | G1 G3 G6(h) G9 G10 | labels 3 | later G13",
+  );
+  const smallPrint = (c) => restrictions.restrictionsFor(c).length > 0;
+  check(
+    "Country 360 travel-ban small print: countries shown | India, Germany, Vietnam | Nigeria, Iran, Turkmenistan, Uganda",
+    `${[...controlCountries].filter(smallPrint).length} | ${["India", "Germany", "Vietnam"].map(smallPrint).join(" ")} | ${["Nigeria", "Iran", "Turkmenistan", "Uganda"].map(smallPrint).join(" ")}`,
+    "41 | false false false | true true true true",
+  );
+  check(
+    "Country vs world: index note",
+    cy.INDEX_NOTE,
+    "Both lines are set to 100 in FY2019, the last year before COVID. 92 means 8% below FY2019; 200 means double.",
+  );
+  const fp10AnnualOf = (c) => annualCountry.filter((r) => r.country === metrics.historicalCountryName(c));
+  const tenYearCells = (visa) => {
+    const vis = visa === "Both" ? ["F1", "J1"] : [visa];
+    const rows = natCountries.map((c) => natRow(c, visa));
+    const low = rows.filter((r) => c360.tenYearTrendText(r.growth10yr, fp10AnnualOf(r.country), vis, latestComplete) === "— (low volume)");
+    const shown = low.filter((r) => r.latest12Total >= 100).sort((a, b) => b.latest12Total - a.latest12Total).map((r) => r.country);
+    return `${low.length} (${shown.join(", ")})`;
+  };
+  check(
+    "Markets 10-year trend under the minimum base (FY2015 under 100), F1 (default view) | F1 + J1 | India F1",
+    `${tenYearCells("F1")} | ${tenYearCells("Both")} | ${c360.tenYearTrendText(natRow("India").growth10yr, fp10AnnualOf("India"), ["F1"], latestComplete)}`,
+    "54 (Malawi, Madagascar, Mozambique, Kosovo) | 41 (Eswatini, Namibia, Grenada, Timor-Leste) | ▼ 46.4%",
+  );
+  const htCard = (c) => {
+    const pivot = periods.filledAnnualPivot(
+      metrics.buildAnnualPivot(annualCountry.filter((r) => r.country === c && r.fiscalYear <= latestComplete)),
+      latestComplete,
+    );
+    const last = pivot[pivot.length - 1];
+    return `FY${last.fiscalYear} ${last.F1}/${last.J1}`;
+  };
+  const ownLast = new Map();
+  for (const r of annualCountry) if (r.fiscalYear <= latestComplete) ownLast.set(r.country, Math.max(ownLast.get(r.country) ?? 0, r.fiscalYear));
+  const yearsOf = new Map();
+  for (const r of annualCountry) if (r.fiscalYear <= latestComplete) (yearsOf.get(r.country) ?? yearsOf.set(r.country, new Set()).get(r.country)).add(r.fiscalYear);
+  const filled = [...yearsOf].filter(([c, ys]) => !cy.COUNTRY_SPLITS[c] && (ownLast.get(c) < latestComplete || ys.size !== latestComplete - Math.min(...ys) + 1)).map(([c]) => c).sort();
+  check(
+    "Historical Trends: latest complete FY for every country: countries filled | North Korea | Marshall Islands | Nauru | India | Serbia and Montenegro split",
+    `${filled.join(", ")} | ${htCard("North Korea")} | ${htCard("Marshall Islands")} | ${htCard("Nauru")} | ${htCard("India")} | ${cy.COUNTRY_SPLITS["Serbia and Montenegro"] !== undefined}`,
+    "Marshall Islands, Micronesia, Nauru, North Korea, Palau, Sao Tome and Principe, Tuvalu, Vanuatu, Vatican City | FY2025 0/0 | FY2025 0/0 | FY2025 0/0 | FY2025 40077/8614 | true",
+  );
+  const histories = cy.declineHistories(annualCountry, fyFirst, latestComplete);
+  const reworded = (visa, min) => {
+    const rows = natCountries.map((c) => natRow(c, visa)).filter((r) => r.recommendedAction === cy.STRUCTURAL_DECLINE_ACTION && r.latest12Total >= min);
+    const by = {};
+    for (const r of rows) (by[cy.shownAction(r.recommendedAction, histories.get(r.country) ?? null)] ??= []).push(r.country);
+    return Object.entries(by).sort().map(([a, cs]) => `${a}: ${cs.length}${cs.length <= 3 ? ` (${cs.sort().join(", ")})` : ""}`).join(" / ");
+  };
+  check(
+    "declining markets worded by F1 history (default view, 100+): F1 | F1 + J1",
+    `${reworded("F1", 100)} | ${reworded("Both", 100)}`,
+    // Re-recorded in Fix pack 11: a best F1 year under 500 gives plain "Review Decline" (El Salvador 499, Iraq 419).
+    "Review Decline — gradual long decline: 1 (Egypt) / Review Decline — has recovered before: 3 (Albania, Colombia, India) / Review Decline: 1 (El Salvador) / Review Structural Decline: 12 | Review Decline — has recovered before: 2 (India, Tunisia) / Review Decline: 2 (El Salvador, Iraq) / Review Structural Decline: 10",
+  );
+  check(
+    "decline wording outside the default view, F1: Guyana / Estonia / Papua New Guinea / Bhutan / Saint Kitts and Nevis / Liberia / Botswana | India stored action",
+    `${["Guyana", "Estonia", "Papua New Guinea", "Bhutan", "Saint Kitts and Nevis", "Liberia", "Botswana"].map((c) => histories.get(c).kind).join(" / ")} | ${natRow("India").recommendedAction}`,
+    // Re-recorded in Fix pack 11: all seven have a best F1 year under 500 (116–436).
+    "none / none / none / none / none / none / none | Review Structural Decline",
+  );
+
+  console.log("\n  Fix pack 11  (expected values recounted with pandas from the raw workbooks)");
+  const pctMod = await import(pathToFileURL(path.join(outDir, "pct.js")).href);
+  const chartLayout = await import(pathToFileURL(path.join(outDir, "chartLayout.js")).href);
+  check(
+    "one percent formatter, half away from zero: 75.0515 / 6.25 / -6.25 / 0.05 / 1.15 / -0.04 | arrowPct(-6.25) / metricPct(75.051546)",
+    `${[75.0515, 6.25, -6.25, 0.05, 1.15, -0.04].map(pctMod.pct1).join(" / ")} | ${rolling.arrowPct(-6.25)} / ${format.metricPct(75.051546)}`,
+    "75.1 / 6.3 / -6.3 / 0.1 / 1.2 / -0.0 | ▼ 6.3% / +75.1%",
+  );
+  const hist11 = new Map(metrics.buildHistoricalMetricsFromAnnual(annualCountry, latestComplete).map((r) => [r.country, r]));
+  check(
+    "Historical Trends rankings, rounded once (10-yr / CAGR): the 14 that changed",
+    ["Uganda", "India", "Singapore", "Kyrgyzstan", "Portugal", "Venezuela", "Republic of the Congo", "Laos", "Tonga", "Mongolia", "Azerbaijan", "United Arab Emirates", "Saint Kitts and Nevis", "Grenada"]
+      .map((c) => `${c} ${format.metricPct(hist11.get(c).f1Growth10yrPct)} / ${format.metricPct(hist11.get(c).f1Cagr10yrPct)}`)
+      .join("; "),
+    "Uganda +75.1% / +5.8%; India -46.4% / -6.1%; Singapore -32.8% / -3.9%; Kyrgyzstan +583.4% / +21.2%; Portugal +46.7% / +3.9%; Venezuela -93.4% / -23.9%; Republic of the Congo -77.6% / -13.9%; Laos -79.2% / -14.6%; Tonga -53.8% / -7.4%; Mongolia -9.1% / -1.0%; Azerbaijan +160.5% / +10.0%; United Arab Emirates -55.9% / -7.9%; Saint Kitts and Nevis +37.7% / +3.2%; Grenada +40.4% / +3.4%",
+  );
+  const fiveYearCells = (visa) => {
+    const vis = visa === "Both" ? ["F1", "J1"] : [visa];
+    const rows = natCountries.map((c) => natRow(c, visa));
+    const low = rows.filter((r) => c360.trendCellText(r.growth5yr, fp10AnnualOf(r.country), vis, latestComplete, 5) === "— (low volume)");
+    return `${low.length} (${low.filter((r) => r.latest12Total >= 100).length} in the default view)`;
+  };
+  check(
+    "Markets 5-year trend under the minimum base (FY2020 under 100): F1 | J1 | F1 + J1 | India F1",
+    `${fiveYearCells("F1")} | ${fiveYearCells("J1")} | ${fiveYearCells("Both")} | ${c360.trendCellText(natRow("India").growth5yr, fp10AnnualOf("India"), ["F1"], latestComplete, 5)}`,
+    `84 (24 in the default view) | 109 (28 in the default view) | 73 (23 in the default view) | ${rolling.arrowPct(natRow("India").growth5yr)}`,
+  );
+  check(
+    "decline history: best F1 year under 500 → none (El Salvador 499, Iraq 419, Guinea 349) | Albania 557 / Tunisia 545",
+    `${["El Salvador", "Iraq", "Guinea"].map((c) => `${histories.get(c).peak} ${histories.get(c).kind}`).join(", ")} | ${["Albania", "Tunisia"].map((c) => `${histories.get(c).peak} ${histories.get(c).kind}`).join(" / ")}`,
+    "499 none, 419 none, 349 none | 557 recovered / 545 recovered",
+  );
+  const narrow = chartLayout.narrowChartLayout({
+    xaxis: { dtick: 2, title: { text: "Fiscal Year" } },
+    title: { text: "T", font: { size: 18 } },
+    legend: { orientation: "v" },
+    annotations: [{ name: chartLayout.EVENT_LABEL_NAME, text: "event" }, { text: "keep" }],
+  });
+  const monthly = chartLayout.narrowChartLayout({ xaxis: { dtick: "M12" } });
+  check(
+    "phone-width charts (under 640 px): FY dtick / title size / legend / annotations kept | monthly dtick",
+    `${chartLayout.NARROW_CHART_PX}: ${narrow.xaxis.dtick} / ${narrow.title.font.size} / ${narrow.legend.orientation} y ${narrow.legend.y} / ${narrow.annotations.map((x) => x.text).join(",")} | ${monthly.xaxis.dtick}`,
+    "640: 5 / 14 / h y -0.25 / keep | M12",
+  );
+
+  console.log("\n  2b-2 history labels  (expected values recounted with pandas from the raw annual workbook)");
+  const prov2b2 = periods.provisionalFiscalYears(snapshot.fiscalYears);
+  const labelOf = (c) => cy.historyLabel(histories.get(c), prov2b2);
+  const labelCounts = {};
+  for (const c of histories.keys()) labelCounts[labelOf(c).kind] = (labelCounts[labelOf(c).kind] ?? 0) + 1;
+  check(
+    "history labels (F1, dashboard names): Cyclical / Structural / Gradual / Too early | split | no F1",
+    `${labelCounts.recovered} / ${labelCounts.structural} / ${labelCounts.gradual} / ${labelCounts.none} | ${labelCounts.split} (${[...histories.keys()].filter((c) => labelOf(c).kind === "split").join(", ")}) | ${labelCounts["no-visas"]} (${[...histories.keys()].filter((c) => labelOf(c).kind === "no-visas").join(", ")})`,
+    "43 / 38 / 19 / 102 | 1 (Serbia and Montenegro) | 1 (Palau)",
+  );
+  const twelve = ["India", "China", "Japan", "South Korea", "Saudi Arabia", "Vietnam", "Nigeria", "Ghana", "Nepal", "Brazil", "United Kingdom", "Germany"];
+  check(
+    "history labels: the 12 examples",
+    twelve.map((c) => `${c} ${labelOf(c).short}`).join(", "),
+    "India Cyclical, China Structural, Japan Structural, South Korea Structural, Saudi Arabia Structural, Vietnam Cyclical, Nigeria Cyclical, Ghana Cyclical, Nepal Cyclical, Brazil Structural, United Kingdom Gradual, Germany Gradual",
+  );
+  check(
+    "history evidence: India",
+    `${labelOf("India").label}. ${labelOf("India").evidence}`,
+    "Cyclical — has recovered before. Peak FY2023: 130,730 (2 years ago). FY2025 (provisional): 40,077, 30.7% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–04 (back FY2006), FY2008–12 (back FY2014), FY2015–20 (back FY2021). In a downturn since FY2023 (▼ 69.3% at its low).",
+  );
+  check(
+    "history evidence: China (structural that recovered earlier)",
+    `${labelOf("China").label}. ${labelOf("China").evidence}`,
+    "Structural — long decline. Peak FY2015: 274,460 (10 years ago). FY2025 (provisional): 58,897, 21.5% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–03 (back FY2006). In a downturn since FY2015 (▼ 94.7% at its low). Recovered from an earlier downturn, but hasn't regained its FY2015 peak since.",
+  );
+  const recoveredEarlier = [...histories.keys()].filter((c) => labelOf(c).evidence.includes("Recovered from an earlier downturn"));
+  const tooEarly = [...histories.keys()].filter((c) => labelOf(c).kind === "none");
+  check(
+    "structural/gradual that recovered earlier (downturns from a peak of 100+; Libya's FY1999 peak of 19 doesn't count) | Too early: best F1 year under 500",
+    `${recoveredEarlier.length} (Libya ${recoveredEarlier.includes("Libya")}) | ${tooEarly.filter((c) => (histories.get(c).peak ?? 0) < 500).length} of ${tooEarly.length}`,
+    "24 (Libya false) | 102 of 102",
+  );
+  const agree = (visa) => {
+    const rows = natCountries.map((c) => natRow(c, visa)).filter((r) => r.recommendedAction === cy.STRUCTURAL_DECLINE_ACTION);
+    const expected = { structural: "Review Structural Decline", gradual: "Review Decline — gradual long decline", recovered: "Review Decline — has recovered before", none: "Review Decline" };
+    const off = rows.filter((r) => cy.shownAction(r.recommendedAction, histories.get(r.country)) !== expected[labelOf(r.country).kind]);
+    return `${rows.length} rows, ${off.length} disagree`;
+  };
+  check("Markets action wording agrees with the history label: F1 | F1 + J1", `${agree("F1")} | ${agree("Both")}`, "24 rows, 0 disagree | 18 rows, 0 disagree");
+  check(
+    "history lines: Serbia and Montenegro / Palau / Liberia (small)",
+    `${labelOf("Serbia and Montenegro").label} / ${labelOf("Palau").label} / ${labelOf("Liberia").label}: ${labelOf("Liberia").evidence}`,
+    "Split in 2006 — see Serbia or Montenegro. / No F1 visas in the annual data. / Too early to tell: Best F1 year: FY2001, 330 — under 500, too small for its history to say much. FY2025 (provisional): 113.",
+  );
+  check(
+    "history note: F1 | F1 + J1",
+    `${cy.historyNote(["F1"], prov2b2, latestComplete)} | ${cy.historyNote(["F1", "J1"], prov2b2, latestComplete)}`,
+    "History based on F1 (students); FY2025 is provisional. | History based on F1 (students), whatever the Visa control; FY2025 is provisional.",
+  );
+
+  console.log("\n  Bobcat Step 1: shared page code  (markets.ts, cyclesText.ts, historicalCards.ts, decode.ts moved out of the tabs unchanged; expected values are this script's own checks above, or its independent rebuild of the page logic)");
+  const decode = await import(pathToFileURL(path.join(outDir, "decode.js")).href);
+  const mk = await import(pathToFileURL(path.join(outDir, "markets.js")).href);
+  const cyText = await import(pathToFileURL(path.join(outDir, "cyclesText.js")).href);
+  const hcards = await import(pathToFileURL(path.join(outDir, "historicalCards.js")).href);
+  const bt = await import(pathToFileURL(path.join(outDir, "assistant/tools.js")).href);
+  const bdefs = await import(pathToFileURL(path.join(outDir, "assistant/definitions.js")).href);
+  const data = decode.decodeSnapshot(snapshot);
+  const hashRows = (rows, keys) => createHash("sha1").update(JSON.stringify(rows.map((r) => keys.map((k) => r[k])))).digest("hex").slice(0, 12);
+  const POST_KEYS = ["year", "month", "fiscalYear", "post", "country", "visa", "issuances", "monthIndex"];
+  const ANNUAL_KEYS = ["fiscalYear", "country", "visa", "issuances"];
+  const NAT_KEYS = ["year", "month", "fiscalYear", "monthIndex", "country", "visa", "issuances", "isCountry"];
+  check(
+    "decode.ts decodes the snapshot as this script does: posts | annual | nationality | operational (row hashes)",
+    [hashRows(data.postsMonthly, POST_KEYS), hashRows(data.annualCountry, ANNUAL_KEYS), hashRows(data.nationalityMonthly, NAT_KEYS), data.operational.length].join(" | "),
+    [hashRows(postsMonthly, POST_KEYS), hashRows(annualCountry, ANNUAL_KEYS), hashRows(nationality, NAT_KEYS), operational.length].join(" | "),
+  );
+  check("markets.ts: Country control list = every country in either source", mk.controlCountries(data).join(","), [...countryNames].sort().join(","));
+  const sigF1 = mk.marketSignals(data, "F1", mk.controlCountries(data));
+  check(
+    "markets.ts: Markets rows advice fingerprints, F1 | F1 + J1 (= the nationality advice fingerprints)",
+    `${fingerprint(sigF1)} | ${fingerprint(mk.marketSignals(data, "Both", mk.controlCountries(data)))}`,
+    "9013461fccd7 | c332e7aeb6b1",
+  );
+  const prior12Range = consulates.previousPeriod(last12Range, coverage);
+  const mRowsF1 = mk.marketRows(sigF1, data, "F1", last12Range, prior12Range);
+  const mDefault = mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, "All"), "All", "Nationals");
+  const indepDefault = sorting.sortBy(natRowsF1.filter((r) => r.latest12Total >= 100), [(r) => r.latest12Total]);
+  check(
+    "markets.ts: Markets table at the defaults (last 12 months, min 100, All, by nationals) = this script's nationality rows: order | Period = last 12 months | change = 12-month change",
+    `${mDefault.map((r) => r.country).join(",") === indepDefault.map((r) => r.country).join(",")} | ${mRowsF1.every((r) => r.periodTotal === r.latest12Total)} | ${mRowsF1.every((r) => r.periodChange === r.latest12Momentum)}`,
+    "true | true | true",
+  );
+  check(
+    "markets.ts: Markets action and history cells, India / China / Nigeria",
+    ["India", "China", "Nigeria"].map((c) => { const r = mRowsF1.find((x) => x.country === c); return `${mk.marketActionCellText(r, histories)} · ${mk.marketHistory(c, histories, prov2b2).short} · ${mk.marketChangeText(r)}`; }).join(" | "),
+    "Review Decline — has recovered before (Declining) · Cyclical · ▼ 59.6% | Review Structural Decline (Declining) · Structural · ▼ 30.1% | Restricted — student and exchange visas suspended since 1 Jan 2026 · Cyclical · ▼ 52.8%",
+  );
+  check(
+    "markets.ts: Country 360 row (countrySignalRow) = the nationality row: India / Curacao falls back to issued in",
+    `${fingerprint([mk.countrySignalRow(data, "India", "F1")]) === fingerprint([natRow("India")])} / ${mk.countrySignalRow(data, "Curacao", "F1").latest12Total === measures.lastTwelve(f1Posts.filter((r) => r.country === "Curacao"), coverage.end).current}`,
+    "true / true",
+  );
+  check(
+    "cyclesText.ts: recovery summary sentence (F1) / latest signal sentence (F1)",
+    `${cyText.recoverySummaryText(rs, fyFirst)} / ${cyText.latestSignalText(cy.latestSignal(nationality, ["F1"], coverage.end))}`,
+    "Since FY1997, 56% of major market downturns fully recovered, typically within 3 years of the low. After COVID, 58% of markets were above their FY2019 level by FY2023. Past recoveries don't guarantee future ones. / FY2026 so far (Oct–Feb): ▼ 44.6% vs the same months of FY2025 (44,006 vs 79,367) — no sign of a bottom yet in data through Feb 2026.",
+  );
+  check(
+    "cyclesText.ts: world F1 downturn cells (peak / trough / depth / rebound / regained)",
+    cy.findDownturns(f1Lines.world).map((d) => Object.values(cyText.downturnCells(d, (y) => periods.fyLabel(y, prov2b2), cyText.notYetText(latestComplete, true))).slice(0, 5).join(" / ")).join(" | "),
+    "FY2001 · 293,026 / FY2003 · 215,528 / ▼ 26.4% / ▲ 26.9% / FY2007 · 298,118 | FY2015 · 643,756 / FY2020 · 111,271 / ▼ 82.7% / ▲ 300.0% / Not yet (FY2025 provisional)",
+  );
+  const indiaCards = hcards.historicalCards(annualCountry, "India", fyFirst, latestComplete, latestComplete, prov2b2);
+  check(
+    "historicalCards.ts: India cards (FY2025 F1 / vs FY2024 / vs peak / vs FY2019 / 10-year CAGR)",
+    [indiaCards.metrics.latestF1, indiaCards.cards.vsPriorYear, indiaCards.cards.vsPeakShown, indiaCards.cards.vsPrePandemic, indiaCards.cards.cagr10].join(" / "),
+    "40077 / ▼ 53.4% / ▼ 69.3% / ▼ 8.3% / ▼ 6.1%",
+  );
+  check(
+    "consulates.ts: Mumbai F1, last 12 months, change and recovery cells",
+    `${consulates.consulateChangeText(mumbai12)} / ${consulates.consulateRecoveryText(mumbai12.recovery, recoveryYear)} / ${consulates.consulateRecoveryText(null, recoveryYear)}`,
+    "▼ 68.4% / 39 / — (low volume)",
+  );
+
+  console.log("\n  Bobcat Step 1: tools  (each answer = the page's figure; expected values are this script's checks above)");
+  const ctxF1 = { data, visa: "F1" };
+  const run = (name, args = {}, ctx = ctxF1) => bt.runTool(name, ctx, args);
+  const L12 = "last 12 months (Mar 2025 – Feb 2026) vs the previous 12 months (Mar 2024 – Feb 2025)";
+  const indiaOverview = run("country_overview", { country: "India" });
+  check(
+    "country_overview India, F1: nationals last 12 / previous 12 and change / recovery",
+    indiaOverview.lines.slice(0, 3).join(" | "),
+    "Nationals of India, F1, last 12 months (Mar 2025 – Feb 2026): 30,292 | Previous 12 months (Mar 2024 – Feb 2025): 75,060 · change ▼ 59.6% | Recovery (2025 vs 2019): 67",
+  );
+  check(
+    "country_overview India: category / action / source / Open tab",
+    `${indiaOverview.lines[3]} | ${indiaOverview.lines[4]} | ${indiaOverview.sources[0].tab} · ${indiaOverview.sources[0].period} | ${JSON.stringify(indiaOverview.link)}`,
+    `Category: Declining | What to do: Review Decline — has recovered before | Country 360 · ${L12} | {"tab":"country-360","country":"India","visa":"F1","period":"last12"}`,
+  );
+  check(
+    "country_trend India: the Historical Trends cards",
+    run("country_trend", { country: "India" }).lines.slice(0, 6).join(" | "),
+    "F1 by nationality, FY2025 (provisional): 40,077 | J1 by nationality, FY2025 (provisional): 8,614 | F1 vs FY2024: ▼ 53.4% | F1 vs peak (FY2023): ▼ 69.3% | F1 vs FY2019 (pre-pandemic): ▼ 8.3% | F1 10-year CAGR, FY2015–FY2025: ▼ 6.1%",
+  );
+  const histLine = (c) => run("history_label", { country: c }).lines[0];
+  check(
+    "history_label: India (full line) | China (label) | Serbia and Montenegro (split line)",
+    `${histLine("India")} | ${histLine("China").split(". ")[0]} | ${histLine("Serbia and Montenegro")}`,
+    "History (F1): Cyclical — has recovered before. Peak FY2023: 130,730 (2 years ago). FY2025 (provisional): 40,077, 30.7% of the peak. Earlier 20%+ downturns that regained their peak: FY2001–04 (back FY2006), FY2008–12 (back FY2014), FY2015–20 (back FY2021). In a downturn since FY2023 (▼ 69.3% at its low). | History (F1): Structural — long decline | History (F1): Split in 2006 — see Serbia or Montenegro.",
+  );
+  const nigeriaR = run("restrictions", { country: "Nigeria" });
+  check(
+    "restrictions Nigeria: badge / last checked / State Department source",
+    `${nigeriaR.lines[0]} | ${nigeriaR.lines[nigeriaR.lines.length - 1]} | ${nigeriaR.links.map((l) => l.url).join(", ")}`,
+    "Travel ban: student and exchange visas suspended since 1 Jan 2026 | Last checked 23 Oct 2026. | https://travel.state.gov/content/travel/en/News/visas-news/suspension-of-visa-issuance-to-foreign-nationals-to-protect-the-security-of-the-united-states.html",
+  );
+  const allR = run("restrictions");
+  check(
+    "restrictions (all): full / partial / paused counts | India has none",
+    `${allR.lines.slice(0, 3).map((l) => l.split(":")[0]).join(" / ")} | ${run("restrictions", { country: "India" }).lines[0]}`,
+    "Travel ban, full (19) / Travel ban, partial (19) / Visa services paused (3) | No U.S. visa restriction is listed for India.",
+  );
+  const evIndia = run("events", { country: "India" });
+  const evNigeria = run("events", { country: "Nigeria" });
+  check(
+    "events: India has no travel-ban events | Nigeria's own events",
+    `${evIndia.lines.filter((l) => /Proclamation 109(49|98)/.test(l)).length} | ${evNigeria.lines.slice(0, -1).map((l) => l.split(":")[0]).join("; ")}`,
+    "0 | 1 Jan 2026 — Expanded travel ban (Proclamation 10998)",
+  );
+  const lm = (args) => run("list_markets", args);
+  const names = (r) => r.lines.map((l) => l.replace(/^\d+\. /, "").split(":")[0]).join(", ");
+  check(
+    "list_markets = Markets rows: largest 15 | fastest-growing 15 (Markets sorted by Change), F1",
+    `${names(lm({ limit: 15 })) === mDefault.slice(0, 15).map((r) => r.country).join(", ")} | ${names(lm({ sort: "growing", limit: 15 })) === mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, "All"), "All", "Change").filter((r) => r.periodChange > 0).slice(0, 15).map((r) => r.country).join(", ")}`,
+    "true | true",
+  );
+  const indepDecline = sorting.sortBy(indepDefault, [(r) => r.latest12Momentum], true).filter((r) => r.latest12Momentum !== null && r.latest12Momentum < 0);
+  const declining = lm({ sort: "declining", limit: 15 });
+  check(
+    "list_markets declining (lowest change first) = this script's rows | every restricted row carries its badge",
+    `${names(declining) === indepDecline.slice(0, 15).map((r) => r.country).join(", ")} | ${declining.lines.filter((l) => / · Restricted/.test(l)).every((l) => / · (Travel ban|Paused)/.test(l))}`,
+    "true | true",
+  );
+  check(
+    "list_markets declining, F1: first 3 rows (recounted with pandas)",
+    declining.lines.slice(0, 3).join(" | "),
+    "1. Myanmar: 249 · ▼ 92.8% · Restricted · Travel ban (full) since 9 Jun 2025 | 2. Iran: 191 · ▼ 91.8% · Restricted · Travel ban (full) since 9 Jun 2025 | 3. Democratic Republic of the Congo: 225 · ▼ 75.5% · Restricted · Paused since 18 May 2026",
+  );
+  const growing5 = lm({ sort: "growing", limit: 5 });
+  check(
+    "list_markets fastest-growing, F1: top 5 | how many grew (recounted with pandas)",
+    `${names(growing5)} | ${growing5.notes[0]}`,
+    "Latvia, Croatia, Czechia, Iceland, Belgium | 11 of 121 markets grew.",
+  );
+  check(
+    "list_markets: an unknown region / category lists the valid ones",
+    `${lm({ region: "Atlantis" }).status} ${lm({ region: "Atlantis" }).suggestions.length > 0} / ${lm({ category: "Hot" }).status} ${lm({ category: "Hot" }).suggestions.join(",")}`,
+    "unknown true / unknown Core,Growth,Emerging,Recovery,Watch,Declining,Restricted",
+  );
+  check("country_vs_world India, F1: the Market cycles sentence", run("country_vs_world", { country: "India" }).lines[0], indiaVs.sentence);
+  check(
+    "market_cycles, F1: world downturn depths",
+    run("market_cycles").lines.filter((l) => l.startsWith("World: ")).map((l) => /(▼ [\d.]+%)/.exec(l)[1]).join(" / "),
+    "▼ 26.4% / ▼ 82.7%",
+  );
+  check(
+    "consulates India, F1: context line (issued in / nationals) | Mumbai row",
+    `${run("consulates", { country: "India" }).lines[0]} | ${run("consulates", { country: "India" }).lines.find((l) => l.startsWith("Mumbai"))}`,
+    "Consulates in India issued 27,258 F1 visas in the last 12 months; nationals of India received 30,292 F1 visas worldwide. | Mumbai: 6,413 · 23.5% of India · ▼ 68.4% vs the previous 12 months · recovery 39",
+  );
+  check(
+    "monthly tools state the last 12 months in their source line: country_overview / list_markets / consulates",
+    ["country_overview", "list_markets", "consulates"].map((t) => run(t, { country: "India" }).sources[0].period === L12).join(" / "),
+    "true / true / true",
+  );
+  const docsText = (await readFile(path.join(ROOT, "docs/dashboard.md"), "utf8")).replace(/\s+/g, " ");
+  const missingTerms = bdefs.DEFINITIONS.filter((d) => !docsText.includes(d.docPhrase.replace(/\s+/g, " ")));
+  check(
+    "definitions: every term's phrase still appears in docs/dashboard.md (missing)",
+    `${bdefs.DEFINITIONS.length - missingTerms.length} of ${bdefs.DEFINITIONS.length} (${missingTerms.map((d) => d.id).join(", ") || "none"})`,
+    `${bdefs.DEFINITIONS.length} of ${bdefs.DEFINITIONS.length} (none)`,
+  );
+  check(
+    "definition: 'low volume' / 'structural' / an unknown term",
+    ["low volume", "structural", "blah"].map((t) => { const r = run("definition", { term: t }); return r.status === "ok" ? r.title : r.status; }).join(" / "),
+    "— (low volume) / History labels / unknown",
+  );
+  const inida = run("country_overview", { country: "Inida" });
+  check(
+    "unknown country → did you mean | United States → not in the data | Korea → South Korea",
+    `${inida.status} ${inida.suggestions[0]} | ${run("country_overview", { country: "USA" }).status} | ${run("country_overview", { country: "Korea" }).title}`,
+    "unknown-country India | not-in-data | South Korea, F1",
+  );
+
+  console.log("\n  Bobcat Step 1: missing data  (the live site may serve a snapshot without the monthly nationality table)");
+  const oldSnapshot = { ...snapshot, coverage: { ...snapshot.coverage, nationalityMonthly: null } };
+  delete oldSnapshot.nationalityMonthly;
+  const oldCtx = { data: decode.decodeSnapshot(oldSnapshot), visa: "F1" };
+  const sample = (t) => (bt.toolByName(t).params.term ? { term: "low volume" } : { country: "India" });
+  const errorsOn = (ctx, countries) =>
+    bt.TOOLS.flatMap((t) => countries.map((c) => bt.runTool(t.name, ctx, t.params.term ? { term: "low volume" } : { country: c }))).filter((r) => r.status === "error" || r.sources.length === 0).length;
+  const oldRun = (t, args) => bt.runTool(t, oldCtx, args ?? sample(t));
+  check(
+    "no nationality table: 11 tools × India, Nigeria, China, Curacao: errors | Country 360 overview falls back to issued in | Markets says so | latest signal unavailable",
+    `${errorsOn(oldCtx, ["India", "Nigeria", "China", "Curacao"])} errors | ${oldRun("country_overview").lines[0]} | ${oldRun("list_markets").notes.some((n) => n.startsWith("Monthly nationality data isn't in this data snapshot"))} | ${oldRun("market_cycles", {}).notes.some((n) => n.startsWith("The latest signal isn't available yet"))}`,
+    "0 errors | Visas issued in India, F1, last 12 months (Mar 2025 – Feb 2026): 27,258 | true | true",
+  );
+  const emptyCtx = { data: { ...data, annualCountry: [], postsMonthly: [] }, visa: "F1" };
+  check(
+    "missing annual / consulate tables: trend / cycles / vs world / history / consulates say the data isn't available | a broken snapshot gives 'error', never a crash",
+    `${["country_trend", "market_cycles", "country_vs_world", "history_label", "consulates"].map((t) => bt.runTool(t, emptyCtx, { country: "India" }).status).join(" / ")} | ${bt.runTool("country_overview", { data: {}, visa: "F1" }, { country: "India" }).status}`,
+    "not-in-data / not-in-data / not-in-data / not-in-data / not-in-data | error",
+  );
+  check("every tool, full snapshot: errors or results without a source", errorsOn(ctxF1, ["India", "Nigeria", "China", "Curacao", "Serbia and Montenegro", "Palau"]), 0);
+
+  console.log("\n  Bobcat Step 2: questions  (match.ts + answer.ts; one check per sample question in samples.ts)");
+  const bans = await import(pathToFileURL(path.join(outDir, "assistant/answer.js")).href);
+  const bsamples = await import(pathToFileURL(path.join(outDir, "assistant/samples.js")).href);
+  const bgreet = await import(pathToFileURL(path.join(outDir, "assistant/greetings.js")).href);
+  const bflags = await import(pathToFileURL(path.join(outDir, "assistant/flags.js")).href);
+  const bnav = await import(pathToFileURL(path.join(outDir, "assistant/navigation.js")).href);
+  const bcountries = await import(pathToFileURL(path.join(outDir, "assistant/countries.js")).href);
+  const askCtx = { data, visa: "F1", focusCountry: "India" };
+  const ask = (q, after) => bans.answerQuestion(q, askCtx, after ? bans.answerQuestion(after, askCtx, null).memory : null).answer;
+  for (const sample of bsamples.SAMPLES) {
+    check(`ask "${sample.q}"${sample.after ? ` (after "${sample.after}")` : ""}`, bsamples.describeAnswer(ask(sample.q, sample.after)), sample.expect);
+  }
+  console.log("\n  Bobcat Step 2: navigation questions  (navigation.ts)");
+  for (const sample of bsamples.NAV_SAMPLES) {
+    check(`ask "${sample.q}"`, bsamples.describeAnswer(ask(sample.q, sample.after)), sample.expect);
+  }
+
+  console.log("\n  Bobcat Step 2: answers  (cards are the tools' results unchanged; expected values are this script's checks above, or recounted with pandas)");
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check(
+    "answer cards = the tools' results, unchanged: India summary (4 cards) | How is India doing? | Fastest-growing markets | Nigeria restrictions",
+    [
+      same(ask("India").cards, [run("country_overview", { country: "India" }), run("country_trend", { country: "India" }), run("history_label", { country: "India" }), run("country_vs_world", { country: "India" })]),
+      same(ask("How is India doing?").cards, [run("country_overview", { country: "India" })]),
+      same(ask("Fastest-growing markets").cards, [run("list_markets", { sort: "growing" })]),
+      same(ask("Is Nigeria restricted?").cards, [run("restrictions", { country: "Nigeria" })]),
+    ].join(" | "),
+    "true | true | true | true",
+  );
+  check(
+    "answer card text: How is India doing? (first 3 lines)",
+    ask("How is India doing?").cards[0].lines.slice(0, 3).join(" | "),
+    "Nationals of India, F1, last 12 months (Mar 2025 – Feb 2026): 30,292 | Previous 12 months (Mar 2024 – Feb 2025): 75,060 · change ▼ 59.6% | Recovery (2025 vs 2019): 67",
+  );
+  check(
+    "years reach the events tool as a year: What happened in 2020? | FY2019 | Events in FY2020 for China",
+    ["What happened in 2020?", "FY2019", "Events in FY2020 for China"].map((q) => ask(q).cards[0].title).join(" | "),
+    "Events in 2020 | Events in FY2019 | Events in FY2020 (China)",
+  );
+  check(
+    "What happened in 2020? lists COVID (20 Mar 2020)",
+    ask("What happened in 2020?").cards[0].lines.some((l) => l.startsWith("20 Mar 2020 — COVID-19")),
+    true,
+  );
+  check(
+    '"we/our/us" note on trend and downturn questions | not on "Tell us about India"',
+    `${ask("Are we in a downturn?").notes[0]} | ${ask("Tell us about India").notes.length}`,
+    "This dashboard shows U.S. visa issuances worldwide (State Department data), not Quinnipiac's own applicants or enrolments. | 0",
+  );
+  check(
+    "United States: the not-in-data note",
+    ask("US students").cards[0].lines[0],
+    "The United States isn't in this data: U.S. citizens don't need student (F1) or exchange visitor (J1) visas.",
+  );
+  check(
+    "I don't know: the line, a reason and 4 suggested questions (applicants / forecast)",
+    `${ask("How many Indian students applied to QU?").intro} ${ask("How many Indian students applied to QU?").notes[0]} ${ask("asdfgh").suggestions.length} | ${ask("What will FY2027 be?").notes[0]}`,
+    "I don't know — the dashboard doesn't have that. It shows U.S. visa issuances by nationality, not Quinnipiac's applicants, admissions or enrolments. 4 | The dashboard doesn't forecast: it shows visas issued up to Feb 2026.",
+  );
+  check(
+    "Congo: asks which one",
+    `${ask("Congo").intro} ${ask("Congo").suggestions.map((s) => s.text).join(" / ")}`,
+    "Which one do you mean: Democratic Republic of the Congo or Republic of the Congo? Democratic Republic of the Congo / Republic of the Congo",
+  );
+  const bno = ask("BNO passports").cards[0];
+  const pa = ask("Palestinian students").cards[0];
+  check(
+    "special categories, F1, last 12 / previous 12 (recounted with pandas): BNO | Palestinian Authority Travel Document (+ travel ban) | no flag",
+    `${bno.lines.join(" | ")} || ${pa.lines.join(" | ")} || ${bflags.flagCode(bno.title)} ${bflags.flagCode(pa.title)}`,
+    "British National Overseas (Hong Kong) Passport, F1, last 12 months (Mar 2025 – Feb 2026): 10 | Previous 12 months (Mar 2024 – Feb 2025): 24 · change — (low volume) || Palestinian Authority Travel Document, F1, last 12 months (Mar 2025 – Feb 2026): 83 | Previous 12 months (Mar 2024 – Feb 2025): 290 · change ▼ 71.4% | Also covered by the travel ban (Proclamation 10998, from 1 Jan 2026): student and exchange visas suspended. || null null",
+  );
+  check(
+    "special categories without the nationality table: says the data isn't available yet",
+    bt.runTool("special_category", oldCtx, { name: "bno" }).status,
+    "not-in-data",
+  );
+  check(
+    "tour: one line and one Open button per tab",
+    bt.runTool("navigation", ctxF1, { topic: "tour" }).actions.map((a) => a.link.tab).join(","),
+    tabIds.join(","),
+  );
+  check(
+    "navigation answers: tabs exist / at most 2 sentences each",
+    `${bnav.NAV_TOPICS.every((t) => tabIds.includes(t.tab))} / ${bnav.NAV_TOPICS.filter((t) => t.text.split(/(?<=[.!?])\s+(?=[A-Z"])/).length > 2).map((t) => t.id).join(", ") || "all"}`,
+    "true / all",
+  );
+  // docs/USER_GUIDE.md quotes the Bobcat's wording, so the guide and the Bobcat can't drift apart.
+  const guideText = (await readFile(path.join(ROOT, "docs/USER_GUIDE.md"), "utf8")).replace(/\s+/g, " ");
+  const defText = (id) => bdefs.DEFINITIONS.find((d) => d.id === id).text;
+  const historySentences = defText("history-labels").split(/(?<=\.) /).slice(1);
+  const quotedInGuide = [
+    ...bnav.NAV_TOPICS.map((t) => [`navigation ${t.id}`, t.text]),
+    ...["categories", "last-12-months", "nationals", "issued-in", "recovery", "trend", "peak-month", "downturn", "vs-world"].map((id) => [`definition ${id}`, defText(id)]),
+    ...historySentences.map((sentence, i) => [`history label ${i + 1}`, sentence]),
+  ];
+  check(
+    `USER_GUIDE.md quotes every navigation.ts answer, the history labels and ${quotedInGuide.length - bnav.NAV_TOPICS.length - historySentences.length} definitions word for word (missing)`,
+    quotedInGuide.filter(([, text]) => !guideText.includes(text.replace(/\s+/g, " "))).map(([label]) => label).join(", ") || "none",
+    "none",
+  );
+  const flagSet = createRequire(path.join(ROOT, "package.json"))("country-flag-icons/string/3x2");
+  const noFlag = mk.controlCountries(data).filter((c) => !bflags.flagCode(c));
+  check(
+    "flags: every Country control country has a flag code in country-flag-icons (except) | codes missing from the package",
+    `${noFlag.join(", ")} | ${Object.values(bflags.FLAG_CODES).filter((c) => !flagSet[c]).length}`,
+    "Serbia and Montenegro | 0",
+  );
+  check(
+    "greetings: countries not in the dashboard (typos) | countries with a greeting",
+    `${Object.keys(bgreet.GREETINGS).filter((c) => !mk.controlCountries(data).includes(c)).join(", ") || "none"} | ${Object.keys(bgreet.GREETINGS).length}`,
+    `none | ${Object.keys(bgreet.GREETINGS).length}`,
+  );
+  check(
+    "greetings changed by the owner: Kenya / Tanzania / Ukraine / Bangladesh | India",
+    ["Kenya", "Tanzania", "Ukraine", "Bangladesh", "India"].map((c) => bgreet.greetingFor(c).text).join(" / "),
+    "Habari / Habari / Dobryi den / Assalamu alaikum / Namaste",
+  );
+  check(
+    "country names in a sentence: Niger vs Nigeria, Guinea vs Papua New Guinea, Dominica vs Dominican Republic, China's",
+    ["Niger and Nigeria", "Guinea, Papua New Guinea", "Dominican students and Dominica", "Is China's decline structural?"].map((t) => bcountries.findPlaces(t, mk.controlCountries(data)).map((p) => p.country).join("+")).join(" | "),
+    "Niger+Nigeria | Guinea+Papua New Guinea | Dominican Republic+Dominica | China",
+  );
+
+  console.log("\n  Regions  (REGION_MAP: every country, UN geoscheme onto the dashboard's regions plus Central Asia; the original 48 unchanged; counts recounted with pandas)");
+  const constantsJs = await import(pathToFileURL(path.join(outDir, "constants.js")).href);
+  const allNames = [...new Set([...postsMonthly.map((r) => r.country), ...annualCountry.map((r) => r.country), ...nationality.map((r) => r.country)])].sort();
+  check(
+    "regions: names in the data without a region (only the special categories)",
+    allNames.filter((c) => !constantsJs.REGION_MAP[c]).join(", "),
+    "British National Overseas (Hong Kong) Passport, Non-Nationality Based Issuances, Palestinian Authority Travel Document, Unknown",
+  );
+  check(
+    "regions: the original 48 assignments are unchanged",
+    ["India", "Nepal", "Bangladesh", "Pakistan", "Sri Lanka", "China", "South Korea", "Japan", "Taiwan", "Hong Kong", "Vietnam", "Thailand", "Philippines", "Indonesia", "Malaysia", "Singapore", "Nigeria", "Ghana", "Kenya", "South Africa", "Zimbabwe", "Ethiopia", "Egypt", "Morocco", "Brazil", "Colombia", "Mexico", "Peru", "Argentina", "Chile", "Ecuador", "Jamaica", "United Kingdom", "France", "Germany", "Spain", "Italy", "Netherlands", "Ireland", "Turkey", "Saudi Arabia", "United Arab Emirates", "Jordan", "Lebanon", "Qatar", "Canada", "Australia", "New Zealand"].map((c) => `${c}=${constantsJs.REGION_MAP[c]}`).join("; "),
+    "India=South Asia; Nepal=South Asia; Bangladesh=South Asia; Pakistan=South Asia; Sri Lanka=South Asia; China=East Asia; South Korea=East Asia; Japan=East Asia; Taiwan=East Asia; Hong Kong=East Asia; Vietnam=SE Asia; Thailand=SE Asia; Philippines=SE Asia; Indonesia=SE Asia; Malaysia=SE Asia; Singapore=SE Asia; Nigeria=Africa; Ghana=Africa; Kenya=Africa; South Africa=Africa; Zimbabwe=Africa; Ethiopia=Africa; Egypt=Africa; Morocco=Africa; Brazil=Latin America; Colombia=Latin America; Mexico=Latin America; Peru=Latin America; Argentina=Latin America; Chile=Latin America; Ecuador=Latin America; Jamaica=Latin America; United Kingdom=Europe; France=Europe; Germany=Europe; Spain=Europe; Italy=Europe; Netherlands=Europe; Ireland=Europe; Turkey=Europe; Saudi Arabia=Middle East; United Arab Emirates=Middle East; Jordan=Middle East; Lebanon=Middle East; Qatar=Middle East; Canada=N. America / Oceania; Australia=N. America / Oceania; New Zealand=N. America / Oceania",
+  );
+  const regionCounts = (rows) => {
+    const counts = {};
+    for (const r of rows) counts[r.region] = (counts[r.region] ?? 0) + 1;
+    return Object.entries(counts).sort().map(([k, v]) => `${k} ${v}`).join(" / ");
+  };
+  check(
+    "Markets rows per region, F1, default view (last 12 months, min 100) — was Africa 8, Europe 8, Other 73",
+    regionCounts(mk.marketsInScope(mRowsF1, 100, "All")),
+    "Africa 22 / Central Asia 4 / East Asia 7 / Europe 40 / Latin America 22 / Middle East 10 / N. America / Oceania 3 / SE Asia 8 / South Asia 5",
+  );
+  check(
+    "regions decided by the owner: Central Asia | Iran | Armenia, Azerbaijan, Georgia, Cyprus",
+    `${["Kazakhstan", "Kyrgyzstan", "Tajikistan", "Turkmenistan", "Uzbekistan"].map((c) => constantsJs.REGION_MAP[c]).join(", ")} | ${constantsJs.REGION_MAP.Iran} | ${["Armenia", "Azerbaijan", "Georgia", "Cyprus"].map((c) => constantsJs.REGION_MAP[c]).join(", ")}`,
+    "Central Asia, Central Asia, Central Asia, Central Asia, Central Asia | Middle East | Europe, Europe, Europe, Europe",
+  );
+  check(
+    "Central Asia / South Asia / Middle East markets, F1, default view, largest first (recounted with pandas)",
+    ["Central Asia", "South Asia", "Middle East"].map((reg) => mk.sortMarkets(mk.marketsInScope(mRowsF1, 100, reg), "All", "Nationals").map((r) => r.country).join(", ")).join(" | "),
+    "Kazakhstan, Kyrgyzstan, Uzbekistan, Tajikistan | India, Bangladesh, Nepal, Pakistan, Sri Lanka | Saudi Arabia, Israel, Kuwait, United Arab Emirates, Jordan, Lebanon, Iran, Oman, Iraq, Qatar",
+  );
+  check(
+    "regions don't touch the advice: Markets fingerprints F1 | F1 + J1 (unchanged)",
+    `${fingerprint(sigF1)} | ${fingerprint(mk.marketSignals(data, "Both", mk.controlCountries(data)))}`,
+    "9013461fccd7 | c332e7aeb6b1",
+  );
+  const africaGrowing = ask("Top 5 growing markets in Africa").cards[0];
+  check(
+    "none grew: Top 5 growing markets in Africa lists the smallest declines (recounted with pandas)",
+    africaGrowing.lines.join(" | "),
+    "None of the 22 Africa markets grew in the last 12 months; the smallest declines were: | 1. Rwanda: 472 · ▼ 2.5% · Watch | 2. Mozambique: 123 · ▼ 9.6% · Watch | 3. South Africa: 1,059 · ▼ 21.4% · Watch | 4. Madagascar: 125 · ▼ 26.5% · Watch | 5. Kenya: 1,334 · ▼ 29.6% · Watch",
+  );
+
+  console.log("\n  Renamed consulates  (POST_ALIASES: Nur-Sultan → Astana, Kuwait → Kuwait City; expected values recounted with pandas from the raw by-post CSV)");
+  const postHistory = (post) => {
+    const rows = postsMonthly.filter((r) => r.post === post);
+    const months = new Set(rows.map((r) => r.monthIndex));
+    const span = rows.map((r) => r.year * 100 + r.month);
+    const f1Total = sum(rows.filter((r) => r.visa === "F1"));
+    const j1Total = sum(rows.filter((r) => r.visa === "J1"));
+    return `${rows.length} rows, ${Math.min(...span)}–${Math.max(...span)}, ${months.size} months, F1 ${f1Total}, J1 ${j1Total}`;
+  };
+  const f1ByYear = (post) => {
+    const byYear = new Map();
+    for (const r of postsMonthly) if (r.post === post && r.visa === "F1") byYear.set(r.year, (byYear.get(r.year) ?? 0) + r.issuances);
+    return [...byYear].sort((a, b) => a[0] - b[0]).map(([y, v]) => `${y} ${v}`).join(", ");
+  };
+  check("consulates in the snapshot (was 228 before Nur-Sultan and Kuwait were merged)", new Set(postsMonthly.map((r) => r.post)).size, 226);
+  check("Astana: full history (Astana + Nur-Sultan)", postHistory("Astana"), "207 rows, 201703–202602, 104 months, F1 6850, J1 12753");
+  check("Kuwait City: full history (Kuwait City + Kuwait)", postHistory("Kuwait City"), "207 rows, 201703–202602, 107 months, F1 16227, J1 1288");
+  check(
+    "Astana | Kuwait City: F1 by calendar year",
+    `${f1ByYear("Astana")} | ${f1ByYear("Kuwait City")}`,
+    "2017 473, 2018 499, 2019 514, 2020 333, 2021 1066, 2022 943, 2023 886, 2024 1109, 2025 980, 2026 47 | 2017 2695, 2018 2201, 2019 1945, 2020 1136, 2021 2223, 2022 1855, 2023 1811, 2024 1557, 2025 710, 2026 94",
+  );
+  const renamed = snapshot.validation.postsMonthly.renamedPosts ?? {};
+  check(
+    "old labels gone from the posts, listed as renamed: Kuwait | Nur-Sultan",
+    ["Kuwait", "Nur-Sultan"].map((p) => `${postsMonthly.some((r) => r.post === p) ? "still a post" : "merged"} → ${renamed[p]?.to} (${renamed[p]?.rows} rows, ${renamed[p]?.issuances})`).join(" | "),
+    "merged → Kuwait City (62 rows, 6837) | merged → Astana (73 rows, 6422)",
+  );
+  // A warning, not a failure: two consulates in one country that never report in the same month
+  // may be one post under an old and a new name.
+  const NOT_RENAMES = [["Chengdu", "Wuhan"], ["Tijuana", "Tijuana Tpf"]];
+  const postMonths = new Map();
+  const postCountry = new Map();
+  for (const r of postsMonthly) {
+    if (!postMonths.has(r.post)) postMonths.set(r.post, new Set());
+    postMonths.get(r.post).add(r.monthIndex);
+    postCountry.set(r.post, r.country);
+  }
+  const postNamesSorted = [...postMonths.keys()].sort();
+  const possibleRenames = [];
+  for (let i = 0; i < postNamesSorted.length; i += 1) {
+    for (let j = i + 1; j < postNamesSorted.length; j += 1) {
+      const [x, y] = [postNamesSorted[i], postNamesSorted[j]];
+      if (postCountry.get(x) !== postCountry.get(y)) continue;
+      if (NOT_RENAMES.some(([a, b]) => (a === x && b === y) || (a === y && b === x))) continue;
+      const other = postMonths.get(y);
+      if (![...postMonths.get(x)].some((m) => other.has(m))) possibleRenames.push(`${x} / ${y} (${postCountry.get(x)})`);
+    }
+  }
+  for (const pair of possibleRenames) {
+    console.log(`    WARN  Possible renamed consulate: ${pair}. If it's a rename, add it to POST_ALIASES; if not, add the pair to the allow-list.`);
+  }
+  console.log(`    info  possible renamed consulates (same country, no overlapping months, not on the allow-list): ${possibleRenames.length}`);
 
   await rm(outDir, { recursive: true, force: true });
 

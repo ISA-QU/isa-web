@@ -8,6 +8,14 @@ Done so far: 7 post renames (Feature 0), broken tabs removed (1), honest header 
 12-month comparisons and fixed tab labels (3), periods/provisional FY2025/seasonality (4),
 one shared country and F1 defaults (5a).
 
+
+## Priorities (November 2026)
+
+The full ordered list is in [RUNBOOK.md, section 12](RUNBOOK.md#12-backlog-in-priority-order). The first two:
+
+1. Restore AWS access, then deploy the updated `rebuild-dashboard` Lambda (including the consulate aliases), merge through a pull request and `npm run deploy`.
+2. Trip planner tab: one page per country combining restriction status, last-12-months trend, country vs world, outreach window and top consulate cities, with a printable one-page brief (after AWS is restored).
+
 ## 5b · Shared control bar
 
 - [x] One control bar shared by every tab: Country, Visa (F1 / J1 / F1 + J1, default F1) and Period.
@@ -136,7 +144,7 @@ After launch.
 
 ## Future: automated monthly data updates
 
-After launch; for Koushik (AWS).
+After launch; for the IT/AWS contact.
 
 - [ ] Weekly check of the State Department's monthly nonimmigrant visa (NIV) statistics page for a new month.
 - [ ] When one appears, download both PDFs (by Nationality and by Post) and run the existing parser.

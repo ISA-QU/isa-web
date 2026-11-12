@@ -1768,6 +1768,20 @@ async function main() {
     `${bnav.NAV_TOPICS.every((t) => tabIds.includes(t.tab))} / ${bnav.NAV_TOPICS.filter((t) => t.text.split(/(?<=[.!?])\s+(?=[A-Z"])/).length > 2).map((t) => t.id).join(", ") || "all"}`,
     "true / all",
   );
+  // docs/USER_GUIDE.md quotes the Bobcat's wording, so the guide and the Bobcat can't drift apart.
+  const guideText = (await readFile(path.join(ROOT, "docs/USER_GUIDE.md"), "utf8")).replace(/\s+/g, " ");
+  const defText = (id) => bdefs.DEFINITIONS.find((d) => d.id === id).text;
+  const historySentences = defText("history-labels").split(/(?<=\.) /).slice(1);
+  const quotedInGuide = [
+    ...bnav.NAV_TOPICS.map((t) => [`navigation ${t.id}`, t.text]),
+    ...["categories", "last-12-months", "nationals", "issued-in", "recovery", "trend", "peak-month", "downturn", "vs-world"].map((id) => [`definition ${id}`, defText(id)]),
+    ...historySentences.map((sentence, i) => [`history label ${i + 1}`, sentence]),
+  ];
+  check(
+    `USER_GUIDE.md quotes every navigation.ts answer, the history labels and ${quotedInGuide.length - bnav.NAV_TOPICS.length - historySentences.length} definitions word for word (missing)`,
+    quotedInGuide.filter(([, text]) => !guideText.includes(text.replace(/\s+/g, " "))).map(([label]) => label).join(", ") || "none",
+    "none",
+  );
   const flagSet = createRequire(path.join(ROOT, "package.json"))("country-flag-icons/string/3x2");
   const noFlag = mk.controlCountries(data).filter((c) => !bflags.flagCode(c));
   check(

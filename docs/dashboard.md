@@ -1,5 +1,7 @@
 # Recruitment Intelligence Dashboard
 
+How to run it month to month: [RUNBOOK.md](RUNBOOK.md). How to use it: [USER_GUIDE.md](USER_GUIDE.md).
+
 The dashboard at `/` (and `/dashboard`) is a port of the Streamlit app that lived in
 `dashboard/`. It renders seven of the original ten tabs, now fed from three Excel workbooks
 through two Lambdas.
@@ -775,7 +777,7 @@ Run `npm run dashboard:verify` after each change; it runs every sample question.
   (never redraw it). `BobcatIcon` is only the fallback, shown until the image loads or if it
   fails to load.
 
-## Handoff notes for deployment (Koushik)
+## Handoff notes for deployment (IT/AWS contact)
 
 The branch `dev/dashboard-improvements` changes the **dashboard pages** and the
 **`rebuild-dashboard` Lambda**. Nothing in AWS has been changed and nothing has been deployed
@@ -821,7 +823,7 @@ annual). Run the Test event `{}` and expect:
   response is about 190 KB base64, far below Lambda's 6 MB limit.
 
 The same raw files built locally (`npm run dashboard:data`) give an identical snapshot apart
-from `generatedAt`, and `npm run dashboard:verify` passes **388/388** on it.
+from `generatedAt`, and `npm run dashboard:verify` passes (all checks) on it.
 
 **How the site goes live:** `npm run deploy`, run by hand from an up-to-date `main` after the
 branch is merged. It builds the static site (`next build`; the `postbuild` step removes

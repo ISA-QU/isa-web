@@ -11,7 +11,7 @@ import { downloadReport } from "../lib/exportPdf";
 import { formatGpa } from "../lib/format";
 import { SchoolCard } from "../components/SchoolCard";
 import { asset } from "../lib/basePath";
-import { getTranscript, saveTranscript } from "../lib/api";
+import { deleteTranscript, findTranscript, getTranscript, saveTranscript } from "../lib/api";
 import { AccountMenu } from "../components/AccountMenu";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -57,12 +57,14 @@ export default function CalculatorClient() {
   const [schools, setSchools] = useState<School[]>(() => [makeInitialSchool()]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [hydrating, setHydrating] = useState(false);
+  // Whether the id in the URL has been loaded yet. Deriving "loading" from it
+  // beats a flag set inside the effect, which costs an extra render pass.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const hydrating = studentIdParam !== "" && loadedId !== studentIdParam;
 
   useEffect(() => {
     if (!studentIdParam) return;
     let cancelled = false;
-    setHydrating(true);
     getTranscript(studentIdParam)
       .then((res) => {
         if (cancelled || !res.snapshot) return;
@@ -73,7 +75,7 @@ export default function CalculatorClient() {
         if (!cancelled) setSaveMsg(`Load failed: ${e.message}`);
       })
       .finally(() => {
-        if (!cancelled) setHydrating(false);
+        if (!cancelled) setLoadedId(studentIdParam);
       });
     return () => {
       cancelled = true;
@@ -111,7 +113,11 @@ export default function CalculatorClient() {
     setStudent(initialStudent);
     setSchools([makeInitialSchool()]);
     setSaveMsg(null);
-    if (studentIdParam) router.replace("/calculator");
+    // Drop ?id= so this is a blank transcript again and returning to the URL
+    // later does not reload the student. `router.replace("/calculator")` leaves
+    // the query in place on this statically exported route; replaceState drops
+    // it and still syncs useSearchParams, so the load effect sees no id.
+    window.history.replaceState(null, "", window.location.pathname);
   };
 
   const updateSchool = (id: string, next: School) => {
@@ -150,6 +156,30 @@ export default function CalculatorClient() {
     setSaveMsg(null);
     const firstSchool = schools[0];
     try {
+      // Saving under an ID we did not open replaces whatever is stored there,
+      // so look it up first: a mistyped QU ID would otherwise quietly overwrite
+      // another student's transcript.
+      if (studentId !== studentIdParam) {
+        const existing = await findTranscript(studentId);
+        if (existing) {
+          const owner = existing.meta?.name?.trim();
+          const savedAt = existing.meta?.updatedAt
+            ? new Date(existing.meta.updatedAt).toLocaleDateString()
+            : null;
+          const describe = `${owner ? `a transcript for ${owner}` : "a transcript"}${
+            savedAt ? `, saved ${savedAt}` : ""
+          }`;
+          const proceed = confirm(
+            `QU ID ${studentId} already has ${describe}.\n\n` +
+              "Saving replaces it. Check the QU ID before continuing.",
+          );
+          if (!proceed) {
+            setSaveMsg(`Not saved. QU ID ${studentId} is already in use.`);
+            return;
+          }
+        }
+      }
+
       await saveTranscript({
         studentId,
         name: student.name,
@@ -167,7 +197,30 @@ export default function CalculatorClient() {
         })),
         snapshot: { student, schools, savedAt: Date.now() },
       });
-      setSaveMsg("Saved.");
+      // A changed QU ID writes a new record and leaves the one we opened behind,
+      // so offer to remove it rather than silently keeping two copies.
+      let message = "Saved.";
+      if (studentIdParam && studentIdParam !== studentId) {
+        const remove = confirm(
+          `Saved as ${studentId}.\n\n` +
+            `This transcript was opened as ${studentIdParam}, and that record still ` +
+            "exists. Delete the old one?",
+        );
+        if (remove) {
+          try {
+            await deleteTranscript(studentIdParam);
+            message = `Saved as ${studentId}. Deleted the old record ${studentIdParam}.`;
+          } catch (e) {
+            message =
+              `Saved as ${studentId}, but deleting ${studentIdParam} failed: ` +
+              `${e instanceof Error ? e.message : String(e)}`;
+          }
+        } else {
+          message = `Saved as ${studentId}. Kept the old record ${studentIdParam}.`;
+        }
+      }
+      setSaveMsg(message);
+
       if (studentIdParam !== studentId) {
         router.replace(`/calculator?id=${encodeURIComponent(studentId)}`);
       }

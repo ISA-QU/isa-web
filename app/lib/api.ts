@@ -45,6 +45,16 @@ function ensureBase(): string {
   return API_BASE_URL;
 }
 
+/** An HTTP error from the API, carrying the status so callers can act on 404. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${ensureBase()}${path}`, {
     ...init,
@@ -60,7 +70,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    throw new ApiError(`${res.status} ${res.statusText}: ${text}`, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -76,6 +86,22 @@ export const getTranscript = (studentId: string) =>
   request<{ meta: TranscriptSummary; snapshot: TranscriptSnapshot | null }>(
     `/transcripts/${encodeURIComponent(studentId)}`,
   );
+
+/**
+ * The stored transcript for a QU ID, or null when that ID is free.
+ *
+ * Used to warn before a save overwrites someone else's record. It is advisory
+ * only: nothing stops a simultaneous save under the same ID, which would need a
+ * conditional write in the upload-transcript Lambda.
+ */
+export const findTranscript = async (studentId: string) => {
+  try {
+    return await getTranscript(studentId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+};
 
 export const saveTranscript = (payload: {
   studentId: string;

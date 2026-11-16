@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Course, GradingScale } from "../lib/types";
 import type { ConvertedCourse } from "../lib/gpa";
 import { sanitizeByKind, sanitizeNumeric } from "../lib/input";
@@ -21,8 +21,17 @@ const blankCourse = (): Course => ({
   grade: "",
 });
 
+/** The entry columns, in their default left-to-right order. */
+type ColumnKey = "semester" | "name" | "credits" | "grade";
+const DEFAULT_ORDER: ColumnKey[] = ["semester", "name", "credits", "grade"];
+
 export function CoursesTable({ courses, converted, scale, onChange }: Props) {
   const [bulkCount, setBulkCount] = useState("5");
+  // Column order is per table, so one school can be arranged to match the
+  // transcript being typed from without disturbing the others.
+  const [order, setOrder] = useState<ColumnKey[]>(DEFAULT_ORDER);
+  const [dragging, setDragging] = useState<ColumnKey | null>(null);
+  const [picked, setPicked] = useState<ColumnKey | null>(null);
 
   const update = (id: string, patch: Partial<Course>) => {
     if (patch.semester !== undefined) patch.semester = sanitizeNumeric(patch.semester);
@@ -48,6 +57,23 @@ export function CoursesTable({ courses, converted, scale, onChange }: Props) {
     onChange(next);
   };
 
+  /** Exchanges two columns. Dropping or clicking a pair both land here. */
+  const swapColumns = (a: ColumnKey, b: ColumnKey) => {
+    if (a === b) return;
+    setOrder((prev) => prev.map((key) => (key === a ? b : key === b ? a : key)));
+  };
+
+  // First click picks a column up, second click swaps the two. Clicking the
+  // picked column again puts it back down.
+  const handleHeaderClick = (key: ColumnKey) => {
+    if (picked === null) {
+      setPicked(key);
+      return;
+    }
+    swapColumns(picked, key);
+    setPicked(null);
+  };
+
   const convertedById = new Map(converted.map((c) => [c.course.id, c]));
 
   const gradePlaceholder =
@@ -62,23 +88,140 @@ export function CoursesTable({ courses, converted, scale, onChange }: Props) {
   const cellInput =
     "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-[#0F2D52] focus:outline-none focus:ring-2 focus:ring-[#0F2D52]/20";
 
+  const columns: Record<
+    ColumnKey,
+    { header: string; width: string; cell: (course: Course) => ReactNode }
+  > = {
+    semester: {
+      header: "Sem/Year",
+      width: "w-28",
+      cell: (c) => (
+        <input
+          inputMode="numeric"
+          className={cellInput}
+          value={c.semester}
+          onChange={(e) => update(c.id, { semester: e.target.value })}
+          placeholder="1"
+          aria-label="Semester or year"
+        />
+      ),
+    },
+    name: {
+      header: "Course",
+      width: "",
+      cell: (c) => (
+        <input
+          className={cellInput}
+          value={c.name}
+          onChange={(e) => update(c.id, { name: e.target.value })}
+          placeholder="Course name"
+          aria-label="Course name"
+        />
+      ),
+    },
+    credits: {
+      header: "Credits",
+      width: "w-28",
+      cell: (c) => (
+        <input
+          inputMode="decimal"
+          className={cellInput}
+          value={c.credits}
+          onChange={(e) => update(c.id, { credits: e.target.value })}
+          placeholder="3"
+          aria-label="Credits"
+        />
+      ),
+    },
+    grade: {
+      header: "Grade",
+      width: "w-32",
+      cell: (c) => (
+        <input
+          className={cellInput}
+          value={c.grade}
+          onChange={(e) => update(c.id, { grade: e.target.value })}
+          placeholder={gradePlaceholder}
+          aria-label="Foreign grade"
+        />
+      ),
+    },
+  };
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-[#0F2D52]">Courses</h2>
       <p className="mt-1 text-sm text-slate-500">
         Semester/year and credits accept numbers only. Grade accepts the {scale.foreignKind} format
-        set above. Use the arrows to reorder.
+        set above. Use the arrows to reorder rows, and drag a column heading onto another — or click
+        two headings — to swap those columns.
       </p>
+      {picked && (
+        <p className="mt-1 text-xs font-semibold text-[#0F2D52]">
+          Moving {columns[picked].header}: click the heading to swap it with, or click{" "}
+          {columns[picked].header} again to cancel.
+        </p>
+      )}
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50/60">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-3 py-3 font-semibold w-12"></th>
-              <th className="px-3 py-3 font-semibold w-24">Sem/Year</th>
-              <th className="px-3 py-3 font-semibold">Course</th>
-              <th className="px-3 py-3 font-semibold w-24">Credits</th>
-              <th className="px-3 py-3 font-semibold w-28">Grade</th>
+              {order.map((key) => {
+                const column = columns[key];
+                const isPicked = picked === key;
+                const isDropTarget = dragging !== null && dragging !== key;
+                return (
+                  <th
+                    key={key}
+                    draggable
+                    onDragStart={() => setDragging(key)}
+                    onDragEnd={() => setDragging(null)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragging) swapColumns(dragging, key);
+                      setDragging(null);
+                      setPicked(null);
+                    }}
+                    className={`px-3 py-3 font-semibold ${column.width}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleHeaderClick(key)}
+                      title="Drag onto another column, or click two columns, to swap them"
+                      aria-label={
+                        isPicked
+                          ? `${column.header} column, picked up. Click another column to swap, or click again to cancel.`
+                          : picked
+                            ? `Swap ${columns[picked].header} with ${column.header}`
+                            : `${column.header} column. Click to pick it up, then click another column to swap.`
+                      }
+                      className={`flex w-full cursor-grab items-center gap-1.5 rounded px-1.5 py-1 text-left uppercase tracking-wide transition active:cursor-grabbing ${
+                        isPicked
+                          ? "bg-[#0F2D52] text-white"
+                          : "hover:bg-[#0F2D52]/10 hover:text-[#0F2D52]"
+                      } ${isDropTarget ? "ring-1 ring-[#0F2D52]/40" : ""}`}
+                    >
+                      {column.header}
+                      <svg
+                        viewBox="0 0 10 16"
+                        fill="currentColor"
+                        aria-hidden
+                        className="h-3 w-2 shrink-0 opacity-40"
+                      >
+                        <circle cx="2.5" cy="3" r="1.3" />
+                        <circle cx="7.5" cy="3" r="1.3" />
+                        <circle cx="2.5" cy="8" r="1.3" />
+                        <circle cx="7.5" cy="8" r="1.3" />
+                        <circle cx="2.5" cy="13" r="1.3" />
+                        <circle cx="7.5" cy="13" r="1.3" />
+                      </svg>
+                    </button>
+                  </th>
+                );
+              })}
               <th className="px-3 py-3 font-semibold w-24">US</th>
               <th className="px-3 py-3 font-semibold w-24">Pts</th>
               <th className="px-3 py-3 w-10"></th>
@@ -109,40 +252,11 @@ export function CoursesTable({ courses, converted, scale, onChange }: Props) {
                       </button>
                     </div>
                   </td>
-                  <td className="px-3 py-2">
-                    <input
-                      inputMode="numeric"
-                      className={cellInput}
-                      value={c.semester}
-                      onChange={(e) => update(c.id, { semester: e.target.value })}
-                      placeholder="1"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      className={cellInput}
-                      value={c.name}
-                      onChange={(e) => update(c.id, { name: e.target.value })}
-                      placeholder="Course name"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      inputMode="decimal"
-                      className={cellInput}
-                      value={c.credits}
-                      onChange={(e) => update(c.id, { credits: e.target.value })}
-                      placeholder="3"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      className={cellInput}
-                      value={c.grade}
-                      onChange={(e) => update(c.id, { grade: e.target.value })}
-                      placeholder={gradePlaceholder}
-                    />
-                  </td>
+                  {order.map((key) => (
+                    <td key={key} className="px-3 py-2">
+                      {columns[key].cell(c)}
+                    </td>
+                  ))}
                   <td className="px-3 py-2 text-sm font-medium text-slate-700">
                     {cc?.usGrade ?? "—"}
                   </td>
@@ -150,9 +264,7 @@ export function CoursesTable({ courses, converted, scale, onChange }: Props) {
                     {cc?.gpaPoints !== undefined && cc?.gpaPoints !== null
                       ? cc.gpaPoints.toFixed(2)
                       : "—"}
-                    {cc?.error && (
-                      <div className="text-xs text-rose-600">{cc.error}</div>
-                    )}
+                    {cc?.error && <div className="text-xs text-rose-600">{cc.error}</div>}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button

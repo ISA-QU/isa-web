@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { asset } from "../lib/basePath";
@@ -18,31 +18,38 @@ import { formatGpa } from "../lib/format";
 export default function TranscriptsPage() {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<TranscriptSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  // The first list is already on its way as this renders, so start in the
+  // loading state rather than flashing "no transcripts" for a moment.
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = (q: string) => {
-    setLoading(true);
-    setError(null);
-    listTranscripts(q || undefined, 20)
-      .then((r) => setItems(r.items))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  };
-
+  // One effect covers the first load and every search. It previously took two,
+  // which fetched the list twice on open. The timer debounces typing and fires
+  // straight away when the box is empty.
   useEffect(() => {
-    load("");
-  }, []);
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => load(query), 250);
+    let cancelled = false;
+    const timer = setTimeout(
+      () => {
+        setLoading(true);
+        setError(null);
+        listTranscripts(query || undefined, 20)
+          .then((r) => {
+            if (!cancelled) setItems(r.items);
+          })
+          .catch((e) => {
+            if (!cancelled) setError(e.message);
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+      },
+      query ? 250 : 0,
+    );
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      cancelled = true;
+      clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   const handleDelete = async (id: string, name: string) => {

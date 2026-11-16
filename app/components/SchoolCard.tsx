@@ -39,6 +39,7 @@ export function SchoolCard({
 
   const displayTitle = school.name.trim() || `School ${index + 1}`;
   const displayCountry = school.country.trim();
+  const courseCount = `${school.courses.length} course${school.courses.length === 1 ? "" : "s"}`;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -74,8 +75,8 @@ export function SchoolCard({
             </div>
             <div className="text-xs text-slate-500">
               {gpa !== null
-                ? `School GPA ${formatGpa(gpa)} · ${totalCredits.toFixed(2)} credits`
-                : `${school.courses.length} course${school.courses.length === 1 ? "" : "s"}`}
+                ? `School GPA ${formatGpa(gpa)} · ${totalCredits.toFixed(2)} credits · ${courseCount}`
+                : courseCount}
             </div>
           </div>
         </button>

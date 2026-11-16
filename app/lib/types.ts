@@ -12,6 +12,8 @@ export interface GradingScale {
   foreignKind: ForeignGradeKind;
   usKind: USScaleKind;
   rows: ScaleRow[];
+  /** Country of the saved scale this came from; may differ from the school's. */
+  country?: string;
 }
 
 export interface Course {

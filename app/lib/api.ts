@@ -135,6 +135,16 @@ export const getGradeScale = (instituteId: string) =>
     `/gradescales/${encodeURIComponent(instituteId)}`,
   );
 
+/** The saved scale for an institute ID, or null when that ID is free. */
+export const findGradeScale = async (instituteId: string) => {
+  try {
+    return await getGradeScale(instituteId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+};
+
 export const saveGradeScale = (scale: Omit<SavedGradeScale, "updatedAt">) =>
   request<{ ok: true; item: SavedGradeScale }>(`/gradescales`, {
     method: "POST",

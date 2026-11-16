@@ -5,7 +5,7 @@ import type { GradingScale, ScaleRow, ForeignGradeKind } from "../lib/types";
 import { sanitizeByKind } from "../lib/input";
 import defaultLetterScale from "../lib/defaultLetterScale.json";
 import altLetterScale from "../lib/altLetterScale.json";
-import { deleteGradeScale, saveGradeScale } from "../lib/api";
+import { deleteGradeScale, findGradeScale, saveGradeScale } from "../lib/api";
 
 interface GpaEntry {
   id: string;
@@ -24,12 +24,21 @@ interface Props {
   onInstituteIdChange?: (id: string) => void;
 }
 
-const kebab = (s: string) =>
-  s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+/**
+ * A fresh key for the library. It is only ever a storage key, never shown as a
+ * label, so it is random rather than made from the name: names repeat, change
+ * and carry accents or non-Latin scripts, and a key must stay put for the life
+ * of the record. An existing scale keeps its key, so editing updates in place.
+ */
+async function newInstituteId(): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    const candidate = `gs-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+    if (!(await findGradeScale(candidate))) return candidate;
+  }
+  return `gs-${Date.now().toString(16)}${Math.floor(Math.random() * 1e6).toString(16)}`;
+}
 
 type Preset = "standard" | "alternate" | "custom";
 
@@ -66,7 +75,7 @@ export function ScaleEditor({
   const [editing, setEditing] = useState(false);
   const [entries, setEntries] = useState<GpaEntry[]>([]);
   const [saveOpen, setSaveOpen] = useState(false);
-  const [saveForm, setSaveForm] = useState({ instituteId: "", name: "", country: "" });
+  const [saveForm, setSaveForm] = useState({ name: "", country: "" });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
@@ -90,11 +99,28 @@ export function ScaleEditor({
     }
   };
 
+  const handleClearScale = () => {
+    if (
+      !confirm(
+        "Clear this grading scale? The foreign-to-US grades and the scale name go, " +
+          "the courses and their grades stay.",
+      )
+    ) {
+      return;
+    }
+    onChange({
+      ...scale,
+      name: "",
+      country: "",
+      rows: [{ id: uid(), foreignGrade: "", usGrade: "" }],
+    });
+    onInstituteIdChange?.("");
+  };
+
   const openSave = () => {
     setSaveForm({
-      instituteId: instituteId || kebab(schoolName) || "",
       name: scale.name || schoolName || "",
-      country: schoolCountry || "",
+      country: scale.country || schoolCountry || "",
     });
     setSaveError(null);
     setSaveOk(false);
@@ -102,8 +128,9 @@ export function ScaleEditor({
   };
 
   const handleSaveScale = async () => {
-    if (!saveForm.instituteId.trim()) {
-      setSaveError("instituteId is required");
+    const name = saveForm.name.trim();
+    if (!name) {
+      setSaveError("Give the scale a name");
       return;
     }
     setSaving(true);
@@ -117,15 +144,20 @@ export function ScaleEditor({
       scaleMap[f] = u;
     }
     try {
+      // Keep the key of a scale that is already in the library, so editing it
+      // updates that record instead of leaving an orphan behind.
+      const id = instituteId || (await newInstituteId());
       await saveGradeScale({
-        instituteId: saveForm.instituteId.trim(),
-        name: saveForm.name.trim(),
+        instituteId: id,
+        name,
         country: saveForm.country.trim(),
         foreignKind: scale.foreignKind,
         scale: scaleMap,
         letterToGpa,
       });
-      onInstituteIdChange?.(saveForm.instituteId.trim());
+      onInstituteIdChange?.(id);
+      // Keep the country on the scale so a later Update prefills it.
+      onChange({ ...scale, name, country: saveForm.country.trim() });
       setSaveOk(true);
       setTimeout(() => setSaveOpen(false), 800);
     } catch (e) {
@@ -327,6 +359,13 @@ export function ScaleEditor({
             </button>
           )}
           <button
+            onClick={handleClearScale}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+            title="Empty this scale so a new one can be typed or picked"
+          >
+            Clear scale
+          </button>
+          <button
             onClick={openSave}
             className="rounded-md border border-[#F1B82D] bg-[#F1B82D]/10 px-3 py-1.5 text-sm font-medium text-[#0F2D52] transition hover:bg-[#F1B82D]/30"
           >
@@ -342,20 +381,9 @@ export function ScaleEditor({
 
         {saveOpen && (
           <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               <label className="block text-xs">
-                <span className="font-medium text-slate-700">Institute ID</span>
-                <input
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-[#0F2D52] focus:outline-none focus:ring-1 focus:ring-[#0F2D52]/20"
-                  value={saveForm.instituteId}
-                  onChange={(e) =>
-                    setSaveForm({ ...saveForm, instituteId: e.target.value })
-                  }
-                  placeholder="us-common"
-                />
-              </label>
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">Name</span>
+                <span className="font-medium text-slate-700">Grading Scale Name</span>
                 <input
                   className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-[#0F2D52] focus:outline-none focus:ring-1 focus:ring-[#0F2D52]/20"
                   value={saveForm.name}
@@ -375,6 +403,16 @@ export function ScaleEditor({
                 />
               </label>
             </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              {instituteId ? (
+                <>
+                  Updating the scale stored as <span className="font-mono">{instituteId}</span>.
+                  Renaming it here keeps that record rather than making a second one.
+                </>
+              ) : (
+                "Saved as a new scale in the shared library, with its own ID."
+              )}
+            </p>
             <div className="mt-3 flex items-center justify-end gap-2 text-xs">
               {saveError && <span className="text-rose-600">{saveError}</span>}
               {saveOk && (

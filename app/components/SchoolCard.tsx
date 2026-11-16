@@ -6,10 +6,6 @@ import type { ConvertedCourse } from "../lib/gpa";
 import { formatGpa } from "../lib/format";
 import { ScaleEditor } from "./ScaleEditor";
 import { CoursesTable } from "./CoursesTable";
-import { ScaleSearch } from "./ScaleSearch";
-import type { SavedGradeScale } from "../lib/api";
-
-const uid = () => Math.random().toString(36).slice(2, 10);
 
 interface Props {
   school: School;
@@ -18,7 +14,8 @@ interface Props {
   gpa: number | null;
   totalCredits: number;
   defaultExpanded?: boolean;
-  onChange: (school: School) => void;
+  /** Takes an updater, not a value: two updates in one tick must not overwrite each other. */
+  onChange: (update: (school: School) => School) => void;
   onRemove: () => void;
 }
 
@@ -97,7 +94,10 @@ export function SchoolCard({
               <input
                 className={inputCls}
                 value={school.name}
-                onChange={(e) => onChange({ ...school, name: e.target.value })}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  onChange((s) => ({ ...s, name }));
+                }}
                 placeholder="e.g. Quinnipiac University"
               />
             </label>
@@ -106,37 +106,14 @@ export function SchoolCard({
               <input
                 className={inputCls}
                 value={school.country}
-                onChange={(e) => onChange({ ...school, country: e.target.value })}
+                onChange={(e) => {
+                  const country = e.target.value;
+                  onChange((s) => ({ ...s, country }));
+                }}
                 placeholder="USA"
               />
             </label>
           </div>
-
-          <ScaleSearch
-            onPick={(saved: SavedGradeScale) => {
-              const hasLetterMap =
-                saved.letterToGpa &&
-                typeof saved.letterToGpa === "object" &&
-                Object.keys(saved.letterToGpa).length > 0;
-              onChange({
-                ...school,
-                instituteId: saved.instituteId,
-                scale: {
-                  ...school.scale,
-                  name: saved.name,
-                  foreignKind: saved.foreignKind,
-                  rows: Object.entries(saved.scale || {}).map(([f, u]) => ({
-                    id: uid(),
-                    foreignGrade: f,
-                    usGrade: u,
-                  })),
-                },
-                ...(hasLetterMap
-                  ? { letterToGpa: { ...saved.letterToGpa } }
-                  : {}),
-              });
-            }}
-          />
 
           <ScaleEditor
             scale={school.scale}
@@ -144,16 +121,16 @@ export function SchoolCard({
             schoolName={school.name}
             schoolCountry={school.country}
             instituteId={school.instituteId}
-            onChange={(scale) => onChange({ ...school, scale })}
-            onLetterToGpaChange={(letterToGpa) => onChange({ ...school, letterToGpa })}
-            onInstituteIdChange={(instituteId) => onChange({ ...school, instituteId })}
+            onChange={(scale) => onChange((s) => ({ ...s, scale }))}
+            onLetterToGpaChange={(letterToGpa) => onChange((s) => ({ ...s, letterToGpa }))}
+            onInstituteIdChange={(instituteId) => onChange((s) => ({ ...s, instituteId }))}
           />
 
           <CoursesTable
             courses={school.courses}
             converted={converted}
             scale={school.scale}
-            onChange={(courses) => onChange({ ...school, courses })}
+            onChange={(courses) => onChange((s) => ({ ...s, courses }))}
           />
         </div>
       )}

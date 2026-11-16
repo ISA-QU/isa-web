@@ -10,8 +10,15 @@ import { calculateGpa } from "../lib/gpa";
 import { downloadReport } from "../lib/exportPdf";
 import { formatGpa } from "../lib/format";
 import { SchoolCard } from "../components/SchoolCard";
+import { ScaleLibrary } from "../components/ScaleLibrary";
 import { asset } from "../lib/basePath";
-import { deleteTranscript, findTranscript, getTranscript, saveTranscript } from "../lib/api";
+import {
+  deleteTranscript,
+  findTranscript,
+  getTranscript,
+  saveTranscript,
+  type SavedGradeScale,
+} from "../lib/api";
 import { AccountMenu } from "../components/AccountMenu";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -59,6 +66,7 @@ export default function CalculatorClient() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   // Whether the id in the URL has been loaded yet. Deriving "loading" from it
   // beats a flag set inside the effect, which costs an extra render pass.
+  const [scalesOpen, setScalesOpen] = useState(true);
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const hydrating = studentIdParam !== "" && loadedId !== studentIdParam;
 
@@ -120,12 +128,42 @@ export default function CalculatorClient() {
     window.history.replaceState(null, "", window.location.pathname);
   };
 
-  const updateSchool = (id: string, next: School) => {
-    setSchools((prev) => prev.map((s) => (s.id === id ? next : s)));
+  const updateSchool = (id: string, update: (school: School) => School) => {
+    setSchools((prev) => prev.map((s) => (s.id === id ? update(s) : s)));
   };
 
   const addSchool = () => {
     setSchools((prev) => [...prev, makeInitialSchool()]);
+  };
+
+  const applySavedScale = (schoolId: string, saved: SavedGradeScale) => {
+    const hasLetterMap =
+      saved.letterToGpa &&
+      typeof saved.letterToGpa === "object" &&
+      Object.keys(saved.letterToGpa).length > 0;
+    setSchools((prev) =>
+      prev.map((s) =>
+        s.id === schoolId
+          ? {
+              ...s,
+              instituteId: saved.instituteId,
+              country: s.country.trim() || saved.country || "",
+              scale: {
+                ...s.scale,
+                name: saved.name,
+                country: saved.country,
+                foreignKind: saved.foreignKind,
+                rows: Object.entries(saved.scale || {}).map(([foreign, us]) => ({
+                  id: uid(),
+                  foreignGrade: foreign,
+                  usGrade: us,
+                })),
+              },
+              ...(hasLetterMap ? { letterToGpa: { ...saved.letterToGpa } } : {}),
+            }
+          : s,
+      ),
+    );
   };
 
   const removeSchool = (id: string) => {
@@ -237,7 +275,7 @@ export default function CalculatorClient() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-[#0F2D52] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 px-6 py-6">
+        <div className="mx-auto flex max-w-[1700px] items-center justify-between gap-6 px-6 py-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               Office of International Admissions
@@ -301,123 +339,137 @@ export default function CalculatorClient() {
         <div className="h-1 bg-[#F1B82D]" />
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-[#0F2D52]">Student information</h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">Name</span>
-              <input
-                className={inputCls}
-                value={student.name}
-                onChange={(e) => setStudent({ ...student, name: e.target.value })}
-                placeholder="Bruce Wayne"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">QU ID</span>
-              <input
-                className={inputCls}
-                value={student.quId}
-                onChange={(e) => setStudent({ ...student, quId: e.target.value })}
-                placeholder="2680540"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">Calculated by (username)</span>
-              <input
-                className={inputCls}
-                value={student.calculatedBy}
-                onChange={(e) => setStudent({ ...student, calculatedBy: e.target.value })}
-                placeholder="Matan Odell"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#0F2D52]">Foreign schools</h2>
-              <p className="text-sm text-slate-500">
-                Add a school for each transcript. Each has its own grading scale and courses.
-              </p>
-            </div>
-            <button
-              onClick={addSchool}
-              className="rounded-md border border-[#0F2D52] bg-white px-3 py-1.5 text-sm font-medium text-[#0F2D52] transition hover:bg-[#0F2D52] hover:text-white"
-            >
-              + Add school
-            </button>
-          </div>
-
-          {schoolStats.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-              No schools yet. Click <span className="font-medium">+ Add school</span> to begin.
-            </div>
-          ) : (
-            schoolStats.map((s, i) => (
-              <SchoolCard
-                key={s.school.id}
-                school={s.school}
-                index={i}
-                converted={s.converted}
-                gpa={s.gpa}
-                totalCredits={s.totalCredits}
-                defaultExpanded={i === 0}
-                onChange={(next) => updateSchool(s.school.id, next)}
-                onRemove={() => removeSchool(s.school.id)}
-              />
-            ))
-          )}
-        </section>
-
-        <section className="rounded-xl border border-[#0F2D52] bg-white p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-slate-500">Cumulative GPA</div>
-              <div className="mt-1 inline-flex items-baseline rounded-md bg-[#0F2D52] px-4 py-2">
-                <span className="text-4xl font-bold text-[#F1B82D]">
-                  {cumulative.gpa !== null ? formatGpa(cumulative.gpa) : "—"}
-                </span>
-                <span className="ml-2 text-base text-slate-200">/4</span>
+      <main className="mx-auto max-w-[1700px] px-6 py-8">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
+          {/* Left: the transcript being worked on. */}
+          <div className="min-w-0 flex-1 space-y-6">
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-[#0F2D52]">Student information</h2>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">Name</span>
+                  <input
+                    className={inputCls}
+                    value={student.name}
+                    onChange={(e) => setStudent({ ...student, name: e.target.value })}
+                    placeholder="Bruce Wayne"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">QU ID</span>
+                  <input
+                    className={inputCls}
+                    value={student.quId}
+                    onChange={(e) => setStudent({ ...student, quId: e.target.value })}
+                    placeholder="2680540"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">Calculated by (username)</span>
+                  <input
+                    className={inputCls}
+                    value={student.calculatedBy}
+                    onChange={(e) => setStudent({ ...student, calculatedBy: e.target.value })}
+                    placeholder="Matan Odell"
+                  />
+                </label>
               </div>
-              <div className="mt-1 text-xs text-slate-500">
-                Across {cumulative.totalCredits.toFixed(2)} credits · {schools.length} school
-                {schools.length === 1 ? "" : "s"}
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex flex-wrap gap-2">
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-[#0F2D52]">Foreign schools</h2>
+                  <p className="text-sm text-slate-500">
+                    Add a school for each transcript. Each has its own grading scale and courses.
+                  </p>
+                </div>
                 <button
-                  onClick={handleSaveTranscript}
-                  disabled={saving || hydrating}
-                  className="rounded-md border border-[#0F2D52] bg-white px-4 py-2 text-sm font-semibold text-[#0F2D52] transition hover:bg-[#0F2D52] hover:text-white disabled:opacity-50"
+                  onClick={addSchool}
+                  className="rounded-md border border-[#0F2D52] bg-white px-3 py-1.5 text-sm font-medium text-[#0F2D52] transition hover:bg-[#0F2D52] hover:text-white"
                 >
-                  {(() => {
-                    const isUpdate =
-                      !!studentIdParam &&
-                      student.quId.trim() === studentIdParam;
-                    if (saving) return isUpdate ? "Updating…" : "Saving…";
-                    return isUpdate ? "Update transcript" : "Save transcript";
-                  })()}
-                </button>
-                <button
-                  onClick={handleDownload}
-                  className="rounded-md bg-[#0F2D52] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1B3F6D] focus:outline-none focus:ring-2 focus:ring-[#F1B82D]"
-                >
-                  Download PDF report
+                  + Add school
                 </button>
               </div>
-              {saveMsg && (
-                <div className="text-xs text-slate-600">{saveMsg}</div>
+
+              {schoolStats.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                  No schools yet. Click <span className="font-medium">+ Add school</span> to begin.
+                </div>
+              ) : (
+                schoolStats.map((s, i) => (
+                  <SchoolCard
+                    key={s.school.id}
+                    school={s.school}
+                    index={i}
+                    converted={s.converted}
+                    gpa={s.gpa}
+                    totalCredits={s.totalCredits}
+                    defaultExpanded={i === 0}
+                    onChange={(update) => updateSchool(s.school.id, update)}
+                    onRemove={() => removeSchool(s.school.id)}
+                  />
+                ))
               )}
-            </div>
+            </section>
+
+            <section className="rounded-xl border border-[#0F2D52] bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-slate-500">Cumulative GPA</div>
+                  <div className="mt-1 inline-flex items-baseline rounded-md bg-[#0F2D52] px-4 py-2">
+                    <span className="text-4xl font-bold text-[#F1B82D]">
+                      {cumulative.gpa !== null ? formatGpa(cumulative.gpa) : "—"}
+                    </span>
+                    <span className="ml-2 text-base text-slate-200">/4</span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Across {cumulative.totalCredits.toFixed(2)} credits · {schools.length} school
+                    {schools.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={handleSaveTranscript}
+                      disabled={saving || hydrating}
+                      className="rounded-md border border-[#0F2D52] bg-white px-4 py-2 text-sm font-semibold text-[#0F2D52] transition hover:bg-[#0F2D52] hover:text-white disabled:opacity-50"
+                    >
+                      {(() => {
+                        const isUpdate =
+                          !!studentIdParam &&
+                          student.quId.trim() === studentIdParam;
+                        if (saving) return isUpdate ? "Updating…" : "Saving…";
+                        return isUpdate ? "Update transcript" : "Save transcript";
+                      })()}
+                    </button>
+                    <button
+                      onClick={handleDownload}
+                      className="rounded-md bg-[#0F2D52] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1B3F6D] focus:outline-none focus:ring-2 focus:ring-[#F1B82D]"
+                    >
+                      Download PDF report
+                    </button>
+                  </div>
+                  {saveMsg && (
+                    <div className="text-xs text-slate-600">{saveMsg}</div>
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+
+          {/* Right: the saved scales, to look up and pull in. Read-only;
+              every edit happens in the school card on the left. */}
+          <ScaleLibrary
+            schools={schools.map((s) => ({ id: s.id, name: s.name }))}
+            onUse={applySavedScale}
+            open={scalesOpen}
+            onToggle={() => setScalesOpen((openNow) => !openNow)}
+          />
+        </div>
       </main>
 
-      <footer className="mx-auto max-w-5xl px-6 pb-8 text-center text-xs text-slate-400">
+      <footer className="mx-auto max-w-[1700px] px-6 pb-8 text-center text-xs text-slate-400">
         Office of International Admissions · Quinnipiac University
       </footer>
     </div>

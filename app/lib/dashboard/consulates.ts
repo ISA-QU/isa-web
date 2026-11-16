@@ -7,9 +7,10 @@
 
 import { MONTH_NAMES } from "./constants";
 import { monthDisplay } from "./format";
-import { changeVsBase, latestCompleteYearOf, recoveryVs2019 as recoveryOf } from "./measures";
+import { LOW_VOLUME, changeVsBase, latestCompleteYearOf, recoveryVs2019 as recoveryOf } from "./measures";
 import { groupSum, sumBy } from "./metrics";
 import type { ConsulateStatus } from "./restrictions";
+import { arrowPct } from "./rolling";
 import type { MonthRange, NationalityMonthlyRow, PostMonthlyRow, Visa } from "./types";
 
 /**
@@ -100,6 +101,14 @@ export function buildConsulateTable(
     })
     .sort((a, b) => b.volume - a.volume || a.post.localeCompare(b.post));
 }
+
+/** The change cell: "—" with no earlier period, "— (low volume)" under 100, else "▼ 12.3%". */
+export const consulateChangeText = (row: { change: number | null; prior: number | null }): string =>
+  row.prior === null ? "—" : row.change === null ? LOW_VOLUME : arrowPct(row.change);
+
+/** The recovery cell: the index, or "— (low volume)" when the consulate had fewer than 100 issuances in 2019. */
+export const consulateRecoveryText = (value: number | null, recoveryYear: number | null): string =>
+  value !== null ? value.toFixed(0) : recoveryYear === null ? "—" : LOW_VOLUME;
 
 /** The latest complete calendar year in the monthly data's coverage (2025 today), the same for every consulate. */
 export const recoveryYearOf = (coverage: MonthRange): number | null => latestCompleteYearOf(coverage);

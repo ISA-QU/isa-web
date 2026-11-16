@@ -5,34 +5,34 @@ import { useMemo, useState } from "react";
 import { MARKET_CATEGORIES, MONTH_NAMES_FULL } from "../../../lib/dashboard/constants";
 import { previousPeriod } from "../../../lib/dashboard/consulates";
 import { decimals, int, metricNumber, monthDisplay } from "../../../lib/dashboard/format";
-import { LOW_VOLUME, MIN_BASE, changeText, changeVsBase, latestCompleteYearOf } from "../../../lib/dashboard/measures";
+import { LOW_VOLUME, MIN_BASE, changeText, latestCompleteYearOf } from "../../../lib/dashboard/measures";
+import { MARKET_THRESHOLDS, notNa, recommendedOutreachWindow } from "../../../lib/dashboard/metrics";
+import { STRUCTURAL_DECLINE_ACTION, historyNote } from "../../../lib/dashboard/cycles";
 import {
-  MARKET_THRESHOLDS,
-  buildCommandCenterFrame,
-  nationalitySignals,
-  notNa,
-  recommendedOutreachWindow,
-} from "../../../lib/dashboard/metrics";
+  SORTS,
+  annualRowsByCountry,
+  marketActionText,
+  marketChangeText,
+  marketFiveYearText,
+  marketHistories,
+  marketHistory,
+  marketRows,
+  marketSignals,
+  marketTenYearText,
+  marketsInScope,
+  sortMarkets,
+  type MarketRow,
+  type SortKey,
+} from "../../../lib/dashboard/markets";
 import { MOVER_MIN_ISSUANCES, arrowPct, monthRangeLabel } from "../../../lib/dashboard/rolling";
 import { restrictionCsv } from "../../../lib/dashboard/restrictions";
 import { sortBy } from "../../../lib/dashboard/sort";
-import type { CommandCenterRow } from "../../../lib/dashboard/types";
+import type { Visa } from "../../../lib/dashboard/types";
+import { pct1 } from "../../../lib/dashboard/pct";
 import { useDashboard, visaLabelOf } from "../DashboardContext";
 import RestrictionBadges, { RestrictionSmallPrint } from "../RestrictionBadges";
 import { Caption, DownloadCsvButton, InfoCallout, SubHeading } from "../shared";
 import { Column, DataTable, Expander, FixedTag, KpiCard, KpiRow, Panel, Select, Slider } from "../ui";
-
-/** How the main table is sorted. */
-const SORTS = ["Nationals", "Change", "10-year trend"] as const;
-type SortKey = (typeof SORTS)[number];
-
-/** A market row: the shared nationality row (or the issued-in fallback) plus its Period figures. */
-type MarketRow = CommandCenterRow & {
-  hideTiming?: boolean;
-  periodTotal: number;
-  periodPrior: number | null;
-  periodChange: number | null;
-};
 
 const T = MARKET_THRESHOLDS;
 
@@ -46,10 +46,9 @@ const monthsAhead = (month: number, fromMonth: number) => (month - fromMonth + 1
  * the snapshot has no nationality table.
  */
 export default function MarketsTab() {
-  const { data, visa, periodRange, allCountries } = useDashboard();
+  const { data, visa, periodRange, allCountries, provisionalYears } = useDashboard();
   const { coverage } = data.meta;
-  const nationality = data.nationalityMonthly;
-  const byNationality = nationality !== null;
+  const byNationality = data.nationalityMonthly !== null;
   const visaLabel = visaLabelOf(visa);
   const visas = visa === "Both" ? ["F1", "J1"] : [visa];
 
@@ -58,77 +57,23 @@ export default function MarketsTab() {
   const [sort, setSort] = useState<SortKey>("Nationals");
   const [minNationals, setMinNationals] = useState<number>(MIN_BASE);
 
-  /* ---- One row per country: the shared rules, nothing computed separately here ---- */
-  const signals = useMemo((): CommandCenterRow[] => {
-    if (nationality) {
-      const control = new Set(allCountries);
-      const countries = [...new Set(nationality.filter((r) => r.isCountry && control.has(r.country)).map((r) => r.country))];
-      return countries
-        .map((c) =>
-          nationalitySignals(
-            nationality,
-            data.annualCountry,
-            c,
-            visa,
-            coverage.annual.latestComplete,
-            coverage.postsMonthly,
-            coverage.operational,
-          ),
-        )
-        .filter((r): r is NonNullable<typeof r> => r !== null);
-    }
-    return buildCommandCenterFrame(
-      data.operational,
-      data.annualCountry,
-      data.postsMonthly,
-      visa,
-      coverage.annual.latestComplete,
-      coverage.postsMonthly,
-    );
-  }, [nationality, allCountries, data.annualCountry, data.operational, data.postsMonthly, visa, coverage]);
+  /* ---- One row per country: the shared rules, nothing computed separately here (markets.ts) ---- */
+  const signals = useMemo(() => marketSignals(data, visa, allCountries), [data, visa, allCountries]);
 
   // The Period columns: nationals in the Period and the change vs the previous period of equal length.
   const priorRange = previousPeriod(periodRange, coverage.postsMonthly);
-  const rows = useMemo((): MarketRow[] => {
-    const now = new Map<string, number>();
-    const before = new Map<string, number>();
-    const source: readonly { country: string; visa: string; monthIndex: number; issuances: number }[] =
-      nationality ? nationality.filter((r) => r.isCountry) : data.postsMonthly;
-    for (const r of source) {
-      if (!visas.includes(r.visa)) continue;
-      if (r.monthIndex >= periodRange.start && r.monthIndex <= periodRange.end) {
-        now.set(r.country, (now.get(r.country) ?? 0) + r.issuances);
-      } else if (priorRange && r.monthIndex >= priorRange.start && r.monthIndex <= priorRange.end) {
-        before.set(r.country, (before.get(r.country) ?? 0) + r.issuances);
-      }
-    }
-    return signals.map((r) => {
-      const periodTotal = now.get(r.country) ?? 0;
-      const periodPrior = priorRange ? (before.get(r.country) ?? 0) : null;
-      return {
-        ...r,
-        periodTotal,
-        periodPrior,
-        periodChange: periodPrior === null ? null : changeVsBase(periodTotal, periodPrior),
-      };
-    });
+  const rows = useMemo(
+    () => marketRows(signals, data, visa, periodRange, priorRange),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signals, nationality, data.postsMonthly, visa, periodRange, priorRange?.start, priorRange?.end]);
+    [signals, data, visa, periodRange, priorRange?.start, priorRange?.end],
+  );
 
   const regionOptions = useMemo(() => ["All", ...[...new Set(rows.map((r) => r.region))].sort()], [rows]);
   const maxNationals = useMemo(() => Math.max(1000, ...rows.map((r) => r.latest12Total)), [rows]);
 
   // Region and minimum first (the category counts use these), then the category.
-  const inScope = useMemo(
-    () => rows.filter((r) => r.latest12Total >= minNationals && (region === "All" || r.region === region)),
-    [rows, minNationals, region],
-  );
-  const filtered = useMemo(() => {
-    const scoped = category === "All" ? inScope : inScope.filter((r) => r.marketCategory === category);
-    if (sort === "Change") return sortBy(scoped, [(r) => r.periodChange, (r) => r.periodTotal]);
-    if (sort === "10-year trend") return sortBy(scoped, [(r) => r.growth10yr, (r) => r.periodTotal]);
-    return sortBy(scoped, [(r) => r.periodTotal, (r) => r.latest12Total]);
-  }, [inScope, category, sort]);
+  const inScope = useMemo(() => marketsInScope(rows, minNationals, region), [rows, minNationals, region]);
+  const filtered = useMemo(() => sortMarkets(inScope, category, sort), [inScope, category, sort]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of inScope) counts.set(r.marketCategory, (counts.get(r.marketCategory) ?? 0) + 1);
@@ -139,11 +84,29 @@ export default function MarketsTab() {
   const last12 = monthRangeLabel({ start: end - 11, end });
   const latestFy = coverage.annual.latestComplete;
   const tenYear = latestFy !== null ? `FY${latestFy - 10} → FY${latestFy}` : "10-year";
+
+  // Fix pack 10: the 10-year trend with the shared minimum base (FY base under 100 → low volume).
+  // Display only: the categories and the sort keep the raw value, as the Change column does.
+  const annualByCountry = useMemo(() => annualRowsByCountry(data.annualCountry), [data.annualCountry]);
+  const tenYearText = (r: MarketRow) => marketTenYearText(r, annualByCountry, visas as Visa[], latestFy);
+  // Fix pack 11: the same minimum base for the 5-year trend (FY2020 base today).
+  const fiveYearText = (r: MarketRow) => marketFiveYearText(r, annualByCountry, visas as Visa[], latestFy);
+
+  // Fix pack 10: "Review Structural Decline" worded by each country's F1 history (Market cycles' rule).
+  const histories = useMemo(() => marketHistories(data), [data]);
+  const actionText = (r: MarketRow) => marketActionText(r, histories);
+
+  // 2b-2: the history label (background only), from the same F1 history as the action wording.
+  const historyOf = (r: MarketRow) => marketHistory(r.country, histories, provisionalYears);
+  const historyCell = (r: MarketRow) => {
+    const h = historyOf(r);
+    return <span title={h.evidence ? `${h.label}\n${h.evidence}` : h.label}>{h.short}</span>;
+  };
+  const historyNoteText = historyNote(visas as Visa[], provisionalYears, latestFy);
   const recoveryYear = latestCompleteYearOf(coverage.postsMonthly);
   const measure = byNationality ? "nationals" : "issued";
   const changeHeader = priorRange ? `Change vs ${monthRangeLabel(priorRange)}` : "Change vs previous period";
-  const periodChangeText = (r: MarketRow) =>
-    r.periodPrior === null ? "—" : changeText(r.periodChange, r.periodPrior, arrowPct);
+  const periodChangeText = marketChangeText;
   const timingText = (r: MarketRow) => (r.hideTiming || !r.timing ? "—" : r.timing);
   const rowKey = (r: { country: string }) => r.country;
 
@@ -159,7 +122,8 @@ export default function MarketsTab() {
     { key: "country", header: "Country", render: countryCell },
     { key: "nationals", header: `${byNationality ? "Nationals" : "Issued"}, ${periodRange.label}`, numeric: true, render: (r) => int(r.periodTotal) },
     { key: "change", header: changeHeader, numeric: true, render: periodChangeText },
-    { key: "trend", header: `10-year trend, ${tenYear}`, numeric: true, render: (r) => arrowPct(r.growth10yr) },
+    { key: "trend", header: `10-year trend, ${tenYear}`, numeric: true, render: tenYearText },
+    { key: "history", header: "History (F1)", render: historyCell },
     {
       key: "action",
       header: "Action (category)",
@@ -169,7 +133,7 @@ export default function MarketsTab() {
           r.recommendedAction
         ) : (
           <>
-            {r.recommendedAction} <span className="text-slate-400">({r.marketCategory})</span>
+            {actionText(r)} <span className="text-slate-400">({r.marketCategory})</span>
           </>
         ),
     },
@@ -187,7 +151,7 @@ export default function MarketsTab() {
     { key: "p12", header: "Previous 12 months", numeric: true, render: (r) => int(r.prior12Total) },
     { key: "m12", header: "Change, last 12 months", numeric: true, render: (r) => changeText(r.latest12Momentum, r.prior12Total, arrowPct) },
     { key: "rec", header: `Recovery (${recoveryYear} vs 2019)`, numeric: true, render: recoveryText },
-    { key: "g5", header: "5-year trend", numeric: true, render: (r) => arrowPct(r.growth5yr) },
+    { key: "g5", header: "5-year trend", numeric: true, render: fiveYearText },
     { key: "peak", header: "Peak month (typical year)", render: peakText },
     { key: "season", header: "Seasonality ratio", numeric: true, render: (r) => (notNa(r.seasonalityRatio) ? `${r.seasonalityRatio.toFixed(1)}x` : "—") },
     { key: "cv", header: "Volatility CV", numeric: true, render: (r) => decimals(r.volatilityCv, 2) },
@@ -197,28 +161,30 @@ export default function MarketsTab() {
     { key: "confidence", header: "Confidence", render: (r) => r.confidence },
     { key: "caveat", header: "Caveat", render: (r) => r.caveat },
     { key: "evidence", header: "Evidence", render: (r) => r.evidence },
+    { key: "history", header: "History (F1)", render: (r) => historyOf(r).label },
+    { key: "historyEvidence", header: "History evidence (F1)", render: (r) => historyOf(r).evidence || "—" },
   ];
 
   const csvHeaders = [
     "country", "category", "action", "timing", `${measure}_${periodRange.slug}`, "previous_period", "change_pct",
     "ten_year_trend_pct", `${measure}_last_12_months`, "previous_12_months", "change_last_12_months_pct",
     "recovery_index", "five_year_trend_pct", "peak_month_typical_year", "seasonality_ratio", "volatility_cv",
-    "flags", "why", "but", "confidence", "Restriction", "Suspended since",
+    "flags", "why", "but", "confidence", "Restriction", "Suspended since", "history_f1", "history_evidence",
   ];
   const csvRows = filtered.map((r) => [
     r.country,
     r.marketCategory,
-    r.recommendedAction,
+    actionText(r),
     timingText(r),
     String(r.periodTotal),
     r.periodPrior === null ? "" : String(r.periodPrior),
-    r.periodChange === null ? "" : r.periodChange.toFixed(1),
-    r.growth10yr === null ? "" : r.growth10yr.toFixed(1),
+    r.periodChange === null ? "" : pct1(r.periodChange),
+    r.growth10yr === null ? "" : pct1(r.growth10yr),
     String(r.latest12Total),
     String(r.prior12Total),
-    r.latest12Momentum === null ? "" : r.latest12Momentum.toFixed(1),
+    r.latest12Momentum === null ? "" : pct1(r.latest12Momentum),
     r.recoveryIndex === null ? "" : r.recoveryIndex.toFixed(1),
-    r.growth5yr === null ? "" : r.growth5yr.toFixed(1),
+    r.growth5yr === null ? "" : pct1(r.growth5yr),
     r.peakMonthName,
     r.seasonalityRatio === null ? "" : r.seasonalityRatio.toFixed(2),
     r.volatilityCv === null ? "" : r.volatilityCv.toFixed(3),
@@ -227,6 +193,8 @@ export default function MarketsTab() {
     r.counterSignal,
     r.confidence,
     ...restrictionCsv(r.country),
+    historyOf(r).label,
+    historyOf(r).evidence,
   ]);
 
   /* ---- Travel timing: next outreach window first, from this month ---- */
@@ -260,7 +228,7 @@ export default function MarketsTab() {
     { key: "change", header: "Change vs previous 12 months", numeric: true, render: (r) => arrowPct(r.latest12Momentum) },
     { key: "latest", header: "Last 12 months", numeric: true, render: (r) => int(r.latest12Total) },
     { key: "prior", header: "Previous 12 months", numeric: true, render: (r) => int(r.prior12Total) },
-    { key: "action", header: "Action", render: (r) => r.recommendedAction },
+    { key: "action", header: "Action", render: actionText },
   ];
 
   const countCard = (name: string) => {
@@ -296,7 +264,7 @@ export default function MarketsTab() {
         category, action, flags and movers: last 12 months ({last12}) · timing: typical year.
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Select label="Region" value={region} options={regionOptions} onChange={setRegion} />
         <Select label="Category" value={category} options={["All", ...MARKET_CATEGORIES]} onChange={setCategory} />
         <Select label="Sort by" value={sort} options={SORTS} onChange={(v) => setSort(v as SortKey)} />
@@ -331,6 +299,15 @@ export default function MarketsTab() {
           headers={csvHeaders}
           rows={csvRows}
         />
+        <p className="mt-2 text-xs text-slate-400">
+          History (F1): Structural (long decline), Gradual (long decline), Cyclical (has recovered before) or Too early
+          to tell, from each country&apos;s downturns in Historical Trends → Market cycles; hover for the evidence.
+          Background only: it doesn&apos;t change the category or the advice
+          {filtered.some((r) => r.recommendedAction === STRUCTURAL_DECLINE_ACTION)
+            ? ", but a declining market's action wording follows it"
+            : ""}
+          . {historyNoteText}
+        </p>
         <div className="mt-2">
           <RestrictionSmallPrint />
         </div>
@@ -367,7 +344,7 @@ export default function MarketsTab() {
           months. Only countries with at least {MOVER_MIN_ISSUANCES} in both 12-month periods ({moverPool.length} match the
           current filters).
         </Caption>
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div>
             <h5 className="mb-2 text-sm font-bold text-[#4ade80]">Top risers</h5>
             <DataTable rows={risers} height={390} rowKey={rowKey} columns={moverColumns} empty="No qualifying country grew." />

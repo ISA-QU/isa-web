@@ -6,6 +6,7 @@ import type { ChartLayout, Trace } from "../Chart";
 import { MONTH_NAMES, VISA_COLORS } from "../../../lib/dashboard/constants";
 import {
   buildConsulateTable,
+  consulateChangeText,
   consulateContext,
   consulateStatus,
   dormantConsulates,
@@ -54,6 +55,7 @@ import {
 import { consulateScopeNotes, pausedPostText } from "../../../lib/dashboard/restrictions";
 import type { PostMonthlyRow } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, consulateEventsFor, eventOverlay, withEvents } from "../../../lib/dashboard/events";
+import { pct1 } from "../../../lib/dashboard/pct";
 import Chart from "../Chart";
 import { EventsList, EventsToggle } from "../EventsControls";
 import ComparePicker from "../ComparePicker";
@@ -574,7 +576,7 @@ export default function ConsulatesPage() {
         r.country,
         String(r.volume),
         r.prior === null ? "" : String(r.prior),
-        r.change === null ? "" : r.change.toFixed(1),
+        r.change === null ? "" : pct1(r.change),
         r.share.toFixed(2),
         r.countryShare.toFixed(2),
         String(base),
@@ -693,7 +695,7 @@ export default function ConsulatesPage() {
               : []),
             { key: "volume", header: periodRange.label, numeric: true, render: (r) => int(r.volume) },
             { key: "change", header: changeLabel, numeric: true, render: (r) => changeCell(r) },
-            { key: "share", header: `Share of ${scopeName}`, numeric: true, render: (r) => `${r.share.toFixed(1)}%` },
+            { key: "share", header: `Share of ${scopeName}`, numeric: true, render: (r) => `${pct1(r.share)}%` },
             {
               key: "recovery",
               header: `${recoveryLabel} · 100 = 2019 level`,
@@ -802,7 +804,7 @@ export default function ConsulatesPage() {
             Always last 12 months · F1
           </FixedTag>
         </SubHeading>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {movers.risers.count > 0 ? (
             <Chart data={movers.risers.data} layout={movers.risers.layout} height={movers.risers.layout.height as number} />
           ) : (
@@ -854,7 +856,7 @@ export default function ConsulatesPage() {
             <KpiCard label={changeLabel} value={changeCell(selectedRow)} delta={noPriorNote ?? undefined} />
             <KpiCard
               label={`Share of ${selectedRow.country}, ${periodRange.label}`}
-              value={`${selectedRow.countryShare.toFixed(1)}%`}
+              value={`${pct1(selectedRow.countryShare)}%`}
             />
             <KpiCard
               accent="navy"
@@ -891,7 +893,7 @@ export default function ConsulatesPage() {
                 Recovery index not available: needs at least {MOVER_MIN_ISSUANCES} issuances in 2019.
               </InfoCallout>
             )}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {admissionsCards.map(([title, body]) => (
                 <div key={title} className="rounded-md border border-slate-400/15 bg-white/[0.03] p-3">
                   <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#93a4ba]">{title}</div>
@@ -936,7 +938,7 @@ export default function ConsulatesPage() {
                   selectedRow.country,
                   String(selectedRow.volume),
                   selectedRow.prior === null ? "" : String(selectedRow.prior),
-                  selectedRow.change === null ? "" : selectedRow.change.toFixed(1),
+                  selectedRow.change === null ? "" : pct1(selectedRow.change),
                   selectedRow.countryShare.toFixed(2),
                   selectedRow.recovery === null ? "" : selectedRow.recovery.toFixed(1),
                   peakName,
@@ -968,8 +970,7 @@ export default function ConsulatesPage() {
 }
 
 /** "—" with no previous period; "— (low volume)" when the previous period had fewer than 100. */
-const changeCell = (row: { change: number | null; prior: number | null }) =>
-  row.prior === null ? "—" : row.change === null ? LOW_VOLUME : arrowPct(row.change);
+const changeCell = consulateChangeText;
 
 /** "This country / All countries" switch: a radio group, arrow keys to move. */
 function ScopeSwitch({

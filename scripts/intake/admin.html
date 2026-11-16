@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard monthly intake</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #050F22; color: #DDEBFA; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; color: #fff; margin: 0 0 4px; }
+  p.lead { color: #93a4ba; margin: 0 0 16px; }
+  #drop { border: 2px dashed #FFB81C88; border-radius: 10px; padding: 28px; text-align: center; background: #07152E; cursor: pointer; }
+  #drop.over { background: #0F2D52; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+  .gold { background: #FFB81C; color: #0C2340; }
+  .ghost { background: transparent; color: #DDEBFA; border: 1px solid #94a3b855; }
+  button:disabled { opacity: .4; cursor: default; }
+  pre { white-space: pre-wrap; background: #07152E; border: 1px solid #94a3b833; border-radius: 8px; padding: 12px; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+  .err { color: #fca5a5; } .ok { color: #86efac; }
+  .warn { background: #422006; border: 1px solid #f59e0b88; color: #fde68a; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .undo { margin-top: 28px; padding-top: 16px; border-top: 1px solid #94a3b833; }
+  ul { margin: 8px 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dashboard monthly intake</h1>
+  <p class="lead">Runs only on this computer. Drop a month's two State Department PDFs (by Nationality and by Post).
+    Nothing changes until you press Apply; the current files are backed up first.</p>
+  <div id="drop" tabindex="0" role="button" aria-label="Choose or drop the PDF reports">Drop the PDFs here, or click to choose them</div>
+  <input id="pick" type="file" accept="application/pdf" multiple hidden>
+  <ul id="list"></ul>
+  <div class="row">
+    <label><input id="replace" type="checkbox"> Replace a month that's already in the files</label>
+  </div>
+  <div class="row">
+    <button id="preview" class="gold" disabled>Check the PDFs</button>
+    <button id="apply" class="ghost" disabled>Apply: replace the 3 files and run the checks</button>
+  </div>
+  <div id="out" aria-live="polite"></div>
+  <section class="undo">
+    <div class="row"><button id="undo" class="ghost">Undo last update</button></div>
+    <div id="undoOut" aria-live="polite"></div>
+  </section>
+</main>
+<script>
+  const token = "__TOKEN__";
+  let chosen = [], staging = null;
+  const $ = (id) => document.getElementById(id);
+  const show = (html) => { $("out").innerHTML = html; };
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  function choose(files) {
+    chosen = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    $("list").innerHTML = chosen.map((f) => `<li>${esc(f.name)} (${(f.size / 1024).toFixed(0)} KB)</li>`).join("");
+    $("preview").disabled = chosen.length === 0; $("apply").disabled = true; staging = null; show("");
+  }
+  $("drop").onclick = () => $("pick").click();
+  $("drop").onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") $("pick").click(); };
+  $("pick").onchange = (e) => choose(e.target.files);
+  $("drop").ondragover = (e) => { e.preventDefault(); $("drop").classList.add("over"); };
+  $("drop").ondragleave = () => $("drop").classList.remove("over");
+  $("drop").ondrop = (e) => { e.preventDefault(); $("drop").classList.remove("over"); choose(e.dataTransfer.files); };
+  async function post(path, body, json) {
+    const r = await fetch(path, { method: "POST", headers: { "X-Intake-Token": token, ...(json ? { "Content-Type": "application/json" } : {}) }, body });
+    return r.json();
+  }
+  $("preview").onclick = async () => {
+    const form = new FormData();
+    chosen.forEach((f) => form.append("pdf", f, f.name));
+    form.append("replace", $("replace").checked ? "1" : "0");
+    show("Reading the PDFs…"); $("preview").disabled = true;
+    const r = await post("/api/preview", form);
+    $("preview").disabled = false;
+    if (!r.ok) return show(`<p class="err">Stopped: ${esc(r.error)}</p>`);
+    staging = r.staging; $("apply").disabled = false;
+    const warnings = (r.bigChanges || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+    show(`<p class="ok">Checked. Nothing has changed yet.</p>${warnings}<pre>${esc(r.report)}</pre>`);
+  };
+  $("apply").onclick = async () => {
+    if (!staging) return;
+    $("apply").disabled = true; show("Replacing the files and running the checks… (about a minute)");
+    const r = await post("/api/apply", JSON.stringify({ staging }), true);
+    if (r.error) return show(`<p class="err">Stopped: ${esc(r.error)}</p>`);
+    show(`<p class="${r.ok ? "ok" : "err"}"><b>${esc(r.message)}</b></p><pre>${esc(r.text)}</pre>`);
+    staging = null;
+  };
+  // Undo: first show which backup and which months, then ask to confirm.
+  $("undo").onclick = async () => {
+    const box = $("undoOut");
+    box.innerHTML = "Checking…";
+    const r = await post("/api/undo-info", "{}", true);
+    if (!r.ok) return (box.innerHTML = `<p class="err">${esc(r.error)}</p>`);
+    box.innerHTML = `<pre>${esc(r.text)}</pre><div class="row"><button id="undoYes" class="gold">Yes, undo it</button>
+      <button id="undoNo" class="ghost">Cancel</button></div>`;
+    $("undoNo").onclick = () => (box.innerHTML = "Nothing changed.");
+    $("undoYes").onclick = async () => {
+      box.innerHTML = "Undoing and running the checks… (about a minute)";
+      const u = await post("/api/undo", JSON.stringify({ backup: r.backup }), true);
+      if (u.error) return (box.innerHTML = `<p class="err">Stopped: ${esc(u.error)}</p>`);
+      box.innerHTML = `<p class="${u.ok ? "ok" : "err"}"><b>${esc(u.message)}</b></p><pre>${esc(u.text)}</pre>`;
+    };
+  };
+</script>
+</body>
+</html>

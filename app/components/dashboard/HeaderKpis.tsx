@@ -6,6 +6,7 @@ import { int, metricPct, monthDisplay, monthLongDisplay } from "../../lib/dashbo
 import { LOW_VOLUME, changeVsBase } from "../../lib/dashboard/measures";
 import { idxMaxString } from "../../lib/dashboard/metrics";
 import { arrowPct, monthRangeLabel, rollingTwelveMonths } from "../../lib/dashboard/rolling";
+import { pct1 } from "../../lib/dashboard/pct";
 import { useDashboard } from "./DashboardContext";
 import { FixedTag, KpiCard, KpiRow } from "./ui";
 
@@ -93,7 +94,7 @@ export default function HeaderKpis() {
             topCountry
               ? [
                   detail(`F1 issued in ${topCountry}`, topF1, topPrior, changeOf(topF1, topPrior)),
-                  `Share of all F1, ${period}: ${topShare !== null ? `${topShare.toFixed(1)}%` : "N/A"}`,
+                  `Share of all F1, ${period}: ${topShare !== null ? `${pct1(topShare)}%` : "N/A"}`,
                 ].join("\n")
               : undefined
           }

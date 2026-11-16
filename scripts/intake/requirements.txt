@@ -1,0 +1,4 @@
+# Monthly intake tool (scripts/intake). Install with:
+#   python3 -m pip install -r scripts/intake/requirements.txt
+pdfplumber==0.11.10
+openpyxl==3.0.10

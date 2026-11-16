@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Config, Data, Layout } from "plotly.js";
 
+import { NARROW_CHART_PX, narrowChartLayout } from "../../lib/dashboard/chartLayout";
+
 /**
  * Plotly is ~1MB, so it is imported on demand and shared across every chart
  * rather than bundled into the initial payload. `/transcript` and `/calculator`
@@ -109,17 +111,30 @@ export default function Chart({
   const container = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  // Whether the chart is narrower than NARROW_CHART_PX (phones); null until measured.
+  const [narrow, setNarrow] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const element = container.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      setNarrow(false);
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < NARROW_CHART_PX));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const element = container.current;
-    if (!element) return;
+    if (!element || narrow === null) return;
 
     loadPlotly()
       .then(async (Plotly) => {
         if (cancelled) return;
 
-        const merged: ChartLayout = {
+        const full: ChartLayout = {
           ...BASE_LAYOUT,
           ...layout,
           height,
@@ -129,6 +144,8 @@ export default function Chart({
           xaxis: mergeAxis(layout?.xaxis),
           yaxis: mergeAxis(layout?.yaxis),
         };
+        // Phones only: wider tick steps, hover-only event labels, smaller title, legend below.
+        const merged = narrow ? narrowChartLayout(full) : full;
 
         await Plotly.react(
           element,
@@ -150,7 +167,7 @@ export default function Chart({
       cancelled = true;
       loadPlotly().then((Plotly) => Plotly.purge(element));
     };
-  }, [data, layout, config, frames, height]);
+  }, [data, layout, config, frames, height, narrow]);
 
   if (failed) {
     return (

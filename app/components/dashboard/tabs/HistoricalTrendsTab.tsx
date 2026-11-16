@@ -3,22 +3,10 @@
 import { useMemo } from "react";
 import type { ChartLayout, Trace } from "../Chart";
 
-import { pctCardText } from "../../../lib/dashboard/country360";
+import { PRE_PANDEMIC_FY, historicalCards } from "../../../lib/dashboard/historicalCards";
 import { int, metricNumber, metricPct } from "../../../lib/dashboard/format";
-import {
-  buildAnnualPivot,
-  calculateHistoricalRangeMetrics,
-  notNa,
-  pctGrowth,
-  selectedVisaClasses,
-} from "../../../lib/dashboard/metrics";
-import {
-  annualByYear,
-  annualChartPlan,
-  fyChange,
-  fyLabel,
-  provisionalFiscalYears,
-} from "../../../lib/dashboard/periods";
+import { notNa, pctGrowth, selectedVisaClasses } from "../../../lib/dashboard/metrics";
+import { annualChartPlan, fyLabel, provisionalFiscalYears } from "../../../lib/dashboard/periods";
 import { sortBy } from "../../../lib/dashboard/sort";
 import type { HistoricalMetricRow } from "../../../lib/dashboard/types";
 import { EMPTY_OVERLAY, eventOverlay, withEvents } from "../../../lib/dashboard/events";
@@ -40,9 +28,6 @@ import {
   ScopeNote,
   SectionTitle,
 } from "../ui";
-
-/** The pre-pandemic comparison year. FY2020 (the COVID low) would flatter any recovery. */
-const PRE_PANDEMIC_FY = 2019;
 
 /** A rankings row: the historical metrics plus the change vs FY2019. */
 interface RankingRow extends HistoricalMetricRow {
@@ -76,44 +61,12 @@ export default function HistoricalTrendsTab() {
   const startYear = fyRange.start;
   const endYear = fyRange.end;
 
-  const selectedRange = useMemo(
-    () =>
-      data.annualCountry.filter(
-        (r) => r.country === country && r.fiscalYear >= startYear && r.fiscalYear <= endYear,
-      ),
-    [data.annualCountry, country, startYear, endYear],
+  // Every country ends at the range's last year (the latest complete one by default),
+  // missing years as 0. A country that split (Serbia and Montenegro) keeps its own last year.
+  const { selectedRange, pivot, metrics, countryF1, shownYear, shownLabel, cards } = useMemo(
+    () => historicalCards(data.annualCountry, country, startYear, endYear, latestFy, provisional),
+    [data.annualCountry, country, startYear, endYear, latestFy, provisional],
   );
-
-  const pivot = useMemo(() => buildAnnualPivot(selectedRange), [selectedRange]);
-  const metrics = useMemo(() => calculateHistoricalRangeMetrics(pivot), [pivot]);
-
-  /* ---- KPI comparisons, each naming its fiscal years ---- */
-  const countryF1 = useMemo(
-    () => annualByYear(data.annualCountry, country, "F1"),
-    [data.annualCountry, country],
-  );
-  const shownYear = pivot.length > 0 ? pivot[pivot.length - 1].fiscalYear : null;
-  const shownLabel = shownYear !== null ? fyLabel(shownYear, provisional) : "N/A";
-  const vsPriorYear = shownYear !== null ? fyChange(countryF1, shownYear, shownYear - 1) : null;
-  const vsPeak =
-    metrics.latestF1 !== null && metrics.peakF1 !== null ? pctGrowth(metrics.latestF1, metrics.peakF1) : null;
-  const vsPrePandemic =
-    shownYear !== null && shownYear > PRE_PANDEMIC_FY
-      ? fyChange(countryF1, shownYear, PRE_PANDEMIC_FY)
-      : null;
-  // The shared minimum base: "— (low volume)" when the earlier figure is under 100.
-  const tenYearBase =
-    shownYear !== null ? (pivot.find((r) => r.fiscalYear === shownYear - 10)?.F1 ?? null) : null;
-  const cards = {
-    vsPriorYear: pctCardText(vsPriorYear, shownYear !== null ? countryF1.get(shownYear - 1) : null),
-    vsPeak: pctCardText(vsPeak, metrics.peakF1),
-    vsPrePandemic: pctCardText(
-      vsPrePandemic,
-      countryF1.get(PRE_PANDEMIC_FY),
-      shownYear !== null && shownYear > PRE_PANDEMIC_FY,
-    ),
-    cagr10: pctCardText(metrics.cagr10yrPct, tenYearBase),
-  };
 
   // The chart follows the Visa control: F1, J1, or both lines on one axis.
   const plan = useMemo(() => annualChartPlan(pivot, selectedVisaClasses(visa)), [pivot, visa]);
@@ -389,7 +342,7 @@ export default function HistoricalTrendsTab() {
             />
             <KpiCard
               label={`F1 by nationality vs peak (${metrics.peakF1Year !== null ? `FY${metrics.peakF1Year}` : "N/A"})`}
-              value={metrics.peakF1Year === shownYear && shownYear !== null ? "At peak" : cards.vsPeak}
+              value={cards.vsPeakShown}
             />
             <KpiCard
               label={`F1 by nationality vs FY${PRE_PANDEMIC_FY} (pre-pandemic)`}
@@ -455,7 +408,7 @@ export default function HistoricalTrendsTab() {
           ` FY${rankYear} is provisional (summed from monthly reports).`}
       </ScopeNote>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section>
           <SubHeading>Growing Markets</SubHeading>
           <DataTable

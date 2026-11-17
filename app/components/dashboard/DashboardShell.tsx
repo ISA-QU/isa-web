@@ -24,6 +24,7 @@ import ExecutiveTab from "./tabs/ExecutiveTab";
 import Country360Tab from "./tabs/Country360Tab";
 import ConsulatesPage from "./tabs/ConsulatesPage";
 import HistoricalTrendsTab from "./tabs/HistoricalTrendsTab";
+import UpdateDataTab from "./tabs/UpdateDataTab";
 
 /**
  * Tab order is app.py's. app.py labelled the Country Intelligence view
@@ -36,6 +37,7 @@ const TABS = [
   { id: "country-360", label: "Country 360", Component: Country360Tab },
   { id: "consulates", label: "Consulates", Component: ConsulatesPage },
   { id: "historical-trends", label: "Historical Trends", Component: HistoricalTrendsTab },
+  { id: "update-data", label: "Update data", Component: UpdateDataTab },
 ] as const;
 
 function Header() {

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:admin": "node scripts/dev-admin.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -13,7 +14,8 @@
     "intake": "python3 scripts/intake/intake.py",
     "intake:test": "python3 -m unittest discover -s scripts/intake/tests",
     "postbuild": "touch out/.nojekyll && rm -rf out/dashboard-data",
-    "predeploy": "npm run build",
+    "check:upload-off": "node scripts/check-upload-off.mjs",
+    "predeploy": "npm run build && npm run check:upload-off",
     "deploy": "gh-pages -d out --dotfiles"
   },
   "dependencies": {

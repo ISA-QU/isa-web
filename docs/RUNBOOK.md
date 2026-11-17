@@ -78,8 +78,13 @@ published. **If nothing is new, write down the date you checked and stop.**
 `npm run intake -- --download YYYY-MM` (for example `2026-03`). If several months are out,
 download every one; they must be added in order.
 
-**c) Add them.** Run `npm run admin` and open the address it prints (it works only on your
-laptop). Drop both PDFs, press **Check the PDFs**, and read the report: the rows added, the F1
+**c) Add them.** Run `npm run dev:admin`; it starts the dashboard on your laptop with its
+**Update data** tab connected, and prints the address
+(`http://localhost:3000/isa-web/?tab=update-data`). Sign in as usual and open the Update data
+tab. (If it says port 3000 is busy, stop the other `npm run dev` first. If the tab doesn't
+work, `npm run admin` opens the same steps as a separate page on your laptop.) Drop both PDFs,
+press **Check the PDFs**, and wait for the "Working…" message to finish (about a minute). Read
+the report: the rows added, the F1
 and J1 totals, the top 5 nationalities, and any spelling it changed. A yellow **Big change**
 warning means the month is more than 50% above or below the same month a year earlier; that
 can be real, so just confirm these are the right month's PDFs. Then press **Apply**. The tool
@@ -89,14 +94,15 @@ either fails, it puts the old files back by itself and says so.
 **d) Confirm and spot-check the newest month only.**
 
 1. The Apply result says the checks passed (`dashboard:verify` passed).
-2. On the Markets tab (`npm run dev`), the **Data through** card shows the new month.
+2. On the Markets tab, the **Data through** card shows the new month.
 3. **India, F1, by nationality:** on Markets, set Visa to F1 and Period to Custom months with
    the new month as both start and end. India's "Nationals" figure must equal the line
    "India F1 …" in the Nationality PDF. (February 2026: 657.)
 4. **Mumbai, F1, by post:** on Consulates, keep that Period, choose India and "This country".
    Mumbai's figure must equal the line "Mumbai F1 …" in the Post PDF. (February 2026: 200.)
 
-If a number doesn't match, press **Undo last update** and ask the repo owner.
+If a number doesn't match, press **Undo last update** on the Update data tab and ask the repo
+owner. When you're done, Ctrl+C in the terminal stops both servers.
 
 **e) Update the master copies.** Copy the 3 updated files from `dashboard/` back to the
 office's shared folder, replacing the old ones, so the masters never fall behind the laptop.
@@ -168,6 +174,12 @@ request ([section 8](#8-making-a-code-change)).
    intake changes also `npm run intake:test`.
 4. Push the branch and open a pull request. The repo owner reviews it, merges it into `main`,
    and runs `npm run deploy` from an up-to-date `main` to publish the site.
+   `npm run deploy` builds the site and then runs `npm run check:upload-off`, which stops the
+   deploy (nothing is published) unless the Update data tab is "off" in the built site: no
+   upload settings in the environment or in `.env`, `.env.local` or `.env.production*`, no
+   laptop address or intake port, and no AWS address besides the dashboard's own. So the
+   laptop's local mode can never reach the live site by accident. If it stops, remove the
+   setting it names and deploy again.
 5. Lambda changes also need the IT/AWS contact to upload the Lambda; the
    [handoff notes](dashboard.md#handoff-notes-for-deployment-itaws-contact) list what's pending.
 

@@ -143,4 +143,7 @@ export const NAV_SAMPLES: readonly Sample[] = [
   { q: "Which tab shows consulates?", expect: "navigation | navigation | topic=consulates" },
   { q: "Where is the globe?", expect: "navigation | navigation | topic=executive" },
   { q: "How do I reset the dashboard?", expect: "navigation | navigation | topic=country-control" },
+  { q: "How do I update the data?", expect: "navigation | navigation | topic=update-data" },
+  { q: "Where do I upload the PDFs?", expect: "navigation | navigation | topic=update-data" },
+  { q: "How do I add a new month?", expect: "navigation | navigation | topic=update-data" },
 ];

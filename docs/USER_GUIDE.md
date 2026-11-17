@@ -186,6 +186,13 @@ forecasts ("What will FY2027 be?"), and visa or legal advice. For those it says 
 the dashboard doesn't have that" and suggests questions it can answer. Questions with "we" or
 "our" about trends get a reminder that the data is U.S.-wide, not Quinnipiac's own.
 
+## Update data
+
+Update data adds a new month from the State Department's two monthly PDFs: drop both, check the report, then Apply; Undo last update reverses it. On the live site it isn't connected yet, so updates are done on the office laptop until AWS is restored.
+
+On the live site the tab shows "Not connected yet" and its buttons are off. The person who
+maintains the dashboard uses it on the office laptop (see the [runbook](RUNBOOK.md)).
+
 ## Getting help
 
 Ask the international admissions manager first. Problems with the data or the dashboard go to

@@ -58,6 +58,13 @@ export const NAV_TOPICS: readonly NavTopic[] = [
     tab: "historical-trends",
   },
   {
+    id: "update-data",
+    title: "Update data tab",
+    keywords: ["update data", "update the data", "update data tab", "upload", "upload the pdfs", "monthly update", "new month", "add a new month", "add a month", "add the pdfs"],
+    text: "Update data adds a new month from the State Department's two monthly PDFs: drop both, check the report, then Apply; Undo last update reverses it. On the live site it isn't connected yet, so updates are done on the office laptop until AWS is restored.",
+    tab: "update-data",
+  },
+  {
     id: "country-control",
     title: "Choosing a country",
     keywords: ["country control", "change country", "change the country", "select a country", "select country", "pick a country", "choose a country", "switch country", "reset to defaults", "reset"],
@@ -143,6 +150,7 @@ export const TOUR: readonly { tab: TabId; line: string }[] = [
   { tab: "country-360", line: "Country 360: one country in depth, ending with What to do." },
   { tab: "consulates", line: "Consulates: where the visas are issued, consulate by consulate." },
   { tab: "historical-trends", line: "Historical Trends: 30 years by nationality, with market cycles." },
+  { tab: "update-data", line: "Update data: add a new month from the State Department's PDFs (on the office laptop for now)." },
 ];
 
 export const TOUR_INTRO = "I answer questions from this dashboard's data. Here's what each tab is for:";

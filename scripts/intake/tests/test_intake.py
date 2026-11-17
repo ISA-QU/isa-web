@@ -325,6 +325,73 @@ class RenamedConsulateTests(FakeFiles):
             self.assertEqual(report["months"][0]["postRows"], 2)
 
 
+class ServerOriginTests(unittest.TestCase):
+    """The intake server answers the dashboard's Update data tab only from http://localhost:3000,
+    only with the shared token, and still answers its own page. Only requests that never touch the
+    data files are sent."""
+
+    @classmethod
+    def setUpClass(cls):
+        import socket
+        import subprocess
+        import time
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            cls.port = probe.getsockname()[1]
+        cls.token = "test-token-not-secret"
+        env = dict(os.environ, INTAKE_PORT=str(cls.port), INTAKE_TOKEN=cls.token, INTAKE_ALLOW_ORIGIN="http://localhost:3000")
+        cls.server = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(HERE), "admin_server.py")],
+                                      env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(100):
+            try:
+                with socket.create_connection(("127.0.0.1", cls.port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.05)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.terminate()
+        cls.server.wait(5)
+
+    def request(self, method, origin=None, token=None, path="/api/apply"):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Content-Type": "application/json"}
+        if origin:
+            headers["Origin"] = origin
+        if token:
+            headers["X-Intake-Token"] = token
+        if method == "OPTIONS":
+            headers["Access-Control-Request-Method"] = "POST"
+        conn.request(method, path, body=b'{"staging": "nothing"}' if method == "POST" else None, headers=headers)
+        response = conn.getresponse()
+        body = response.read().decode()
+        conn.close()
+        return response.status, response.getheader("Access-Control-Allow-Origin"), body
+
+    def test_dashboard_origin_allowed_with_token(self):
+        status, allow, body = self.request("POST", "http://localhost:3000", self.token)
+        self.assertEqual((status, allow), (200, "http://localhost:3000"))
+        self.assertIn("Preview the files again first", body)
+
+    def test_preflight(self):
+        self.assertEqual(self.request("OPTIONS", "http://localhost:3000")[:2], (204, "http://localhost:3000"))
+        self.assertEqual(self.request("OPTIONS", "http://evil.example")[:2], (403, None))
+        self.assertEqual(self.request("OPTIONS", "http://localhost:3001")[:2], (403, None))
+
+    def test_other_origins_and_missing_token_refused(self):
+        self.assertEqual(self.request("POST", "http://evil.example", self.token)[0], 403)
+        self.assertEqual(self.request("POST", "http://localhost:3001", self.token)[0], 403)
+        self.assertEqual(self.request("POST", "http://localhost:3000", None)[0], 403)
+        self.assertEqual(self.request("POST", "http://localhost:3000", "wrong")[0], 403)
+
+    def test_own_page_still_works(self):
+        status, _, body = self.request("GET", path=f"/?t={self.token}")
+        self.assertEqual(status, 200)
+        self.assertIn("Dashboard monthly intake", body)
+
+
 class SpellingTests(unittest.TestCase):
     def test_pdf_spellings(self):
         month = {

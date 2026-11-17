@@ -425,7 +425,7 @@ async function main() {
   );
 
   console.log("\n  Country 360  (8-2a: Country Intelligence merged in; old links; leader matches Consulates)");
-  const tabIds = ["markets", "executive", "country-360", "consulates", "historical-trends"];
+  const tabIds = ["markets", "executive", "country-360", "consulates", "historical-trends", "update-data"];
   check("old country-intelligence links open", url.canonicalTab("country-intelligence", tabIds), "country-360");
   check(
     "old consulate-intelligence / historical-consulates links open",

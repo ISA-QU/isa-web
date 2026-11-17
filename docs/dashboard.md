@@ -204,6 +204,16 @@ so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/in
    blocks scripts, so the tool can't check it for you; `--download` can fetch a month's two PDFs
    once you know it's there, or save them from the page by hand.
 
+- **The Update data tab:** the same steps inside the dashboard. Its "upload connection" is set
+  when the site is built (`NEXT_PUBLIC_UPLOAD_MODE`, in `app/lib/dashboard/upload/connection.ts`):
+  - **off** (the default, and always on the live site): the tab says "Not connected yet: updates
+    are done on the office laptop until AWS is restored." and its buttons are disabled.
+  - **local:** `npm run dev:admin` starts the dashboard on port 3000 (it stops with a clear
+    message if the port is busy) and the intake server on 127.0.0.1 together, with a shared
+    one-time token kept only in memory. The server accepts the tab's requests only from
+    `http://localhost:3000` and only with that token.
+  - `npm run deploy` runs `npm run check:upload-off` after the build and stops before
+    publishing unless the built site is off (see the runbook, section 8).
 - **Local page:** `npm run admin` prints an address that works only on this computer. Drop a
   month's two PDFs, check the report, then press Apply: the 3 files are backed up and replaced,
   and `dashboard:data` and `dashboard:verify` run.

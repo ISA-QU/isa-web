@@ -8,7 +8,7 @@
 import type { DashboardData, VisaSelection } from "../types";
 
 /** The dashboard's tab ids (DashboardShell's TABS). */
-export type TabId = "markets" | "executive" | "country-360" | "consulates" | "historical-trends";
+export type TabId = "markets" | "executive" | "country-360" | "consulates" | "historical-trends" | "update-data";
 
 export const TAB_LABELS: Record<TabId, string> = {
   markets: "Markets",
@@ -16,6 +16,7 @@ export const TAB_LABELS: Record<TabId, string> = {
   "country-360": "Country 360",
   consulates: "Consulates",
   "historical-trends": "Historical Trends",
+  "update-data": "Update data",
 };
 
 /** Where an answer's numbers can be checked: tab · measure · period. */

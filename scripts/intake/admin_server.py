@@ -26,7 +26,12 @@ from files import IntakeError  # noqa: E402
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("INTAKE_PORT", "8765"))
-TOKEN = secrets.token_urlsafe(24)
+# `npm run dev:admin` passes a shared one-time token and the dashboard's own address (its
+# "Update data" tab calls this server); on its own the server makes a random token.
+TOKEN = os.environ.get("INTAKE_TOKEN") or secrets.token_urlsafe(24)
+DASHBOARD_ORIGIN = os.environ.get("INTAKE_ALLOW_ORIGIN", "")
+if DASHBOARD_ORIGIN and not DASHBOARD_ORIGIN.startswith("http://localhost:"):
+    raise SystemExit("INTAKE_ALLOW_ORIGIN must be the dashboard on this computer, e.g. http://localhost:3000")
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
 MAX_UPLOAD = 50 * 1024 * 1024
 PREVIEWS = {}  # staging folder → (fingerprint of the 3 originals when previewed, months being added)
@@ -46,9 +51,16 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("  " + fmt % args + "\n")
 
+    def _cors(self):
+        """Lets the dashboard's Update data tab (and only it) call the API from its own address."""
+        if DASHBOARD_ORIGIN and self.headers.get("Origin") == DASHBOARD_ORIGIN:
+            self.send_header("Access-Control-Allow-Origin", DASHBOARD_ORIGIN)
+            self.send_header("Vary", "Origin")
+
     def _send(self, status, body, kind="application/json"):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(status)
+        self._cors()
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
@@ -59,9 +71,21 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return (
             self.headers.get("Host") == f"{HOST}:{PORT}"
-            and (origin is None or origin == f"http://{HOST}:{PORT}")
+            and (origin is None or origin == f"http://{HOST}:{PORT}" or (DASHBOARD_ORIGIN and origin == DASHBOARD_ORIGIN))
             and secrets.compare_digest(self.headers.get("X-Intake-Token", ""), TOKEN)
         )
+
+    def do_OPTIONS(self):
+        """The browser's pre-flight check before the tab's requests."""
+        allowed = self.headers.get("Host") == f"{HOST}:{PORT}" and DASHBOARD_ORIGIN and self.headers.get("Origin") == DASHBOARD_ORIGIN
+        self.send_response(204 if allowed else 403)
+        if allowed:
+            self._cors()
+            self.send_header("Access-Control-Allow-Methods", "POST")
+            self.send_header("Access-Control-Allow-Headers", "X-Intake-Token, Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         if self.headers.get("Host") != f"{HOST}:{PORT}" or self.path != f"/?t={TOKEN}":
@@ -138,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"\n  Intake page (this computer only): http://{HOST}:{PORT}/?t={TOKEN}\n  Ctrl+C to stop.\n", flush=True)
+    if DASHBOARD_ORIGIN:
+        print(f"  Also answering the dashboard's Update data tab at {DASHBOARD_ORIGIN}.\n", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

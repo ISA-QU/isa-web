@@ -179,7 +179,12 @@ request ([section 8](#8-making-a-code-change)).
    upload settings in the environment or in `.env`, `.env.local` or `.env.production*`, no
    laptop address or intake port, and no AWS address besides the dashboard's own. So the
    laptop's local mode can never reach the live site by accident. If it stops, remove the
-   setting it names and deploy again.
+   setting it names and deploy again. (The one exception is aws mode, once AWS is set up: the
+   deploy command itself sets it, as in [UPLOAD_AWS_SETUP.md](UPLOAD_AWS_SETUP.md), step 8.)
+   The check's last line says which mode was published: "Upload tab: OFF — Not connected yet"
+   or "Upload tab: AWS — connected to the configured endpoint".
+   If the Update data tab shows 'Not connected yet' after a deploy, the AWS settings weren't
+   included — redeploy with them (see UPLOAD_AWS_SETUP.md).
 5. Lambda changes also need the IT/AWS contact to upload the Lambda; the
    [handoff notes](dashboard.md#handoff-notes-for-deployment-itaws-contact) list what's pending.
 
@@ -232,8 +237,9 @@ be updated. There are two ways back:
 2. **Trip planner tab:** one page per country combining restriction status, last-12-months
    trend, country vs world, outreach window and top consulate cities, with a printable
    one-page brief (after AWS is restored).
-3. **Switch on the live upload** in the intake tool (`scripts/intake/live_upload.py`), set up
-   with the IT/AWS contact.
+3. **Switch on the Update data tab on the live site** (its aws mode), with the IT/AWS contact,
+   following [UPLOAD_AWS_SETUP.md](UPLOAD_AWS_SETUP.md). It's written and tested without AWS,
+   but not set up.
 4. **Move the storage bucket name out of the code** into an environment variable, in both
    dashboard Lambdas (`rebuild-dashboard` and `get-dashboard`).
 5. **An automatic "is a new month out?" check** (the State Department page blocks scripts, so

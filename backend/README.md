@@ -134,3 +134,7 @@ Two more Lambdas feed the dashboard: `rebuild-dashboard` turns the raw workbooks
 bucket into one snapshot, and `get-dashboard` serves that snapshot at `GET /dashboard` on the
 same HTTP API. Setup, IAM policies and the monthly update routine are in
 [docs/dashboard.md](../docs/dashboard.md#aws-setup).
+
+`intake-upload` (not deployed yet) is the AWS side of the dashboard's Update data tab: it runs
+the monthly intake tool and then `rebuild-dashboard`. It's uploaded as a zip
+(`npm run intake:lambda`), not pasted. Setup: [docs/UPLOAD_AWS_SETUP.md](../docs/UPLOAD_AWS_SETUP.md).

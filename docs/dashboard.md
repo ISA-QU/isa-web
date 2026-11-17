@@ -212,6 +212,10 @@ so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/in
     message if the port is busy) and the intake server on 127.0.0.1 together, with a shared
     one-time token kept only in memory. The server accepts the tab's requests only from
     `http://localhost:3000` and only with that token.
+  - **aws** (written, not set up yet): the `intake-upload` Lambda
+    (`backend/lambdas/intake-upload/`) runs the same tool in AWS for members of the
+    `dashboard-admins` sign-in group, then runs `rebuild-dashboard`. The steps for the IT/AWS
+    contact are in [UPLOAD_AWS_SETUP.md](UPLOAD_AWS_SETUP.md).
   - `npm run deploy` runs `npm run check:upload-off` after the build and stops before
     publishing unless the built site is off (see the runbook, section 8).
 - **Local page:** `npm run admin` prints an address that works only on this computer. Drop a
@@ -233,9 +237,11 @@ so nobody edits Excel by hand. Setup once: `python3 -m pip install -r scripts/in
 - **Only the 3 files live in `dashboard/`**, since the build reads every `.xlsx`/`.csv` there.
   Staging, backups, downloads and proofs go in `dashboard-intake/` (gitignored).
 - **Live upload** (`live_upload.py`) is switched off: the live dashboard is still updated by the
-  IT/AWS contact.
+  IT/AWS contact. Once AWS is set up, the Update data tab's aws mode replaces it.
 - **Tests:** `npm run intake:test`. `python3 scripts/intake/proof.py --pdf … --pdf …` rebuilds a
   month from its PDFs in `dashboard-intake/proof/` and compares it with the current files.
+  `python3 scripts/intake/lambda_proof.py --pdf … --pdf …` runs the AWS function's whole flow on
+  stand-in storage in `dashboard-intake/lambda-proof/` (no AWS).
 
 ### If something goes wrong
 

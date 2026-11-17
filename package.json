@@ -13,6 +13,7 @@
     "admin": "python3 scripts/intake/admin_server.py",
     "intake": "python3 scripts/intake/intake.py",
     "intake:test": "python3 -m unittest discover -s scripts/intake/tests",
+    "intake:lambda": "python3 scripts/intake/build_lambda.py",
     "postbuild": "touch out/.nojekyll && rm -rf out/dashboard-data",
     "check:upload-off": "node scripts/check-upload-off.mjs",
     "predeploy": "npm run build && npm run check:upload-off",

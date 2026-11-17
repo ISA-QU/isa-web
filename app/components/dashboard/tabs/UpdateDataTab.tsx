@@ -1,8 +1,16 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 
-import { NOT_CONNECTED, uploadConnection, type ApplyResult, type CheckResult } from "../../../lib/dashboard/upload/connection";
+import { sessionSnapshot, subscribeToSession } from "../../../lib/auth";
+import {
+  isUploadAdmin,
+  NOT_ADMIN,
+  NOT_CONNECTED,
+  uploadConnection,
+  type ApplyResult,
+  type CheckResult,
+} from "../../../lib/dashboard/upload/connection";
 import { InfoCallout, SubHeading } from "../shared";
 import { Panel, SectionTitle } from "../ui";
 
@@ -18,11 +26,13 @@ const WORKING: Record<Exclude<Busy, null>, string> = {
 /**
  * Update data: adds a new month from the State Department's two monthly PDFs, through the
  * intake engine (see lib/dashboard/upload/connection.ts). Everyone sees the tab; it only acts
- * when this build is connected (local mode via `npm run dev:admin`). On the live site it says
- * it isn't connected yet.
+ * when this build is connected (local mode via `npm run dev:admin`; aws mode for members of the
+ * admin group). On the live site it says it isn't connected yet.
  */
 export default function UpdateDataTab() {
-  const connected = uploadConnection.mode !== "off";
+  const session = useSyncExternalStore(subscribeToSession, sessionSnapshot, () => null);
+  const notAdmin = uploadConnection.mode === "aws" && !isUploadAdmin(session, uploadConnection.adminGroup);
+  const connected = uploadConnection.mode !== "off" && !notAdmin;
   const [files, setFiles] = useState<File[]>([]);
   const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState<Busy>(null);
@@ -137,7 +147,8 @@ export default function UpdateDataTab() {
         are backed up first, and Undo last update reverses it.
       </p>
 
-      {!connected && <InfoCallout>{NOT_CONNECTED}</InfoCallout>}
+      {uploadConnection.mode === "off" && <InfoCallout>{NOT_CONNECTED}</InfoCallout>}
+      {notAdmin && <InfoCallout>{NOT_ADMIN}</InfoCallout>}
 
       <Panel>
         <SubHeading>1. Add the month&apos;s two PDFs</SubHeading>

@@ -11,6 +11,11 @@
  * - out/ contains an AWS API or Lambda address other than the dashboard's existing ones in
  *   app/lib/awsConfig.ts (an upload endpoint would be a new one);
  * - out/ doesn't contain the "Not connected yet" message (the off-mode tab).
+ *
+ * The one exception is aws mode, once AWS is set up (docs/UPLOAD_AWS_SETUP.md): the deploy
+ * command itself sets NEXT_PUBLIC_UPLOAD_MODE=aws and NEXT_PUBLIC_UPLOAD_API_URL (an https AWS
+ * address), never a .env file. Then that address is allowed too, and must be in out/. Local-mode
+ * settings, this computer's address and the intake port still fail.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -20,7 +25,15 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // The built site; another folder can be given to test this check itself.
 const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, "out");
-const SETTINGS = ["NEXT_PUBLIC_UPLOAD_MODE", "NEXT_PUBLIC_INTAKE_URL", "NEXT_PUBLIC_INTAKE_TOKEN", "NEXT_PUBLIC_UPLOAD_API_URL"];
+const SETTINGS = [
+  "NEXT_PUBLIC_UPLOAD_MODE",
+  "NEXT_PUBLIC_INTAKE_URL",
+  "NEXT_PUBLIC_INTAKE_TOKEN",
+  "NEXT_PUBLIC_UPLOAD_API_URL",
+  "NEXT_PUBLIC_UPLOAD_ADMIN_GROUP",
+];
+// Allowed in the deploy command's environment only in aws mode.
+const AWS_SETTINGS = ["NEXT_PUBLIC_UPLOAD_MODE", "NEXT_PUBLIC_UPLOAD_API_URL", "NEXT_PUBLIC_UPLOAD_ADMIN_GROUP"];
 const FORBIDDEN = [
   ["127.0.0.1", "this computer's address"],
   [":8765", "the intake server's port"],
@@ -33,9 +46,21 @@ const ALLOWED_AWS = [...readFileSync(path.join(ROOT, "app/lib/awsConfig.ts"), "u
 const NOT_CONNECTED = "Not connected yet: updates are done on the office laptop until AWS is restored.";
 const problems = [];
 
+const awsMode = process.env.NEXT_PUBLIC_UPLOAD_MODE === "aws";
+const awsUrl = process.env.NEXT_PUBLIC_UPLOAD_API_URL ?? "";
+if (awsMode) {
+  const match = awsUrl.match(AWS_URL);
+  if (!match || match[0] !== awsUrl) {
+    problems.push("NEXT_PUBLIC_UPLOAD_MODE=aws needs NEXT_PUBLIC_UPLOAD_API_URL set to the upload API's https AWS address");
+  } else {
+    ALLOWED_AWS.push(awsUrl);
+  }
+}
 for (const name of SETTINGS) {
   const value = process.env[name];
-  if (value && !(name === "NEXT_PUBLIC_UPLOAD_MODE" && value === "off")) problems.push(`${name} is set in this build's environment`);
+  if (!value || (name === "NEXT_PUBLIC_UPLOAD_MODE" && value === "off")) continue;
+  if (awsMode && AWS_SETTINGS.includes(name)) continue;
+  problems.push(`${name} is set in this build's environment`);
 }
 for (const file of [".env", ".env.local", ".env.production", ".env.production.local"]) {
   const full = path.join(ROOT, file);
@@ -58,6 +83,7 @@ function* files(dir) {
 
 let scanned = 0;
 let foundMessage = false;
+let foundAwsUrl = false;
 if (!existsSync(OUT)) {
   problems.push(`${path.relative(ROOT, OUT) || OUT} doesn't exist: run \`npm run build\` first`);
 } else {
@@ -65,6 +91,7 @@ if (!existsSync(OUT)) {
     scanned += 1;
     const text = readFileSync(file, "utf8");
     if (text.includes(NOT_CONNECTED)) foundMessage = true;
+    if (awsMode && awsUrl && text.includes(awsUrl)) foundAwsUrl = true;
     for (const [needle, what] of FORBIDDEN) {
       if (text.includes(needle)) problems.push(`${path.relative(ROOT, file)} contains ${what} (${needle})`);
     }
@@ -75,6 +102,7 @@ if (!existsSync(OUT)) {
     }
   }
   if (!foundMessage) problems.push('out/ doesn\'t contain the Update data tab\'s "Not connected yet" message');
+  if (awsMode && !foundAwsUrl) problems.push("NEXT_PUBLIC_UPLOAD_MODE=aws is set, but out/ doesn't contain the upload address: build again with it set");
 }
 
 if (problems.length > 0) {
@@ -84,6 +112,11 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `\n  Upload check passed: the Update data tab is off in out/ (${scanned} files scanned; no upload settings, ` +
-    `no local address or port, no AWS address besides the dashboard's own).\n`,
+  awsMode
+    ? `\n  Upload check passed: the Update data tab is in aws mode, as this deploy asked (${scanned} files scanned; ` +
+        `no local settings, address or port; no AWS address besides the dashboard's own and the upload API).\n`
+    : `\n  Upload check passed: the Update data tab is off in out/ (${scanned} files scanned; no upload settings, ` +
+        `no local address or port, no AWS address besides the dashboard's own).\n`,
 );
+// The mode, last and on its own line, so it's the one thing to read at the end of a deploy.
+console.log(awsMode ? "  Upload tab: AWS — connected to the configured endpoint\n" : "  Upload tab: OFF — Not connected yet\n");

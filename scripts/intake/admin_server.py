@@ -114,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {**result, "text": intake.steps_text(result)})
             return self._send(404, {"error": "Not found."})
         except IntakeError as error:
-            return self._send(200, {"ok": False, "error": str(error)})
+            return self._send(200, {"ok": False, "error": error.dashboard})
 
     def preview(self, body):
         message = BytesParser(policy=email_policy).parsebytes(
@@ -145,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
         report = intake.run(intake.group_reports(parsed), replace=replace)
         report["warnings"] += [n for p in parsed for n in p["notes"]]
         PREVIEWS[report["staging"]] = (originals_fingerprint(intake.DEFAULT_DASHBOARD), report["monthLabels"])
-        return {"ok": True, "report": intake.report_text(report), "staging": report["staging"],
+        return {"ok": True, "report": intake.report_text(report, dashboard=True), "staging": report["staging"],
                 "bigChanges": report["bigChanges"]}
 
     def apply(self, body):

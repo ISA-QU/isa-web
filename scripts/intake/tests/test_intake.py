@@ -156,8 +156,14 @@ class IntakeTests(FakeFiles):
 
     def test_existing_month_refused_then_replaced(self):
         july = self.month(2030, 7, [("Atlantis", "F1", 9, 1)], [("Atlantis City", "F1", 9, 1)])
-        with self.assertRaisesRegex(IntakeError, "already in the files"):
+        with self.assertRaisesRegex(IntakeError, "already in the files") as refused:
             self.run_intake([july])
+        # Command-line wording for npm run intake; button wording for the dashboard.
+        self.assertIn("run again with --replace", str(refused.exception))
+        self.assertEqual(
+            refused.exception.dashboard,
+            "2030-07 is already in the files. Tick \"Replace a month that's already in the files\" above and check again.",
+        )
         self.run_intake([july], apply=True, replace=True)
         state = intake.load(self.dashboard)
         jul = [(r["nationality"], r["issuances"]) for r in state["nationality"] if r["month"] == "2030-07"]
@@ -265,6 +271,10 @@ class SafetyTests(FakeFiles):
         report = self.run_intake([self.month(2030, 8, *self.AUG)])
         self.assertIn("Not applied", intake.report_text(report))
         self.assertNotIn("Not applied", intake.report_text(report, applying=True))
+        self.assertIn("Not applied (run with --apply to replace the 3 files).", intake.report_text(report))
+        dashboard = intake.report_text(report, dashboard=True)
+        self.assertIn("Not applied yet: press Apply to replace the 3 files.", dashboard)
+        self.assertNotIn("--", dashboard)
 
     def test_successful_apply(self):
         staging, months = self.stage((8, self.AUG))

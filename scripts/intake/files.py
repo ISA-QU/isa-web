@@ -39,7 +39,15 @@ MONTHLY_SOURCE = "Monthly nationality issuance reports"
 
 
 class IntakeError(Exception):
-    """A problem the person running the intake must fix; the message says what to do."""
+    """A problem the person running the intake must fix; the message says what to do.
+
+    `dashboard`: the same message worded for the dashboard's Update data tab (and the intake
+    page), where there are buttons instead of command-line options. Defaults to the message.
+    """
+
+    def __init__(self, message, dashboard=None):
+        super().__init__(message)
+        self.dashboard = dashboard or message
 
 
 def require(package, pip_name):

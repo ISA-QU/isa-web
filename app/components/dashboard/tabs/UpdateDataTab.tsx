@@ -29,6 +29,8 @@ export default function UpdateDataTab() {
   const [checked, setChecked] = useState<CheckResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Undo's own errors, shown in the Undo section rather than under the PDFs.
+  const [undoError, setUndoError] = useState<string | null>(null);
   const [undoInfo, setUndoInfo] = useState<{ backup: string; text: string } | null>(null);
   const [undone, setUndone] = useState<ApplyResult | null>(null);
   const [over, setOver] = useState(false);
@@ -43,14 +45,18 @@ export default function UpdateDataTab() {
     setError(pdfs.length === 0 && list && list.length > 0 ? "Only the two PDF reports can be added here." : null);
   };
 
-  /** Runs one step with the buttons disabled, so nothing is pressed twice. */
-  const run = async <T,>(step: Exclude<Busy, null>, action: () => Promise<T>): Promise<T | null> => {
+  /** Runs one step with the buttons disabled, so nothing is pressed twice. Errors go to `showError`. */
+  const run = async <T,>(
+    step: Exclude<Busy, null>,
+    action: () => Promise<T>,
+    showError: (message: string | null) => void = setError,
+  ): Promise<T | null> => {
     setBusy(step);
-    setError(null);
+    showError(null);
     try {
       return await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
       return null;
     } finally {
       setBusy(null);
@@ -77,17 +83,17 @@ export default function UpdateDataTab() {
 
   const askUndo = async () => {
     setUndone(null);
-    const r = await run("undo-info", () => uploadConnection.undoInfo());
+    const r = await run("undo-info", () => uploadConnection.undoInfo(), setUndoError);
     if (!r) return;
     if (r.ok && r.backup) setUndoInfo({ backup: r.backup, text: r.text ?? "" });
-    else setError(r.error ?? "There's no update to undo.");
+    else setUndoError(r.error ?? "There's no update to undo.");
   };
 
   const confirmUndo = async () => {
     if (!undoInfo) return;
     const backup = undoInfo.backup;
     setUndoInfo(null);
-    const r = await run("undo", () => uploadConnection.undo(backup));
+    const r = await run("undo", () => uploadConnection.undo(backup), setUndoError);
     if (r) setUndone(r);
   };
 
@@ -101,12 +107,26 @@ export default function UpdateDataTab() {
     "rounded-md px-4 py-2 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB81C] disabled:cursor-not-allowed disabled:opacity-40";
   const gold = `${button} bg-[#FFB81C] text-[#0C2340] hover:brightness-110`;
   const ghost = `${button} border border-slate-400/30 text-slate-100 hover:bg-white/5`;
-  const result = (r: ApplyResult) => (
-    <div className={`rounded-md border p-3 text-sm ${r.ok ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" : "border-rose-400/40 bg-rose-500/10 text-rose-100"}`}>
-      <p className="font-bold">{r.message}</p>
-      {r.text && <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-200">{r.text}</pre>}
-    </div>
+  const working = (step: Exclude<Busy, null>) => (
+    <p className="flex items-center gap-2 text-sm font-semibold text-[#FFE3A3]">
+      <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#FFB81C] border-t-transparent motion-reduce:animate-none" aria-hidden="true" />
+      {WORKING[step]}
+    </p>
   );
+  const errorBox = (message: string) => (
+    <p className="rounded-md border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-100">Stopped: {message}</p>
+  );
+  const result = (r: ApplyResult) => {
+    // The steps text starts with the same line as the heading; show it once.
+    const [first, ...rest] = (r.text ?? "").split("\n");
+    const details = (first.trim() === r.message.trim() ? rest.join("\n") : r.text ?? "").trim();
+    return (
+      <div className={`rounded-md border p-3 text-sm ${r.ok ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" : "border-rose-400/40 bg-rose-500/10 text-rose-100"}`}>
+        <p className="font-bold">{r.message}</p>
+        {details && <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-200">{details}</pre>}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -162,13 +182,8 @@ export default function UpdateDataTab() {
       </Panel>
 
       <div aria-live="polite" className="space-y-3">
-        {busy && (
-          <p className="flex items-center gap-2 text-sm font-semibold text-[#FFE3A3]">
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#FFB81C] border-t-transparent motion-reduce:animate-none" aria-hidden="true" />
-            {WORKING[busy]}
-          </p>
-        )}
-        {error && <p className="rounded-md border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-100">Stopped: {error}</p>}
+        {(busy === "check" || busy === "apply") && working(busy)}
+        {error && errorBox(error)}
         {checked && (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-emerald-200">Checked. Nothing has changed yet; press Apply to replace the files.</p>
@@ -212,6 +227,8 @@ export default function UpdateDataTab() {
               </div>
             </div>
           )}
+          {(busy === "undo-info" || busy === "undo") && working(busy)}
+          {undoError && errorBox(undoError)}
           {undone && result(undone)}
         </div>
       </Panel>

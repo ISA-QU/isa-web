@@ -132,8 +132,11 @@ def add_month(state, month_input, replace):
     types = check_names(month_input, known)
     post_months, nat_months = months_present(state)
     if ((y, m) in post_months or (y, m) in nat_months) and not replace:
-        raise IntakeError(f"{label} is already in the files. To replace it, run again with --replace "
-                          "(on the intake page, tick \"Replace a month that's already in the files\").")
+        raise IntakeError(
+            f"{label} is already in the files. To replace it, run again with --replace.",
+            dashboard=f"{label} is already in the files. Tick \"Replace a month that's already in the files\" "
+                      "above and check again.",
+        )
 
     def unique(rows, what):
         seen = {}
@@ -530,8 +533,9 @@ def run(month_inputs, dashboard_dir=DEFAULT_DASHBOARD, intake_dir=DEFAULT_INTAKE
     return report
 
 
-def report_text(report, applying=False):
-    """The run's report. `applying`: the files are about to be applied, so no "Not applied" line."""
+def report_text(report, applying=False, dashboard=False):
+    """The run's report. `applying`: the files are about to be applied, so no "Not applied" line.
+    `dashboard`: worded for the Update data tab (buttons, not command-line options)."""
     lines = []
     for m in report["months"]:
         lines.append(f"{m['month']}: {m['postRows']} post rows ({m['postZeroRows']} zero), "
@@ -562,7 +566,8 @@ def report_text(report, applying=False):
     if report.get("applied"):
         lines.append(f"Applied. Originals backed up to {report['backup']}")
     elif not applying:
-        lines.append("Not applied (run with --apply to replace the 3 files).")
+        lines.append("Not applied yet: press Apply to replace the 3 files." if dashboard
+                     else "Not applied (run with --apply to replace the 3 files).")
     return "\n".join(lines)
 
 
